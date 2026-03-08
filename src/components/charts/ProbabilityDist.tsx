@@ -9,6 +9,7 @@ import { BarChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { useState } from "react";
+import { formatHorizon } from "../../api/format";
 import type { PredictionResponse } from "../../api/types";
 
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer]);
@@ -104,7 +105,7 @@ export function ProbabilityDist({ prediction }: Props) {
   return (
     <div className="panel" style={{ height: "100%" }}>
       <div className="panel-header">
-        <span className="panel-title">Distribution @ H={horizon}</span>
+        <span className="panel-title">Distribution @ {formatHorizon(horizon)}</span>
         <div style={{ display: "flex", gap: 4 }}>
           {horizons.map((h, i) => (
             <button
@@ -122,7 +123,7 @@ export function ProbabilityDist({ prediction }: Props) {
                 fontFamily: "JetBrains Mono, monospace",
               }}
             >
-              {h}
+              {formatHorizon(h)}
             </button>
           ))}
         </div>

@@ -13,6 +13,7 @@ import {
   LegendComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { formatHorizon } from "../../api/format";
 
 echarts.use([
   BarChart,
@@ -255,7 +256,7 @@ function ConfigResult({ result }: { result: BacktestSummary }) {
             {config_label}
           </h3>
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            H={result.horizon} T={result.threshold} | {aggregate.total_trades}{" "}
+            Horizon={formatHorizon(result.horizon)} Threshold={result.threshold} | {aggregate.total_trades}{" "}
             trades across {aggregate.total_folds} folds
           </span>
         </div>

@@ -16,6 +16,7 @@ import {
   DataZoomComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { formatHorizon } from "../../api/format";
 import type { PredictionResponse } from "../../api/types";
 
 echarts.use([
@@ -116,7 +117,7 @@ export function FanChart({ prediction }: Props) {
             const p50 = percentiles.p50[hi];
             const delta = ((p50 - last_close) / last_close * 100).toFixed(2);
             return [
-              `<b>${time}</b> (H=${horizons[hi]})`,
+              `<b>${time}</b> (+${formatHorizon(horizons[hi])})`,
               `P90: ${p90.toFixed(2)}`,
               `<b>P50: ${p50.toFixed(2)}</b> (${delta}%)`,
               `P10: ${p10.toFixed(2)}`,
