@@ -1,0 +1,63 @@
+/** API response types — mirrors server/schemas.py */
+
+export interface SignalResponse {
+  composite_score: number;
+  direction: "LONG" | "SHORT" | "FLAT";
+  confidence: number;
+  expected_return: number;
+  ensemble_sharpe: number;
+  p10_return: number;
+  p90_return: number;
+  long_frac: number;
+}
+
+export interface CandleData {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface PredictionResponse {
+  timestamp: string;
+  instrument: string;
+  last_close: number;
+  horizons: number[];
+  percentiles: {
+    p10: number[];
+    p25: number[];
+    p50: number[];
+    p75: number[];
+    p90: number[];
+  };
+  signal: SignalResponse;
+  context_candles: CandleData[] | null;
+}
+
+export interface HistoryEntry {
+  timestamp: string;
+  instrument: string;
+  last_close: number;
+  signal: SignalResponse;
+  realized_return: number | null;
+  realized_direction: "UP" | "DOWN" | null;
+}
+
+export interface HistoryResponse {
+  entries: HistoryEntry[];
+  live_pf: number | null;
+  live_win_rate: number | null;
+  live_num_trades: number | null;
+}
+
+export interface HealthResponse {
+  status: string;
+  uptime_seconds: number;
+  last_prediction_time: string | null;
+  last_bar_time: string | null;
+  data_feed_status: string;
+  model_loaded: boolean;
+  gpu_available: boolean;
+}
