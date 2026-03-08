@@ -30,6 +30,7 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.API_URL }}
           VITE_API_KEY: ${{ secrets.API_KEY }}
+          VITE_DEMO_MODE: ${{ vars.DEMO_MODE || 'true' }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

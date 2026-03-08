@@ -3,8 +3,8 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  // Base path for GitHub Pages (set to repo name if not using custom domain)
-  base: "/",
+  // Base path for GitHub Pages — use "/futures-forecast/" unless custom domain
+  base: process.env.GITHUB_ACTIONS ? "/futures-forecast/" : "/",
   server: {
     proxy: {
       // Proxy API calls to the backend in dev mode
