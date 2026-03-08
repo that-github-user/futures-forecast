@@ -95,7 +95,37 @@ export function FanChart({ prediction }: Props) {
       trigger: "axis",
       backgroundColor: "#1e293b",
       borderColor: "#334155",
-      textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace" },
+      textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      formatter: (params: unknown) => {
+        const items = params as { seriesName: string; value: number | null; axisValue: string }[];
+        if (!items?.length) return "";
+        const time = items[0].axisValue;
+        const price = items.find(i => i.seriesName === "Price" && i.value !== null);
+        const median = items.find(i => i.seriesName === "Median" && i.value !== null);
+
+        if (price?.value) {
+          return `<b>${time}</b><br/>Price: ${price.value.toFixed(2)}`;
+        }
+        if (median?.value) {
+          // Find p10/p90 from the raw percentiles based on forecast index
+          const forecastIdx = items[0].axisValue;
+          const hi = forecastTimes.indexOf(forecastIdx);
+          if (hi >= 0) {
+            const p10 = percentiles.p10[hi];
+            const p90 = percentiles.p90[hi];
+            const p50 = percentiles.p50[hi];
+            const delta = ((p50 - last_close) / last_close * 100).toFixed(2);
+            return [
+              `<b>${time}</b> (H=${horizons[hi]})`,
+              `P90: ${p90.toFixed(2)}`,
+              `<b>P50: ${p50.toFixed(2)}</b> (${delta}%)`,
+              `P10: ${p10.toFixed(2)}`,
+              `Spread: ${(p90 - p10).toFixed(2)} pts`,
+            ].join("<br/>");
+          }
+        }
+        return `<b>${time}</b>`;
+      },
     },
     grid: {
       left: 70,

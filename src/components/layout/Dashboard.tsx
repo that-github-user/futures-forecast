@@ -1,12 +1,11 @@
 /**
  * Dashboard layout: CSS grid — 60% fan chart, 40% sidebar.
- * Assembles all components.
+ * Assembles all components with smooth transitions.
  */
 
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { HistoryEntry } from "../../api/types";
-import { useHealth } from "../../hooks/useHealth";
 import { usePrediction } from "../../hooks/usePrediction";
 import { FanChart } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
@@ -17,7 +16,6 @@ import { Header } from "./Header";
 
 export function Dashboard() {
   const { prediction, connected, demoMode, error } = usePrediction();
-  const health = useHealth();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [liveStats, setLiveStats] = useState<{
     pf: number | null;
@@ -50,7 +48,7 @@ export function Dashboard() {
     return (
       <div
         style={{
-          height: "100vh",
+          height: "100%",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -62,7 +60,6 @@ export function Dashboard() {
         }}
       >
         <div
-          className="spinner"
           style={{
             width: 32,
             height: 32,
@@ -80,7 +77,7 @@ export function Dashboard() {
   return (
     <div
       style={{
-        height: "100vh",
+        height: "100%",
         display: "flex",
         flexDirection: "column",
         background: "#0a0e17",
@@ -92,40 +89,19 @@ export function Dashboard() {
         instrument={prediction.instrument}
         connected={connected}
         lastPredictionTime={prediction.timestamp}
-        dataFeedStatus={health?.data_feed_status}
       />
 
       {demoMode && (
-        <div
-          style={{
-            background: "rgba(245, 158, 11, 0.1)",
-            borderBottom: "1px solid rgba(245, 158, 11, 0.3)",
-            padding: "6px 20px",
-            fontSize: 11,
-            color: "#f59e0b",
-            fontFamily: "Inter, sans-serif",
-            textAlign: "center",
-          }}
-        >
+        <div className="demo-banner">
           Demo mode — showing simulated data. Connect to a live API for real predictions.
           {error && <span style={{ marginLeft: 8, color: "#94a3b8" }}>({error})</span>}
         </div>
       )}
 
-      <div
-        style={{
-          flex: 1,
-          display: "grid",
-          gridTemplateColumns: "1fr 340px",
-          gridTemplateRows: "1fr 200px",
-          gap: 1,
-          padding: 1,
-          overflow: "hidden",
-        }}
-      >
+      <div className="dashboard-grid">
         {/* Main fan chart */}
         <div
-          className="panel"
+          className="panel fade-in"
           style={{ gridRow: "1 / 3", padding: 8, minHeight: 0 }}
         >
           <div className="panel-header">
@@ -150,27 +126,31 @@ export function Dashboard() {
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 1,
+            gap: 2,
             overflow: "auto",
             minHeight: 0,
           }}
         >
-          <SignalPanel
-            signal={prediction.signal}
-            lastClose={prediction.last_close}
-          />
-          <MetricsBar
-            pf={liveStats.pf}
-            winRate={liveStats.winRate}
-            numTrades={liveStats.numTrades}
-          />
-          <div style={{ flex: 1, minHeight: 150 }}>
+          <div className="fade-in">
+            <SignalPanel
+              signal={prediction.signal}
+              lastClose={prediction.last_close}
+            />
+          </div>
+          <div className="fade-in">
+            <MetricsBar
+              pf={liveStats.pf}
+              winRate={liveStats.winRate}
+              numTrades={liveStats.numTrades}
+            />
+          </div>
+          <div className="fade-in" style={{ flex: 1, minHeight: 150 }}>
             <ProbabilityDist prediction={prediction} />
           </div>
         </div>
 
         {/* Sidebar bottom: equity curve */}
-        <div style={{ minHeight: 0 }}>
+        <div className="fade-in" style={{ minHeight: 0 }}>
           <EquityCurve history={history} />
         </div>
       </div>
