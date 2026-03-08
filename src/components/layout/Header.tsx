@@ -46,7 +46,7 @@ export function Header({ instrument, connected, lastPredictionTime }: Props) {
             borderRadius: 4,
           }}
         >
-          5min bars | 6.5hr forecast
+          5min bars | 2hr context | 6.5hr forecast
         </span>
       </div>
 

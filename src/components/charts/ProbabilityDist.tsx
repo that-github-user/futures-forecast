@@ -20,6 +20,12 @@ interface Props {
 
 export function ProbabilityDist({ prediction }: Props) {
   const { percentiles, horizons, last_close, signal } = prediction;
+  // Show only key horizons as buttons, but allow selecting any
+  const keyHorizons = [1, 12, 24, 48, 78];
+  const displayHorizons = keyHorizons
+    .map((h) => ({ h, idx: horizons.indexOf(h) }))
+    .filter(({ idx }) => idx >= 0);
+
   const [selectedIdx, setSelectedIdx] = useState(horizons.length - 1);
 
   const horizon = horizons[selectedIdx];
@@ -107,14 +113,14 @@ export function ProbabilityDist({ prediction }: Props) {
       <div className="panel-header">
         <span className="panel-title">Distribution @ {formatHorizon(horizon)}</span>
         <div style={{ display: "flex", gap: 4 }}>
-          {horizons.map((h, i) => (
+          {displayHorizons.map(({ h, idx }) => (
             <button
               key={h}
-              onClick={() => setSelectedIdx(i)}
-              className={`horizon-btn ${i === selectedIdx ? "active" : ""}`}
+              onClick={() => setSelectedIdx(idx)}
+              className={`horizon-btn ${idx === selectedIdx ? "active" : ""}`}
               style={{
-                background: i === selectedIdx ? barColor : "#1e293b",
-                color: i === selectedIdx ? "#fff" : "#94a3b8",
+                background: idx === selectedIdx ? barColor : "#1e293b",
+                color: idx === selectedIdx ? "#fff" : "#94a3b8",
                 border: "1px solid #334155",
                 borderRadius: 4,
                 padding: "2px 6px",

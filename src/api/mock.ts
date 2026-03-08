@@ -30,12 +30,12 @@ export function generateMockPrediction(): PredictionResponse {
   );
   const rand = seededRandom(minuteSlot * 1337 + now.getDate() * 7);
 
-  // Random walk for context candles
+  // Random walk for context candles (2 hours = 24 bars)
   const contextCandles = [];
   let price = BASE_PRICE + (rand() - 0.5) * 80;
-  const baseTime = Math.floor(now.getTime() / 1000) - 48 * 300;
+  const baseTime = Math.floor(now.getTime() / 1000) - 24 * 300;
 
-  for (let i = 0; i < 48; i++) {
+  for (let i = 0; i < 24; i++) {
     const ret = (rand() - 0.5) * 4;
     const open = round(price);
     const close = round(price + ret);
@@ -57,7 +57,10 @@ export function generateMockPrediction(): PredictionResponse {
 
   // Forecast: slight drift + expanding uncertainty
   const drift = (rand() - 0.45) * 0.15; // slight long bias
-  const horizons = [1, 6, 12, 24, 48, 78];
+  // Dense horizons matching server: every 3 bars + endpoint
+  const horizons = [...Array.from({ length: 26 }, (_, i) => 1 + i * 3), 78]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => a - b);
   const percentiles: PredictionResponse["percentiles"] = {
     p10: [],
     p25: [],
