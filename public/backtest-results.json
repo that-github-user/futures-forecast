@@ -1,0 +1,182 @@
+[
+  {
+    "config_label": "H78-T55",
+    "horizon": 78,
+    "threshold": 0.55,
+    "folds": [
+      {
+        "fold": 0,
+        "train_period": "2015-01 to 2017-12",
+        "test_period": "2018-07 to 2019-06",
+        "num_trades": 1070,
+        "num_long": 733,
+        "num_short": 337,
+        "profit_factor": 0.795,
+        "win_rate": 0.4159,
+        "total_pnl": -4294.2,
+        "mean_pnl": -4.01
+      },
+      {
+        "fold": 1,
+        "train_period": "2016-01 to 2018-12",
+        "test_period": "2019-07 to 2020-06",
+        "num_trades": 1155,
+        "num_long": 788,
+        "num_short": 367,
+        "profit_factor": 1.191,
+        "win_rate": 0.4823,
+        "total_pnl": 5047.5,
+        "mean_pnl": 4.37
+      }
+    ],
+    "aggregate": {
+      "total_trades": 2225,
+      "profit_factor": 1.016,
+      "win_rate": 0.4503,
+      "total_pnl": 753.2,
+      "bootstrap_pf_95ci": [
+        0.84,
+        1.229
+      ],
+      "folds_profitable": 1,
+      "total_folds": 2,
+      "binom_p": 0.999999,
+      "ttest_p": 0.435068
+    }
+  },
+  {
+    "config_label": "H72-T56",
+    "horizon": 72,
+    "threshold": 0.56,
+    "folds": [
+      {
+        "fold": 0,
+        "train_period": "2015-01 to 2017-12",
+        "test_period": "2018-07 to 2019-06",
+        "num_trades": 1065,
+        "num_long": 738,
+        "num_short": 327,
+        "profit_factor": 0.882,
+        "win_rate": 0.4347,
+        "total_pnl": -2233.2,
+        "mean_pnl": -2.1
+      },
+      {
+        "fold": 1,
+        "train_period": "2016-01 to 2018-12",
+        "test_period": "2019-07 to 2020-06",
+        "num_trades": 1042,
+        "num_long": 737,
+        "num_short": 305,
+        "profit_factor": 1.155,
+        "win_rate": 0.5048,
+        "total_pnl": 3175.0,
+        "mean_pnl": 3.05
+      }
+    ],
+    "aggregate": {
+      "total_trades": 2107,
+      "profit_factor": 1.024,
+      "win_rate": 0.4694,
+      "total_pnl": 941.8,
+      "bootstrap_pf_95ci": [
+        0.836,
+        1.253
+      ],
+      "folds_profitable": 1,
+      "total_folds": 2,
+      "binom_p": 0.997694,
+      "ttest_p": 0.40979
+    }
+  },
+  {
+    "config_label": "H48-T55",
+    "horizon": 48,
+    "threshold": 0.55,
+    "folds": [
+      {
+        "fold": 0,
+        "train_period": "2015-01 to 2017-12",
+        "test_period": "2018-07 to 2019-06",
+        "num_trades": 1004,
+        "num_long": 737,
+        "num_short": 267,
+        "profit_factor": 0.952,
+        "win_rate": 0.4402,
+        "total_pnl": -869.5,
+        "mean_pnl": -0.87
+      },
+      {
+        "fold": 1,
+        "train_period": "2016-01 to 2018-12",
+        "test_period": "2019-07 to 2020-06",
+        "num_trades": 957,
+        "num_long": 722,
+        "num_short": 235,
+        "profit_factor": 1.282,
+        "win_rate": 0.4901,
+        "total_pnl": 5972.5,
+        "mean_pnl": 6.24
+      }
+    ],
+    "aggregate": {
+      "total_trades": 1961,
+      "profit_factor": 1.13,
+      "win_rate": 0.4646,
+      "total_pnl": 5103.0,
+      "bootstrap_pf_95ci": [
+        0.913,
+        1.382
+      ],
+      "folds_profitable": 1,
+      "total_folds": 2,
+      "binom_p": 0.999218,
+      "ttest_p": 0.123937
+    }
+  },
+  {
+    "config_label": "H78-T52",
+    "horizon": 78,
+    "threshold": 0.52,
+    "folds": [
+      {
+        "fold": 0,
+        "train_period": "2015-01 to 2017-12",
+        "test_period": "2018-07 to 2019-06",
+        "num_trades": 1183,
+        "num_long": 657,
+        "num_short": 526,
+        "profit_factor": 0.833,
+        "win_rate": 0.4159,
+        "total_pnl": -4237.8,
+        "mean_pnl": -3.58
+      },
+      {
+        "fold": 1,
+        "train_period": "2016-01 to 2018-12",
+        "test_period": "2019-07 to 2020-06",
+        "num_trades": 1234,
+        "num_long": 696,
+        "num_short": 538,
+        "profit_factor": 1.089,
+        "win_rate": 0.4789,
+        "total_pnl": 2964.0,
+        "mean_pnl": 2.4
+      }
+    ],
+    "aggregate": {
+      "total_trades": 2417,
+      "profit_factor": 0.978,
+      "win_rate": 0.4481,
+      "total_pnl": -1273.8,
+      "bootstrap_pf_95ci": [
+        0.809,
+        1.176
+      ],
+      "folds_profitable": 1,
+      "total_folds": 2,
+      "binom_p": 1.0,
+      "ttest_p": 0.590789
+    }
+  }
+]
