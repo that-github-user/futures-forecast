@@ -1,16 +1,17 @@
 /**
  * Backtest page: displays walk-forward cross-validation results.
- * Summary comparison table + detailed per-config charts.
+ * Probabilistic evaluation (calibration, CRPS) + trading signal results.
  */
 
 import { useEffect, useState } from "react";
 import {
   BacktestResults,
-  type BacktestSummary,
+  type BacktestData,
+  type TradingSummary,
 } from "../charts/BacktestResults";
 
 export function BacktestPage() {
-  const [results, setResults] = useState<BacktestSummary[]>([]);
+  const [data, setData] = useState<BacktestData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,8 +21,13 @@ export function BacktestPage() {
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json();
       })
-      .then((data: BacktestSummary[]) => {
-        setResults(data);
+      .then((raw: BacktestData | TradingSummary[]) => {
+        // Support both new format {trading, probabilistic} and legacy array format
+        if (Array.isArray(raw)) {
+          setData({ trading: raw, probabilistic: null as never });
+        } else {
+          setData(raw);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -30,8 +36,7 @@ export function BacktestPage() {
       });
   }, []);
 
-  const totalFolds = results.length > 0 ? results[0].aggregate.total_folds : 0;
-  const yearsOOS = totalFolds; // each fold ~ 1 year
+  const totalFolds = data?.probabilistic?.total_folds || data?.trading?.[0]?.aggregate?.total_folds || 0;
 
   return (
     <div className="backtest-container">
@@ -44,7 +49,7 @@ export function BacktestPage() {
             marginBottom: 4,
           }}
         >
-          Walk-Forward Backtest
+          Walk-Forward Validation
         </h1>
         <p
           style={{
@@ -55,9 +60,10 @@ export function BacktestPage() {
             lineHeight: 1.6,
           }}
         >
-          Out-of-sample results across {totalFolds || 8} non-overlapping annual test periods
-          ({yearsOOS || "~8"} years OOS). Each fold trains from scratch on 3 years, validates on 6
-          months, tests on the next year. Fixed signal configs — no selection bias.
+          Probabilistic forecast evaluation across {totalFolds || 8} non-overlapping annual test
+          periods (~7.5 years OOS). Each fold trains from scratch on 3 years, validates on 6
+          months, tests on the next year. The model generates 30-sample ensemble trajectory
+          forecasts evaluated by calibration, CRPS skill, and signal-based trading performance.
         </p>
 
         {loading && (
@@ -87,75 +93,87 @@ export function BacktestPage() {
           </div>
         )}
 
-        {!loading && !error && results.length > 0 && (
+        {!loading && !error && data && (
           <>
-            {/* Summary comparison table */}
-            <div className="panel fade-in" style={{ marginBottom: 20, padding: 16 }}>
-              <div className="panel-header">
-                <span className="panel-title">Configuration Comparison</span>
-                <span style={{ fontSize: 10, color: "#64748b" }}>
-                  {totalFolds} folds | 0.50pt round-trip cost
-                </span>
+            {/* Trading summary table */}
+            {data.trading.length > 0 && (
+              <div className="panel fade-in" style={{ marginBottom: 20, padding: 16 }}>
+                <div className="panel-header">
+                  <span className="panel-title">Trading Signal Comparison</span>
+                  <span style={{ fontSize: 10, color: "#64748b" }}>
+                    {totalFolds} folds | 0.50pt round-trip cost | D'Alembert sizing
+                  </span>
+                </div>
+                <table className="summary-table">
+                  <thead>
+                    <tr>
+                      <th>Config</th>
+                      <th>Profit Factor</th>
+                      <th>95% CI</th>
+                      <th>Win Rate</th>
+                      <th>Trades</th>
+                      <th>Total PnL</th>
+                      <th>Folds &gt; 1.0</th>
+                      <th>p-value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.trading
+                      .sort((a, b) => b.aggregate.profit_factor - a.aggregate.profit_factor)
+                      .map((r) => {
+                        const a = r.aggregate;
+                        const pfClass =
+                          a.profit_factor >= 1.15
+                            ? "pf-good"
+                            : a.profit_factor >= 1.0
+                              ? "pf-ok"
+                              : "pf-bad";
+                        const sig =
+                          a.ttest_p < 0.01
+                            ? "**"
+                            : a.ttest_p < 0.05
+                              ? "*"
+                              : "";
+                        return (
+                          <tr key={r.config_label}>
+                            <td style={{ fontWeight: 600 }}>{r.config_label}</td>
+                            <td className={pfClass} style={{ fontWeight: 700, fontSize: 14 }}>
+                              {a.profit_factor.toFixed(2)}
+                            </td>
+                            <td style={{ color: "#94a3b8" }}>
+                              [{a.bootstrap_pf_95ci[0].toFixed(2)},{" "}
+                              {a.bootstrap_pf_95ci[1].toFixed(2)}]
+                            </td>
+                            <td>{(a.win_rate * 100).toFixed(1)}%</td>
+                            <td>{a.total_trades}</td>
+                            <td
+                              style={{
+                                color: a.total_pnl >= 0 ? "#10b981" : "#ef4444",
+                              }}
+                            >
+                              {a.total_pnl >= 0 ? "+" : ""}
+                              {a.total_pnl.toFixed(0)}
+                            </td>
+                            <td>
+                              {a.folds_profitable}/{a.total_folds}
+                            </td>
+                            <td
+                              style={{
+                                color: a.ttest_p < 0.05 ? "#10b981" : "#64748b",
+                              }}
+                            >
+                              {a.ttest_p.toFixed(4)} {sig}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
-              <table className="summary-table">
-                <thead>
-                  <tr>
-                    <th>Config</th>
-                    <th>Profit Factor</th>
-                    <th>95% CI</th>
-                    <th>Win Rate</th>
-                    <th>Trades</th>
-                    <th>Total PnL</th>
-                    <th>Folds &gt; 1.0</th>
-                    <th>p-value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results
-                    .sort((a, b) => b.aggregate.profit_factor - a.aggregate.profit_factor)
-                    .map((r) => {
-                      const a = r.aggregate;
-                      const pfClass =
-                        a.profit_factor >= 1.15
-                          ? "pf-good"
-                          : a.profit_factor >= 1.0
-                            ? "pf-ok"
-                            : "pf-bad";
-                      const sig =
-                        a.ttest_p < 0.01
-                          ? "**"
-                          : a.ttest_p < 0.05
-                            ? "*"
-                            : "";
-                      return (
-                        <tr key={r.config_label}>
-                          <td style={{ fontWeight: 600 }}>{r.config_label}</td>
-                          <td className={pfClass} style={{ fontWeight: 700, fontSize: 14 }}>
-                            {a.profit_factor.toFixed(2)}
-                          </td>
-                          <td style={{ color: "#94a3b8" }}>
-                            [{a.bootstrap_pf_95ci[0].toFixed(2)}, {a.bootstrap_pf_95ci[1].toFixed(2)}]
-                          </td>
-                          <td>{(a.win_rate * 100).toFixed(1)}%</td>
-                          <td>{a.total_trades}</td>
-                          <td style={{ color: a.total_pnl >= 0 ? "#10b981" : "#ef4444" }}>
-                            {a.total_pnl >= 0 ? "+" : ""}{a.total_pnl.toFixed(0)}
-                          </td>
-                          <td>
-                            {a.folds_profitable}/{a.total_folds}
-                          </td>
-                          <td style={{ color: a.ttest_p < 0.05 ? "#10b981" : "#64748b" }}>
-                            {a.ttest_p.toFixed(4)} {sig}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
+            )}
 
-            {/* Detailed per-config results */}
-            <BacktestResults results={results} />
+            {/* Main results */}
+            <BacktestResults data={data} />
           </>
         )}
       </div>
