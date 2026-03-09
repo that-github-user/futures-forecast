@@ -1,5 +1,7 @@
 /**
- * Signal panel: LONG/SHORT/FLAT with confidence bar + composite score.
+ * Forecast summary panel: shows distribution statistics from the ensemble.
+ * Replaces the trading signal (LONG/SHORT) with probabilistic framing —
+ * the model produces calibrated spreads, not directional signals.
  */
 
 import type { SignalResponse } from "../../api/types";
@@ -10,34 +12,55 @@ interface Props {
 }
 
 export function SignalPanel({ signal, lastClose }: Props) {
-  const { direction, composite_score, confidence, expected_return, p10_return, p90_return, long_frac, ensemble_sharpe } = signal;
+  const {
+    expected_return,
+    p10_return,
+    p90_return,
+    long_frac,
+    ensemble_sharpe,
+    confidence,
+  } = signal;
+
+  // Derive bias from expected return direction
+  const bias =
+    expected_return > 0.0001
+      ? "BULLISH"
+      : expected_return < -0.0001
+        ? "BEARISH"
+        : "NEUTRAL";
 
   const color =
-    direction === "LONG"
+    bias === "BULLISH"
       ? "#10b981"
-      : direction === "SHORT"
+      : bias === "BEARISH"
         ? "#ef4444"
         : "#3b82f6";
 
   const bgGlow =
-    direction === "LONG"
-      ? "rgba(16, 185, 129, 0.08)"
-      : direction === "SHORT"
-        ? "rgba(239, 68, 68, 0.08)"
-        : "rgba(59, 130, 246, 0.05)";
+    bias === "BULLISH"
+      ? "rgba(16, 185, 129, 0.06)"
+      : bias === "BEARISH"
+        ? "rgba(239, 68, 68, 0.06)"
+        : "rgba(59, 130, 246, 0.04)";
+
+  // Convert returns to points
+  const medianPts = expected_return * lastClose;
+  const p10Pts = p10_return * lastClose;
+  const p90Pts = p90_return * lastClose;
+  const spreadPts = p90Pts - p10Pts;
 
   return (
     <div
       className="panel"
       style={{
         background: bgGlow,
-        borderColor: color,
+        borderColor: color + "40",
         borderWidth: 1,
         borderStyle: "solid",
       }}
     >
       <div className="panel-header">
-        <span className="panel-title">Signal</span>
+        <span className="panel-title">Forecast Summary</span>
         <span
           style={{
             fontFamily: "JetBrains Mono, monospace",
@@ -49,23 +72,26 @@ export function SignalPanel({ signal, lastClose }: Props) {
         </span>
       </div>
 
-      {/* Direction badge */}
-      <div style={{ textAlign: "center", margin: "12px 0 8px" }}>
+      {/* Median bias badge */}
+      <div style={{ textAlign: "center", margin: "10px 0 6px" }}>
         <span
           style={{
-            fontSize: 28,
+            fontSize: 22,
             fontWeight: 700,
             color,
             fontFamily: "Inter, sans-serif",
             letterSpacing: 2,
           }}
         >
-          {direction}
+          {bias}
         </span>
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
+          median ensemble bias
+        </div>
       </div>
 
-      {/* Confidence bar */}
-      <div style={{ margin: "0 0 12px" }}>
+      {/* Spread visualization — P10 to P90 bar */}
+      <div style={{ margin: "8px 0 12px", padding: "0 4px" }}>
         <div
           style={{
             display: "flex",
@@ -75,28 +101,57 @@ export function SignalPanel({ signal, lastClose }: Props) {
             marginBottom: 4,
           }}
         >
-          <span>Confidence</span>
+          <span>P10-P90 Spread</span>
           <span style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            {(confidence * 100).toFixed(1)}%
+            {spreadPts.toFixed(1)} pts
           </span>
         </div>
         <div
           style={{
-            height: 6,
+            height: 8,
             background: "#1e293b",
-            borderRadius: 3,
+            borderRadius: 4,
             overflow: "hidden",
+            position: "relative",
           }}
         >
+          {/* P10-P90 range bar */}
           <div
             style={{
-              width: `${Math.min(confidence * 100, 100)}%`,
-              height: "100%",
-              background: color,
-              borderRadius: 3,
-              transition: "width 0.5s ease",
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              background: `linear-gradient(90deg, #ef444460, ${color}40, #10b98160)`,
+              borderRadius: 4,
             }}
           />
+          {/* Median marker */}
+          <div
+            style={{
+              position: "absolute",
+              left: `${Math.max(5, Math.min(95, long_frac * 100))}%`,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              background: color,
+              borderRadius: 1,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 9,
+            color: "#64748b",
+            marginTop: 2,
+          }}
+        >
+          <span>{p10Pts >= 0 ? "+" : ""}{p10Pts.toFixed(1)}</span>
+          <span>median</span>
+          <span>{p90Pts >= 0 ? "+" : ""}{p90Pts.toFixed(1)}</span>
         </div>
       </div>
 
@@ -107,25 +162,35 @@ export function SignalPanel({ signal, lastClose }: Props) {
           gridTemplateColumns: "1fr 1fr",
           gap: "8px 16px",
           fontSize: 11,
+          borderTop: "1px solid #1e293b",
+          paddingTop: 10,
         }}
       >
-        <StatItem label="Composite" value={composite_score.toFixed(3)} color={color} />
-        <StatItem label="Sharpe" value={ensemble_sharpe.toFixed(2)} />
         <StatItem
-          label="E[Return]"
-          value={`${(expected_return * 100).toFixed(3)}%`}
-          color={expected_return > 0 ? "#10b981" : "#ef4444"}
+          label="Median Move"
+          value={`${medianPts >= 0 ? "+" : ""}${medianPts.toFixed(1)} pts`}
+          color={medianPts > 0 ? "#10b981" : medianPts < 0 ? "#ef4444" : "#94a3b8"}
         />
-        <StatItem label="Long Frac" value={`${(long_frac * 100).toFixed(0)}%`} />
         <StatItem
-          label="P10 (down)"
-          value={`${(p10_return * 100).toFixed(3)}%`}
+          label="Upside Frac"
+          value={`${(long_frac * 100).toFixed(0)}%`}
+          color={long_frac > 0.55 ? "#10b981" : long_frac < 0.45 ? "#ef4444" : "#94a3b8"}
+        />
+        <StatItem
+          label="Downside Risk (P10)"
+          value={`${p10Pts >= 0 ? "+" : ""}${p10Pts.toFixed(1)} pts`}
           color="#ef4444"
         />
         <StatItem
-          label="P90 (up)"
-          value={`${(p90_return * 100).toFixed(3)}%`}
+          label="Upside (P90)"
+          value={`${p90Pts >= 0 ? "+" : ""}${p90Pts.toFixed(1)} pts`}
           color="#10b981"
+        />
+        <StatItem label="Ensemble Sharpe" value={ensemble_sharpe.toFixed(2)} />
+        <StatItem
+          label="Conviction"
+          value={`${(confidence * 100).toFixed(0)}%`}
+          color={confidence > 0.6 ? "#10b981" : "#94a3b8"}
         />
       </div>
     </div>

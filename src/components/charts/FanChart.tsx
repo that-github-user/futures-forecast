@@ -94,9 +94,27 @@ export function FanChart({ prediction }: Props) {
     backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#1e293b",
+      backgroundColor: "#1e293be8",
       borderColor: "#334155",
       textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      axisPointer: {
+        type: "cross",
+        crossStyle: { color: "#94a3b8", width: 1, type: "dashed" },
+        lineStyle: { color: "#94a3b8", width: 1, type: "dashed" },
+        label: {
+          backgroundColor: "#1e293b",
+          borderColor: "#334155",
+          color: "#e2e8f0",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 10,
+          formatter: (params: { axisDimension: string; value: string | number }) => {
+            if (params.axisDimension === "y") {
+              return Number(params.value).toFixed(2);
+            }
+            return String(params.value);
+          },
+        },
+      },
       formatter: (params: unknown) => {
         const items = params as { seriesName: string; value: number | null; axisValue: string }[];
         if (!items?.length) return "";
@@ -113,15 +131,19 @@ export function FanChart({ prediction }: Props) {
           const hi = forecastTimes.indexOf(forecastIdx);
           if (hi >= 0) {
             const p10 = percentiles.p10[hi];
-            const p90 = percentiles.p90[hi];
+            const p25 = percentiles.p25[hi];
             const p50 = percentiles.p50[hi];
+            const p75 = percentiles.p75[hi];
+            const p90 = percentiles.p90[hi];
             const delta = ((p50 - last_close) / last_close * 100).toFixed(2);
             return [
               `<b>${time}</b> (+${formatHorizon(horizons[hi])})`,
-              `P90: ${p90.toFixed(2)}`,
-              `<b>P50: ${p50.toFixed(2)}</b> (${delta}%)`,
-              `P10: ${p10.toFixed(2)}`,
-              `Spread: ${(p90 - p10).toFixed(2)} pts`,
+              `<span style="color:#64748b">P90:</span> ${p90.toFixed(2)}`,
+              `<span style="color:#94a3b8">P75:</span> ${p75.toFixed(2)}`,
+              `<b>P50: ${p50.toFixed(2)}</b> <span style="color:#64748b">(${delta}%)</span>`,
+              `<span style="color:#94a3b8">P25:</span> ${p25.toFixed(2)}`,
+              `<span style="color:#64748b">P10:</span> ${p10.toFixed(2)}`,
+              `<span style="color:#475569">Spread: ${(p90 - p10).toFixed(1)} pts</span>`,
             ].join("<br/>");
           }
         }
@@ -156,6 +178,19 @@ export function FanChart({ prediction }: Props) {
         formatter: (v: number) => v.toFixed(1),
       },
       splitLine: { lineStyle: { color: "#1e293b" } },
+      axisPointer: {
+        show: true,
+        snap: false,
+        label: {
+          show: true,
+          formatter: (params: { value: number }) => params.value.toFixed(2),
+          backgroundColor: "#1e293b",
+          borderColor: "#334155",
+          color: "#e2e8f0",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 11,
+        },
+      },
     },
     series: [
       // Context close prices
