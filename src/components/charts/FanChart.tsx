@@ -31,14 +31,16 @@ echarts.use([
 ]);
 
 export type ChartType = "line" | "candlestick" | "ohlc";
+export type ForecastStyle = "bands" | "spaghetti";
 
 interface Props {
   prediction: PredictionResponse;
   chartType?: ChartType;
+  forecastStyle?: ForecastStyle;
 }
 
-export function FanChart({ prediction, chartType = "line" }: Props) {
-  const { percentiles, horizons, last_close, signal, context_candles } =
+export function FanChart({ prediction, chartType = "line", forecastStyle = "bands" }: Props) {
+  const { percentiles, horizons, last_close, signal, context_candles, sample_paths } =
     prediction;
 
   const isLong = signal.direction === "LONG";
@@ -314,67 +316,92 @@ export function FanChart({ prediction, chartType = "line" }: Props) {
         symbol: "none",
         z: 10,
       },
-      // P10 (lower bound for outer band)
-      {
-        name: "P10",
-        type: "line",
-        data: makeForcastSeries("p10"),
-        lineStyle: { width: 0 },
-        symbol: "none",
-        stack: "outer",
-        areaStyle: { color: "transparent" },
-        z: 1,
-      },
-      // P90 - P10 fill (outer band)
-      {
-        name: "P90",
-        type: "line",
-        data: makeForcastSeries("p90").map((v, i) => {
-          const p10 = makeForcastSeries("p10")[i];
-          if (v === null || p10 === null) return null;
-          return v - p10;
-        }),
-        lineStyle: { width: 0 },
-        symbol: "none",
-        stack: "outer",
-        areaStyle: { color: bandColor + "0.12)" },
-        z: 1,
-      },
-      // P25 (lower bound for inner band)
-      {
-        name: "P25",
-        type: "line",
-        data: makeForcastSeries("p25"),
-        lineStyle: { width: 0 },
-        symbol: "none",
-        stack: "inner",
-        areaStyle: { color: "transparent" },
-        z: 2,
-      },
-      // P75 - P25 fill (inner band)
-      {
-        name: "P75",
-        type: "line",
-        data: makeForcastSeries("p75").map((v, i) => {
-          const p25 = makeForcastSeries("p25")[i];
-          if (v === null || p25 === null) return null;
-          return v - p25;
-        }),
-        lineStyle: { width: 0 },
-        symbol: "none",
-        stack: "inner",
-        areaStyle: { color: bandColor + "0.25)" },
-        z: 2,
-      },
-      // P50 median line (bold)
-      {
-        name: "Median",
-        type: "line",
-        data: makeForcastSeries("p50"),
-        lineStyle: { color: medianColor, width: 2.5 },
-        symbol: "none",
-        z: 5,
-      },
+      // Forecast visualization — bands or spaghetti
+      ...(forecastStyle === "spaghetti" && sample_paths?.length
+        ? [
+            // Individual sample trajectories
+            ...(sample_paths).map((path, si) => ({
+              name: si === 0 ? "Sample" : "",
+              type: "line" as const,
+              data: [...ctxPad, ...path],
+              lineStyle: { color: bandColor + "0.25)", width: 1 },
+              symbol: "none" as const,
+              z: 1,
+              silent: true,
+            })),
+            // P50 median line on top of spaghetti
+            {
+              name: "Median",
+              type: "line" as const,
+              data: makeForcastSeries("p50"),
+              lineStyle: { color: medianColor, width: 2.5 },
+              symbol: "none" as const,
+              z: 5,
+            },
+          ]
+        : [
+            // P10 (lower bound for outer band)
+            {
+              name: "P10",
+              type: "line" as const,
+              data: makeForcastSeries("p10"),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "outer",
+              areaStyle: { color: "transparent" },
+              z: 1,
+            },
+            // P90 - P10 fill (outer band)
+            {
+              name: "P90",
+              type: "line" as const,
+              data: makeForcastSeries("p90").map((v, i) => {
+                const p10 = makeForcastSeries("p10")[i];
+                if (v === null || p10 === null) return null;
+                return v - p10;
+              }),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "outer",
+              areaStyle: { color: bandColor + "0.12)" },
+              z: 1,
+            },
+            // P25 (lower bound for inner band)
+            {
+              name: "P25",
+              type: "line" as const,
+              data: makeForcastSeries("p25"),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "inner",
+              areaStyle: { color: "transparent" },
+              z: 2,
+            },
+            // P75 - P25 fill (inner band)
+            {
+              name: "P75",
+              type: "line" as const,
+              data: makeForcastSeries("p75").map((v, i) => {
+                const p25 = makeForcastSeries("p25")[i];
+                if (v === null || p25 === null) return null;
+                return v - p25;
+              }),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "inner",
+              areaStyle: { color: bandColor + "0.25)" },
+              z: 2,
+            },
+            // P50 median line (bold)
+            {
+              name: "Median",
+              type: "line" as const,
+              data: makeForcastSeries("p50"),
+              lineStyle: { color: medianColor, width: 2.5 },
+              symbol: "none" as const,
+              z: 5,
+            },
+          ]),
       // Vertical "now" line
       {
         name: "Now",

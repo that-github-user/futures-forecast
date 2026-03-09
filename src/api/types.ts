@@ -32,6 +32,7 @@ export interface PredictionResponse {
     p75: number[];
     p90: number[];
   };
+  sample_paths: number[][] | null;
   signal: SignalResponse;
   context_candles: CandleData[] | null;
 }

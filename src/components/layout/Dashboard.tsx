@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { HistoryEntry } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
-import { FanChart, type ChartType } from "../charts/FanChart";
+import { FanChart, type ChartType, type ForecastStyle } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
 import { SignalPanel } from "../indicators/SignalPanel";
@@ -17,6 +17,7 @@ import { Header } from "./Header";
 export function Dashboard() {
   const { prediction, connected, demoMode, error } = usePrediction();
   const [chartType, setChartType] = useState<ChartType>("candlestick");
+  const [forecastStyle, setForecastStyle] = useState<ForecastStyle>("bands");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [liveStats, setLiveStats] = useState<{
     pf: number | null;
@@ -109,6 +110,7 @@ export function Dashboard() {
             <span className="panel-title">Ensemble Forecast</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <ChartTypeToggle value={chartType} onChange={setChartType} />
+              <ForecastStyleToggle value={forecastStyle} onChange={setForecastStyle} />
               <span
                 style={{
                   fontFamily: "JetBrains Mono, monospace",
@@ -121,7 +123,7 @@ export function Dashboard() {
             </div>
           </div>
           <div style={{ height: "calc(100% - 28px)" }}>
-            <FanChart prediction={prediction} chartType={chartType} />
+            <FanChart prediction={prediction} chartType={chartType} forecastStyle={forecastStyle} />
           </div>
         </div>
 
@@ -186,6 +188,51 @@ function ChartTypeToggle({
       }}
     >
       {chartTypeOptions.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          title={opt.label}
+          style={{
+            background: value === opt.value ? "#1e293b" : "transparent",
+            color: value === opt.value ? "#e2e8f0" : "#475569",
+            border: "none",
+            padding: "2px 8px",
+            fontSize: 11,
+            fontFamily: "JetBrains Mono, monospace",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {opt.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const forecastStyleOptions: { value: ForecastStyle; label: string; icon: string }[] = [
+  { value: "bands", label: "Percentile Bands", icon: "▒" },
+  { value: "spaghetti", label: "Ensemble Paths", icon: "≋" },
+];
+
+function ForecastStyleToggle({
+  value,
+  onChange,
+}: {
+  value: ForecastStyle;
+  onChange: (s: ForecastStyle) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        background: "#0f172a",
+        borderRadius: 4,
+        border: "1px solid #1e293b",
+        overflow: "hidden",
+      }}
+    >
+      {forecastStyleOptions.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}

@@ -79,6 +79,20 @@ export function generateMockPrediction(): PredictionResponse {
     percentiles.p90.push(round(mid + spread * 1.3));
   }
 
+  // Generate sample paths (30 trajectories)
+  const samplePaths: number[][] = [];
+  for (let s = 0; s < 30; s++) {
+    const path: number[] = [];
+    let p = lastClose;
+    for (let hi = 0; hi < horizons.length; hi++) {
+      const spread = Math.sqrt(horizons[hi]) * 2.5;
+      const step = (rand() - 0.5) * spread * 0.8 + drift * horizons[hi] * 0.3;
+      p = lastClose + step;
+      path.push(round(p));
+    }
+    samplePaths.push(path);
+  }
+
   const expectedReturn = drift * 0.001;
   const isLong = drift > 0.02;
   const isShort = drift < -0.05;
@@ -94,6 +108,7 @@ export function generateMockPrediction(): PredictionResponse {
     last_close: lastClose,
     horizons,
     percentiles,
+    sample_paths: samplePaths,
     signal: {
       composite_score: +compositeScore.toFixed(4),
       direction: isLong ? "LONG" : isShort ? "SHORT" : "FLAT",
