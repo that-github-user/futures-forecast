@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { HistoryEntry } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
-import { FanChart } from "../charts/FanChart";
+import { FanChart, type ChartType } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
 import { SignalPanel } from "../indicators/SignalPanel";
@@ -16,6 +16,7 @@ import { Header } from "./Header";
 
 export function Dashboard() {
   const { prediction, connected, demoMode, error } = usePrediction();
+  const [chartType, setChartType] = useState<ChartType>("candlestick");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [liveStats, setLiveStats] = useState<{
     pf: number | null;
@@ -106,18 +107,21 @@ export function Dashboard() {
         >
           <div className="panel-header">
             <span className="panel-title">Ensemble Forecast</span>
-            <span
-              style={{
-                fontFamily: "JetBrains Mono, monospace",
-                fontSize: 12,
-                color: "#94a3b8",
-              }}
-            >
-              {prediction.last_close.toFixed(2)}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ChartTypeToggle value={chartType} onChange={setChartType} />
+              <span
+                style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 12,
+                  color: "#94a3b8",
+                }}
+              >
+                {prediction.last_close.toFixed(2)}
+              </span>
+            </div>
           </div>
           <div style={{ height: "calc(100% - 28px)" }}>
-            <FanChart prediction={prediction} />
+            <FanChart prediction={prediction} chartType={chartType} />
           </div>
         </div>
 
@@ -154,6 +158,52 @@ export function Dashboard() {
           <EquityCurve history={history} />
         </div>
       </div>
+    </div>
+  );
+}
+
+const chartTypeOptions: { value: ChartType; label: string; icon: string }[] = [
+  { value: "line", label: "Line", icon: "━" },
+  { value: "candlestick", label: "Candles", icon: "┃" },
+  { value: "ohlc", label: "OHLC", icon: "├" },
+];
+
+function ChartTypeToggle({
+  value,
+  onChange,
+}: {
+  value: ChartType;
+  onChange: (t: ChartType) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        background: "#0f172a",
+        borderRadius: 4,
+        border: "1px solid #1e293b",
+        overflow: "hidden",
+      }}
+    >
+      {chartTypeOptions.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          title={opt.label}
+          style={{
+            background: value === opt.value ? "#1e293b" : "transparent",
+            color: value === opt.value ? "#e2e8f0" : "#475569",
+            border: "none",
+            padding: "2px 8px",
+            fontSize: 11,
+            fontFamily: "JetBrains Mono, monospace",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {opt.icon}
+        </button>
+      ))}
     </div>
   );
 }

@@ -8,7 +8,7 @@
 
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
-import { LineChart } from "echarts/charts";
+import { LineChart, CandlestickChart, CustomChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -21,6 +21,8 @@ import type { PredictionResponse } from "../../api/types";
 
 echarts.use([
   LineChart,
+  CandlestickChart,
+  CustomChart,
   GridComponent,
   TooltipComponent,
   MarkLineComponent,
@@ -28,11 +30,14 @@ echarts.use([
   CanvasRenderer,
 ]);
 
+export type ChartType = "line" | "candlestick" | "ohlc";
+
 interface Props {
   prediction: PredictionResponse;
+  chartType?: ChartType;
 }
 
-export function FanChart({ prediction }: Props) {
+export function FanChart({ prediction, chartType = "line" }: Props) {
   const { percentiles, horizons, last_close, signal, context_candles } =
     prediction;
 
@@ -74,10 +79,11 @@ export function FanChart({ prediction }: Props) {
   const allTimes = [...contextTimes, ...forecastTimes];
   const ctxLen = contextTimes.length;
 
-  // Context close prices
-  const contextCloses: (number | null)[] = (context_candles ?? []).map(
-    (c) => c.close,
-  );
+  // Context price data (all OHLC for candlestick/ohlc modes)
+  const candles = context_candles ?? [];
+  const contextCloses: (number | null)[] = candles.map((c) => c.close);
+  // Candlestick data: [open, close, low, high]
+  const contextOHLC = candles.map((c) => [c.open, c.close, c.low, c.high]);
   // Pad context for forecast-only series
   const ctxPad: null[] = new Array(ctxLen).fill(null);
 
@@ -122,8 +128,24 @@ export function FanChart({ prediction }: Props) {
         const price = items.find(i => i.seriesName === "Price" && i.value !== null);
         const median = items.find(i => i.seriesName === "Median" && i.value !== null);
 
-        if (price?.value) {
-          return `<b>${time}</b><br/>Price: ${price.value.toFixed(2)}`;
+        if (price?.value != null) {
+          // For candlestick/ohlc, look up full OHLC from context
+          const ctxIdx = contextTimes.indexOf(time);
+          if (ctxIdx >= 0 && ctxIdx < candles.length && chartType !== "line") {
+            const c = candles[ctxIdx];
+            const chg = c.close - c.open;
+            const chgPct = ((chg / c.open) * 100).toFixed(2);
+            const chgColor = chg >= 0 ? "#10b981" : "#ef4444";
+            return [
+              `<b>${time}</b>`,
+              `O: ${c.open.toFixed(2)}`,
+              `H: ${c.high.toFixed(2)}`,
+              `L: ${c.low.toFixed(2)}`,
+              `C: ${c.close.toFixed(2)}`,
+              `<span style="color:${chgColor}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chgPct}%)</span>`,
+            ].join("<br/>");
+          }
+          return `<b>${time}</b><br/>Price: ${(typeof price.value === "number" ? price.value : 0).toFixed(2)}`;
         }
         if (median?.value) {
           // Find p10/p90 from the raw percentiles based on forecast index
@@ -193,15 +215,91 @@ export function FanChart({ prediction }: Props) {
       },
     },
     series: [
-      // Context close prices
-      {
-        name: "Price",
-        type: "line",
-        data: [...contextCloses, ...new Array(horizons.length).fill(null)],
-        lineStyle: { color: "#e2e8f0", width: 1.5 },
-        symbol: "none",
-        z: 10,
-      },
+      // Context price data — varies by chart type
+      ...(chartType === "candlestick"
+        ? [
+            {
+              name: "Price",
+              type: "candlestick" as const,
+              data: [
+                ...contextOHLC,
+                ...new Array(horizons.length).fill([]),
+              ],
+              itemStyle: {
+                color: "#10b981",
+                color0: "#ef4444",
+                borderColor: "#10b981",
+                borderColor0: "#ef4444",
+              },
+              barWidth: "60%",
+              z: 10,
+            },
+          ]
+        : chartType === "ohlc"
+          ? [
+              {
+                name: "Price",
+                type: "custom" as const,
+                data: [
+                  ...candles.map((c) => [c.open, c.high, c.low, c.close]),
+                  ...new Array(horizons.length).fill([]),
+                ],
+                renderItem: (
+                  params: { dataIndex: number; coordSys: { x: number; width: number } },
+                  api: {
+                    value: (i: number) => number;
+                    coord: (v: [number, number]) => [number, number];
+                    style: (opts: Record<string, unknown>) => Record<string, unknown>;
+                  },
+                ) => {
+                  const idx = params.dataIndex;
+                  if (idx >= ctxLen) return;
+                  const open = api.value(0);
+                  const high = api.value(1);
+                  const low = api.value(2);
+                  const close = api.value(3);
+                  const bullish = close >= open;
+                  const color = bullish ? "#10b981" : "#ef4444";
+                  const highPt = api.coord([idx, high]);
+                  const lowPt = api.coord([idx, low]);
+                  const openPt = api.coord([idx, open]);
+                  const closePt = api.coord([idx, close]);
+                  const tickW = 4;
+                  return {
+                    type: "group" as const,
+                    children: [
+                      {
+                        type: "line" as const,
+                        shape: { x1: highPt[0], y1: highPt[1], x2: lowPt[0], y2: lowPt[1] },
+                        style: { stroke: color, lineWidth: 1 },
+                      },
+                      {
+                        type: "line" as const,
+                        shape: { x1: openPt[0] - tickW, y1: openPt[1], x2: openPt[0], y2: openPt[1] },
+                        style: { stroke: color, lineWidth: 1.5 },
+                      },
+                      {
+                        type: "line" as const,
+                        shape: { x1: closePt[0], y1: closePt[1], x2: closePt[0] + tickW, y2: closePt[1] },
+                        style: { stroke: color, lineWidth: 1.5 },
+                      },
+                    ],
+                  };
+                },
+                encode: { x: -1, y: [0, 1, 2, 3] },
+                z: 10,
+              },
+            ]
+          : [
+              {
+                name: "Price",
+                type: "line" as const,
+                data: [...contextCloses, ...new Array(horizons.length).fill(null)],
+                lineStyle: { color: "#e2e8f0", width: 1.5 },
+                symbol: "none",
+                z: 10,
+              },
+            ]),
       // Last close → first forecast connection
       {
         name: "Bridge",
