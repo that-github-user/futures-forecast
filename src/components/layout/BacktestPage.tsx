@@ -1,6 +1,6 @@
 /**
  * Backtest page: displays walk-forward cross-validation results.
- * Probabilistic evaluation (calibration, CRPS) + trading signal results.
+ * Probabilistic forecast evaluation — calibration, CRPS skill, sharpness.
  */
 
 import { useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import {
   type BacktestData,
   type TradingSummary,
 } from "../charts/BacktestResults";
+import { formatHorizon } from "../../api/format";
 
 export function BacktestPage() {
   const [data, setData] = useState<BacktestData | null>(null);
@@ -22,7 +23,6 @@ export function BacktestPage() {
         return res.json();
       })
       .then((raw: BacktestData | TradingSummary[]) => {
-        // Support both new format {trading, probabilistic} and legacy array format
         if (Array.isArray(raw)) {
           setData({ trading: raw, probabilistic: null as never });
         } else {
@@ -36,7 +36,12 @@ export function BacktestPage() {
       });
   }, []);
 
-  const totalFolds = data?.probabilistic?.total_folds || data?.trading?.[0]?.aggregate?.total_folds || 0;
+  const totalFolds =
+    data?.probabilistic?.total_folds ||
+    data?.trading?.[0]?.aggregate?.total_folds ||
+    0;
+
+  const prob = data?.probabilistic;
 
   return (
     <div className="backtest-container">
@@ -60,14 +65,17 @@ export function BacktestPage() {
             lineHeight: 1.6,
           }}
         >
-          Probabilistic forecast evaluation across {totalFolds || 8} non-overlapping annual test
-          periods (~7.5 years OOS). Each fold trains from scratch on 3 years, validates on 6
-          months, tests on the next year. The model generates 30-sample ensemble trajectory
-          forecasts evaluated by calibration, CRPS skill, and signal-based trading performance.
+          Probabilistic forecast evaluation across {totalFolds || 8}{" "}
+          non-overlapping annual test periods (~7.5 years OOS). Each fold trains
+          from scratch on 3 years, validates on 6 months, tests on the next
+          year. The model generates 30-sample ensemble trajectory forecasts
+          evaluated by distribution calibration and CRPS skill score.
         </p>
 
         {loading && (
-          <div style={{ textAlign: "center", padding: 48, color: "#64748b" }}>
+          <div
+            style={{ textAlign: "center", padding: 48, color: "#64748b" }}
+          >
             <div
               style={{
                 width: 24,
@@ -95,84 +103,131 @@ export function BacktestPage() {
 
         {!loading && !error && data && (
           <>
-            {/* Trading summary table */}
-            {data.trading.length > 0 && (
-              <div className="panel fade-in" style={{ marginBottom: 20, padding: 16 }}>
+            {/* Forecast quality by horizon table */}
+            {prob && (
+              <div
+                className="panel fade-in"
+                style={{ marginBottom: 20, padding: 16 }}
+              >
                 <div className="panel-header">
-                  <span className="panel-title">Trading Signal Comparison</span>
+                  <span className="panel-title">
+                    Forecast Quality by Horizon
+                  </span>
                   <span style={{ fontSize: 10, color: "#64748b" }}>
-                    {totalFolds} folds | 0.50pt round-trip cost | D'Alembert sizing
+                    {prob.total_windows.toLocaleString()} windows |{" "}
+                    {prob.total_folds} folds | vs random walk baseline
                   </span>
                 </div>
                 <table className="summary-table">
                   <thead>
                     <tr>
-                      <th>Config</th>
-                      <th>Profit Factor</th>
-                      <th>95% CI</th>
-                      <th>Win Rate</th>
-                      <th>Trades</th>
-                      <th>Total PnL</th>
-                      <th>Folds &gt; 1.0</th>
-                      <th>p-value</th>
+                      <th>Horizon</th>
+                      <th>CRPS Skill</th>
+                      <th>P10-P90 Coverage</th>
+                      <th>P10-P90 Width</th>
+                      <th>P25-P75 Coverage</th>
+                      <th>P25-P75 Width</th>
+                      {prob.calibration?.["P10-P90"]?.by_horizon?.[
+                        String(prob.horizons[0])
+                      ] &&
+                        "coverage_recal" in
+                          (prob.calibration["P10-P90"].by_horizon[
+                            String(prob.horizons[0])
+                          ] as Record<string, unknown>) && (
+                          <th>Recalibrated</th>
+                        )}
                     </tr>
                   </thead>
                   <tbody>
-                    {data.trading
-                      .sort((a, b) => b.aggregate.profit_factor - a.aggregate.profit_factor)
-                      .map((r) => {
-                        const a = r.aggregate;
-                        const pfClass =
-                          a.profit_factor >= 1.15
-                            ? "pf-good"
-                            : a.profit_factor >= 1.0
-                              ? "pf-ok"
-                              : "pf-bad";
-                        const sig =
-                          a.ttest_p < 0.01
-                            ? "**"
-                            : a.ttest_p < 0.05
-                              ? "*"
-                              : "";
-                        return (
-                          <tr key={r.config_label}>
-                            <td style={{ fontWeight: 600 }}>{r.config_label}</td>
-                            <td className={pfClass} style={{ fontWeight: 700, fontSize: 14 }}>
-                              {a.profit_factor.toFixed(2)}
-                            </td>
-                            <td style={{ color: "#94a3b8" }}>
-                              [{a.bootstrap_pf_95ci[0].toFixed(2)},{" "}
-                              {a.bootstrap_pf_95ci[1].toFixed(2)}]
-                            </td>
-                            <td>{(a.win_rate * 100).toFixed(1)}%</td>
-                            <td>{a.total_trades}</td>
-                            <td
+                    {prob.horizons.map((h) => {
+                      const hk = String(h);
+                      const skill = prob.crps_skill[hk] || 0;
+                      const p1090 =
+                        prob.calibration?.["P10-P90"]?.by_horizon?.[hk];
+                      const p2575 =
+                        prob.calibration?.["P25-P75"]?.by_horizon?.[hk];
+                      const p1090Any = p1090 as
+                        | Record<string, number>
+                        | undefined;
+                      const hasRecal =
+                        p1090Any && "coverage_recal" in p1090Any;
+                      const cov1090 = (p1090?.coverage || 0) * 100;
+                      const cov2575 = (p2575?.coverage || 0) * 100;
+                      const covRecal = hasRecal
+                        ? (p1090Any.coverage_recal || 0) * 100
+                        : null;
+
+                      const covClass = (
+                        actual: number,
+                        target: number,
+                      ) =>
+                        Math.abs(actual - target) < 5
+                          ? "pf-good"
+                          : actual < target
+                            ? "pf-bad"
+                            : "pf-ok";
+
+                      return (
+                        <tr key={h}>
+                          <td style={{ fontWeight: 600 }}>
+                            {formatHorizon(h)}
+                          </td>
+                          <td
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 14,
+                              color: "#3b82f6",
+                            }}
+                          >
+                            +{(skill * 100).toFixed(1)}%
+                          </td>
+                          <td className={covClass(cov1090, 80)}>
+                            {cov1090.toFixed(1)}%
+                            <span
                               style={{
-                                color: a.total_pnl >= 0 ? "#10b981" : "#ef4444",
+                                color: "#64748b",
+                                fontSize: 10,
+                                marginLeft: 4,
                               }}
                             >
-                              {a.total_pnl >= 0 ? "+" : ""}
-                              {a.total_pnl.toFixed(0)}
-                            </td>
-                            <td>
-                              {a.folds_profitable}/{a.total_folds}
-                            </td>
-                            <td
+                              /80%
+                            </span>
+                          </td>
+                          <td style={{ color: "#94a3b8" }}>
+                            {(p1090?.width_pts || 0).toFixed(1)} pts
+                          </td>
+                          <td className={covClass(cov2575, 50)}>
+                            {cov2575.toFixed(1)}%
+                            <span
                               style={{
-                                color: a.ttest_p < 0.05 ? "#10b981" : "#64748b",
+                                color: "#64748b",
+                                fontSize: 10,
+                                marginLeft: 4,
                               }}
                             >
-                              {a.ttest_p.toFixed(4)} {sig}
+                              /50%
+                            </span>
+                          </td>
+                          <td style={{ color: "#94a3b8" }}>
+                            {(p2575?.width_pts || 0).toFixed(1)} pts
+                          </td>
+                          {hasRecal && (
+                            <td
+                              className={covClass(covRecal!, 80)}
+                              style={{ fontWeight: 600 }}
+                            >
+                              {covRecal!.toFixed(1)}%
                             </td>
-                          </tr>
-                        );
-                      })}
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
 
-            {/* Main results */}
+            {/* Charts + detailed results */}
             <BacktestResults data={data} />
           </>
         )}
