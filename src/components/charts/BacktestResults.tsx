@@ -213,14 +213,19 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
 
   const calData = horizons.map((h) => {
     const hk = String(h);
+    const p1090h = p1090?.by_horizon[hk];
+    const p2575h = p2575?.by_horizon[hk];
     return {
       horizon: h,
-      p1090_cov: (p1090?.by_horizon[hk]?.coverage || 0) * 100,
-      p1090_width: p1090?.by_horizon[hk]?.width_pts || 0,
-      p2575_cov: (p2575?.by_horizon[hk]?.coverage || 0) * 100,
-      p2575_width: p2575?.by_horizon[hk]?.width_pts || 0,
+      p1090_cov: (p1090h?.coverage || 0) * 100,
+      p1090_width: p1090h?.width_pts || 0,
+      p1090_cov_recal: ((p1090h as Record<string, number>)?.coverage_recal || 0) * 100,
+      p2575_cov: (p2575h?.coverage || 0) * 100,
+      p2575_width: p2575h?.width_pts || 0,
+      p2575_cov_recal: ((p2575h as Record<string, number>)?.coverage_recal || 0) * 100,
     };
   });
+  const hasRecal = calData.some((d) => d.p1090_cov_recal > 0);
 
   const calOption: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
@@ -233,15 +238,21 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
         const ps = params as { seriesName: string; value: number; dataIndex: number }[];
         if (!ps.length) return "";
         const d = calData[ps[0].dataIndex];
-        return [
+        const lines = [
           `<b>${formatHorizon(d.horizon)}</b>`,
-          `P10-P90: ${d.p1090_cov.toFixed(1)}% (target 80%) | ${d.p1090_width.toFixed(1)}pts`,
-          `P25-P75: ${d.p2575_cov.toFixed(1)}% (target 50%) | ${d.p2575_width.toFixed(1)}pts`,
+          `P10-P90 raw: ${d.p1090_cov.toFixed(1)}% (target 80%) | ${d.p1090_width.toFixed(1)}pts`,
+        ];
+        if (d.p1090_cov_recal > 0) lines.push(`P10-P90 recal: ${d.p1090_cov_recal.toFixed(1)}%`);
+        lines.push(`P25-P75 raw: ${d.p2575_cov.toFixed(1)}% (target 50%) | ${d.p2575_width.toFixed(1)}pts`);
+        return [
+          ...lines,
         ].join("<br/>");
       },
     },
     legend: {
-      data: ["P10-P90 Coverage", "P25-P75 Coverage"],
+      data: hasRecal
+        ? ["P10-P90 Raw", "P10-P90 Recalibrated", "P25-P75 Raw"]
+        : ["P10-P90 Coverage", "P25-P75 Coverage"],
       textStyle: { color: "#94a3b8", fontSize: 10 },
       top: 0,
     },
@@ -269,12 +280,12 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
     },
     series: [
       {
-        name: "P10-P90 Coverage",
+        name: hasRecal ? "P10-P90 Raw" : "P10-P90 Coverage",
         type: "line",
         data: calData.map((d) => d.p1090_cov),
-        lineStyle: { color: "#3b82f6", width: 2 },
+        lineStyle: { color: "#3b82f6", width: 2, type: hasRecal ? "dashed" : "solid" },
         symbol: "circle",
-        symbolSize: 6,
+        symbolSize: 5,
         itemStyle: { color: "#3b82f6" },
         markLine: {
           silent: true,
@@ -284,13 +295,26 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
           label: { formatter: "80% target", color: "#3b82f6", fontSize: 9 },
         },
       },
+      ...(hasRecal
+        ? [
+            {
+              name: "P10-P90 Recalibrated",
+              type: "line" as const,
+              data: calData.map((d) => d.p1090_cov_recal),
+              lineStyle: { color: "#10b981", width: 2.5 },
+              symbol: "diamond" as const,
+              symbolSize: 7,
+              itemStyle: { color: "#10b981" },
+            },
+          ]
+        : []),
       {
-        name: "P25-P75 Coverage",
+        name: hasRecal ? "P25-P75 Raw" : "P25-P75 Coverage",
         type: "line",
         data: calData.map((d) => d.p2575_cov),
         lineStyle: { color: "#8b5cf6", width: 2 },
         symbol: "circle",
-        symbolSize: 6,
+        symbolSize: 5,
         itemStyle: { color: "#8b5cf6" },
         markLine: {
           silent: true,
@@ -398,8 +422,12 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
   // Aggregate stats
   const meanSkill = Object.values(prob.crps_skill).reduce((a, b) => a + b, 0) / Object.values(prob.crps_skill).length;
   const h78Cal = p1090?.by_horizon["78"];
+  const h78CalAny = h78Cal as Record<string, number> | undefined;
   const h78Width = h78Cal?.width_pts || 0;
-  const h78Cov = (h78Cal?.coverage || 0) * 100;
+  const h78CovRaw = (h78Cal?.coverage || 0) * 100;
+  const h78CovRecal = (h78CalAny?.coverage_recal || 0) * 100;
+  const h78Cov = h78CovRecal > 0 ? h78CovRecal : h78CovRaw;
+  const h78WidthRecal = h78CalAny?.width_pts_recal || h78Width;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -427,11 +455,11 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
             detail="Lower CRPS = better probabilistic forecasts"
           />
           <BigStat
-            label="P10-P90 Coverage @ 6.5hr"
+            label={h78CovRecal > 0 ? "P10-P90 Coverage (recal) @ 6.5hr" : "P10-P90 Coverage @ 6.5hr"}
             value={`${h78Cov.toFixed(0)}%`}
             target="80%"
             color={Math.abs(h78Cov - 80) < 5 ? "#10b981" : "#f59e0b"}
-            detail={`Band width: ${h78Width.toFixed(0)} pts`}
+            detail={`Band width: ${h78WidthRecal.toFixed(0)} pts${h78CovRecal > 0 ? ` (raw: ${h78CovRaw.toFixed(0)}%)` : ""}`}
           />
           <BigStat
             label="Forecast Windows"
@@ -443,7 +471,13 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
             label="Calibration Status"
             value={h78Cov < 75 ? "Underdispersed" : h78Cov > 85 ? "Overdispersed" : "Calibrated"}
             color={h78Cov < 75 ? "#f59e0b" : h78Cov > 85 ? "#f59e0b" : "#10b981"}
-            detail={h78Cov < 75 ? "Bands too narrow — ACI recalibration needed" : "Bands well-sized"}
+            detail={
+              h78CovRecal > 0
+                ? `Quantile recalibration applied (raw: ${h78CovRaw.toFixed(0)}%)`
+                : h78Cov < 75
+                  ? "Bands too narrow - ACI recalibration needed"
+                  : "Bands well-sized"
+            }
           />
         </div>
       </div>
