@@ -335,8 +335,9 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
               name: si === 0 ? "Sample" : "",
               type: "line" as const,
               data: [...ctxPad, ...path],
-              lineStyle: { color: bandColor + "0.25)", width: 1 },
+              lineStyle: { color: bandColor + "0.2)", width: 0.8 },
               symbol: "none" as const,
+              smooth: 0.3,
               z: 1,
               silent: true,
             })),
@@ -347,82 +348,56 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
               data: makeForcastSeries("p50"),
               lineStyle: { color: medianColor, width: 2.5 },
               symbol: "none" as const,
+              smooth: 0.3,
               z: 5,
             },
           ]
         : [
-            // P10-P90 outer band (custom renderItem for filled area between two lines)
+            // P90 upper bound (invisible line, provides ceiling for outer band fill)
             {
-              name: "P10-P90",
-              type: "custom" as const,
-              data: horizons.map((_, i) => [ctxLen + i, percentiles.p10[i], percentiles.p90[i]]),
-              renderItem: (
-                params: { dataIndex: number; coordSys: { x: number; width: number } },
-                api: {
-                  value: (i: number) => number;
-                  coord: (v: [number, number]) => [number, number];
-                },
-              ) => {
-                const idx = api.value(0);
-                const nextIdx = idx + 1;
-                const p10Curr = api.coord([idx, api.value(1)]);
-                const p90Curr = api.coord([idx, api.value(2)]);
-                // Check if there's a next point
-                const nextData = params.dataIndex + 1 < horizons.length
-                  ? [ctxLen + params.dataIndex + 1, percentiles.p10[params.dataIndex + 1], percentiles.p90[params.dataIndex + 1]]
-                  : null;
-                if (!nextData) {
-                  return { type: "group" as const, children: [] };
-                }
-                const p10Next = api.coord([nextIdx, nextData[1]]);
-                const p90Next = api.coord([nextIdx, nextData[2]]);
-                return {
-                  type: "polygon" as const,
-                  shape: {
-                    points: [p90Curr, p90Next, p10Next, p10Curr],
-                  },
-                  style: { fill: bandColor + "0.12)" },
-                  z: 1,
-                };
-              },
-              encode: { x: 0, y: [1, 2] },
+              name: "P90",
+              type: "line" as const,
+              data: makeForcastSeries("p90"),
+              lineStyle: { width: 0.5, color: bandColor + "0.3)" },
+              symbol: "none" as const,
+              smooth: 0.3,
+              areaStyle: { color: bandColor + "0.12)", origin: "auto" },
               z: 1,
               silent: true,
             },
-            // P25-P75 inner band
+            // P10 lower bound (fills over P90's area with background to "cut" the band)
             {
-              name: "P25-P75",
-              type: "custom" as const,
-              data: horizons.map((_, i) => [ctxLen + i, percentiles.p25[i], percentiles.p75[i]]),
-              renderItem: (
-                params: { dataIndex: number; coordSys: { x: number; width: number } },
-                api: {
-                  value: (i: number) => number;
-                  coord: (v: [number, number]) => [number, number];
-                },
-              ) => {
-                const idx = api.value(0);
-                const nextIdx = idx + 1;
-                const p25Curr = api.coord([idx, api.value(1)]);
-                const p75Curr = api.coord([idx, api.value(2)]);
-                const nextData = params.dataIndex + 1 < horizons.length
-                  ? [ctxLen + params.dataIndex + 1, percentiles.p25[params.dataIndex + 1], percentiles.p75[params.dataIndex + 1]]
-                  : null;
-                if (!nextData) {
-                  return { type: "group" as const, children: [] };
-                }
-                const p25Next = api.coord([nextIdx, nextData[1]]);
-                const p75Next = api.coord([nextIdx, nextData[2]]);
-                return {
-                  type: "polygon" as const,
-                  shape: {
-                    points: [p75Curr, p75Next, p25Next, p25Curr],
-                  },
-                  style: { fill: bandColor + "0.25)" },
-                  z: 2,
-                };
-              },
-              encode: { x: 0, y: [1, 2] },
+              name: "P10",
+              type: "line" as const,
+              data: makeForcastSeries("p10"),
+              lineStyle: { width: 0.5, color: bandColor + "0.3)" },
+              symbol: "none" as const,
+              smooth: 0.3,
+              areaStyle: { color: "#0a0e17" },
+              z: 1,
+              silent: true,
+            },
+            // P75 upper inner bound
+            {
+              name: "P75",
+              type: "line" as const,
+              data: makeForcastSeries("p75"),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              smooth: 0.3,
+              areaStyle: { color: bandColor + "0.20)" },
+              z: 2,
+              silent: true,
+            },
+            // P25 lower inner bound (mask with background)
+            {
+              name: "P25",
+              type: "line" as const,
+              data: makeForcastSeries("p25"),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              smooth: 0.3,
+              areaStyle: { color: "#0a0e17" },
               z: 2,
               silent: true,
             },
@@ -433,6 +408,7 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
               data: makeForcastSeries("p50"),
               lineStyle: { color: medianColor, width: 2.5 },
               symbol: "none" as const,
+              smooth: 0.3,
               z: 5,
             },
           ]),
