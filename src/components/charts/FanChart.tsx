@@ -98,6 +98,15 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
   // For filled bands, ECharts uses areaStyle with stack pairs
   // P10-P90 band, P25-P75 band
 
+  // Compute explicit y-axis bounds from all visible data
+  const allPrices: number[] = [];
+  candles.forEach((c) => { allPrices.push(c.high, c.low); });
+  percentiles.p10.forEach((v) => allPrices.push(v));
+  percentiles.p90.forEach((v) => allPrices.push(v));
+  const yMin = Math.min(...allPrices);
+  const yMax = Math.max(...allPrices);
+  const yPad = (yMax - yMin) * 0.05 || 5;
+
   const option: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
     tooltip: {
@@ -195,6 +204,8 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
     yAxis: {
       type: "value",
       scale: true,
+      min: Math.floor(yMin - yPad),
+      max: Math.ceil(yMax + yPad),
       axisLine: { lineStyle: { color: "#334155" } },
       axisLabel: {
         color: "#94a3b8",
@@ -340,57 +351,80 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
             },
           ]
         : [
-            // P10 (lower bound for outer band)
+            // P10-P90 outer band (custom renderItem for filled area between two lines)
             {
-              name: "P10",
-              type: "line" as const,
-              data: makeForcastSeries("p10"),
-              lineStyle: { width: 0 },
-              symbol: "none" as const,
-              stack: "outer",
-              areaStyle: { color: "transparent" },
+              name: "P10-P90",
+              type: "custom" as const,
+              data: horizons.map((_, i) => [ctxLen + i, percentiles.p10[i], percentiles.p90[i]]),
+              renderItem: (
+                params: { dataIndex: number; coordSys: { x: number; width: number } },
+                api: {
+                  value: (i: number) => number;
+                  coord: (v: [number, number]) => [number, number];
+                },
+              ) => {
+                const idx = api.value(0);
+                const nextIdx = idx + 1;
+                const p10Curr = api.coord([idx, api.value(1)]);
+                const p90Curr = api.coord([idx, api.value(2)]);
+                // Check if there's a next point
+                const nextData = params.dataIndex + 1 < horizons.length
+                  ? [ctxLen + params.dataIndex + 1, percentiles.p10[params.dataIndex + 1], percentiles.p90[params.dataIndex + 1]]
+                  : null;
+                if (!nextData) {
+                  return { type: "group" as const, children: [] };
+                }
+                const p10Next = api.coord([nextIdx, nextData[1]]);
+                const p90Next = api.coord([nextIdx, nextData[2]]);
+                return {
+                  type: "polygon" as const,
+                  shape: {
+                    points: [p90Curr, p90Next, p10Next, p10Curr],
+                  },
+                  style: { fill: bandColor + "0.12)" },
+                  z: 1,
+                };
+              },
+              encode: { x: 0, y: [1, 2] },
               z: 1,
+              silent: true,
             },
-            // P90 - P10 fill (outer band)
+            // P25-P75 inner band
             {
-              name: "P90",
-              type: "line" as const,
-              data: makeForcastSeries("p90").map((v, i) => {
-                const p10 = makeForcastSeries("p10")[i];
-                if (v === null || p10 === null) return null;
-                return v - p10;
-              }),
-              lineStyle: { width: 0 },
-              symbol: "none" as const,
-              stack: "outer",
-              areaStyle: { color: bandColor + "0.12)" },
-              z: 1,
-            },
-            // P25 (lower bound for inner band)
-            {
-              name: "P25",
-              type: "line" as const,
-              data: makeForcastSeries("p25"),
-              lineStyle: { width: 0 },
-              symbol: "none" as const,
-              stack: "inner",
-              areaStyle: { color: "transparent" },
+              name: "P25-P75",
+              type: "custom" as const,
+              data: horizons.map((_, i) => [ctxLen + i, percentiles.p25[i], percentiles.p75[i]]),
+              renderItem: (
+                params: { dataIndex: number; coordSys: { x: number; width: number } },
+                api: {
+                  value: (i: number) => number;
+                  coord: (v: [number, number]) => [number, number];
+                },
+              ) => {
+                const idx = api.value(0);
+                const nextIdx = idx + 1;
+                const p25Curr = api.coord([idx, api.value(1)]);
+                const p75Curr = api.coord([idx, api.value(2)]);
+                const nextData = params.dataIndex + 1 < horizons.length
+                  ? [ctxLen + params.dataIndex + 1, percentiles.p25[params.dataIndex + 1], percentiles.p75[params.dataIndex + 1]]
+                  : null;
+                if (!nextData) {
+                  return { type: "group" as const, children: [] };
+                }
+                const p25Next = api.coord([nextIdx, nextData[1]]);
+                const p75Next = api.coord([nextIdx, nextData[2]]);
+                return {
+                  type: "polygon" as const,
+                  shape: {
+                    points: [p75Curr, p75Next, p25Next, p25Curr],
+                  },
+                  style: { fill: bandColor + "0.25)" },
+                  z: 2,
+                };
+              },
+              encode: { x: 0, y: [1, 2] },
               z: 2,
-            },
-            // P75 - P25 fill (inner band)
-            {
-              name: "P75",
-              type: "line" as const,
-              data: makeForcastSeries("p75").map((v, i) => {
-                const p25 = makeForcastSeries("p25")[i];
-                if (v === null || p25 === null) return null;
-                return v - p25;
-              }),
-              lineStyle: { width: 0 },
-              symbol: "none" as const,
-              stack: "inner",
-              areaStyle: { color: bandColor + "0.25)" },
-              z: 2,
+              silent: true,
             },
             // P50 median line (bold)
             {
