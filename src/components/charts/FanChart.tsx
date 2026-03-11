@@ -353,53 +353,57 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
             },
           ]
         : [
-            // P90 upper bound (invisible line, provides ceiling for outer band fill)
-            {
-              name: "P90",
-              type: "line" as const,
-              data: makeForcastSeries("p90"),
-              lineStyle: { width: 0.5, color: bandColor + "0.3)" },
-              symbol: "none" as const,
-              smooth: 0.3,
-              areaStyle: { color: bandColor + "0.12)", origin: "auto" },
-              z: 1,
-              silent: true,
-            },
-            // P10 lower bound (fills over P90's area with background to "cut" the band)
+            // P10 (lower bound for outer band)
             {
               name: "P10",
               type: "line" as const,
               data: makeForcastSeries("p10"),
-              lineStyle: { width: 0.5, color: bandColor + "0.3)" },
-              symbol: "none" as const,
-              smooth: 0.3,
-              areaStyle: { color: "#0a0e17" },
-              z: 1,
-              silent: true,
-            },
-            // P75 upper inner bound
-            {
-              name: "P75",
-              type: "line" as const,
-              data: makeForcastSeries("p75"),
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              smooth: 0.3,
-              areaStyle: { color: bandColor + "0.20)" },
-              z: 2,
-              silent: true,
+              stack: "outer",
+              areaStyle: { color: "transparent" },
+              z: 1,
             },
-            // P25 lower inner bound (mask with background)
+            // P90 - P10 fill (outer band)
+            {
+              name: "P90",
+              type: "line" as const,
+              data: makeForcastSeries("p90").map((v, i) => {
+                const p10 = makeForcastSeries("p10")[i];
+                if (v === null || p10 === null) return null;
+                return v - p10;
+              }),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "outer",
+              areaStyle: { color: bandColor + "0.12)" },
+              z: 1,
+            },
+            // P25 (lower bound for inner band)
             {
               name: "P25",
               type: "line" as const,
               data: makeForcastSeries("p25"),
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              smooth: 0.3,
-              areaStyle: { color: "#0a0e17" },
+              stack: "inner",
+              areaStyle: { color: "transparent" },
               z: 2,
-              silent: true,
+            },
+            // P75 - P25 fill (inner band)
+            {
+              name: "P75",
+              type: "line" as const,
+              data: makeForcastSeries("p75").map((v, i) => {
+                const p25 = makeForcastSeries("p25")[i];
+                if (v === null || p25 === null) return null;
+                return v - p25;
+              }),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: "inner",
+              areaStyle: { color: bandColor + "0.25)" },
+              z: 2,
             },
             // P50 median line (bold)
             {
@@ -408,7 +412,6 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
               data: makeForcastSeries("p50"),
               lineStyle: { color: medianColor, width: 2.5 },
               symbol: "none" as const,
-              smooth: 0.3,
               z: 5,
             },
           ]),
