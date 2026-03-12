@@ -57,10 +57,13 @@ export function FanChart({
   const { last_close, signal } = prediction;
 
   // ── Timeframe transformation ──
+  const rawCandles = prediction.context_candles ?? [];
   // Aggregate context candles to the selected timeframe
-  const candles = getContextCandles(prediction.context_candles ?? [], timeframe);
+  const candles = getContextCandles(rawCandles, timeframe);
   // Subsample forecast data to match timeframe resolution
   const { horizons, percentiles, samplePaths: sample_paths } = subsampleForecast(prediction, timeframe);
+  // Last raw 5m bar time — used for delay calculation independent of timeframe
+  const lastRawBarTime = rawCandles.length ? rawCandles[rawCandles.length - 1].time : 0;
 
   const isLong = signal.direction === "LONG";
   const isShort = signal.direction === "SHORT";
@@ -440,10 +443,10 @@ export function FanChart({
           ]),
       // Vertical "now" line with delay indicator
       (() => {
-        const lastCandleTime = candles.length ? candles[candles.length - 1].time : 0;
-        const delaySec = lastCandleTime ? Math.floor(Date.now() / 1000 - lastCandleTime) : 0;
-        const barTime = lastCandleTime
-          ? new Date(lastCandleTime * 1000).toLocaleTimeString("en-US", {
+        // Use raw 5m bar time for delay — aggregated bars have older start-of-period timestamps
+        const delaySec = lastRawBarTime ? Math.floor(Date.now() / 1000 - lastRawBarTime) : 0;
+        const barTime = lastRawBarTime
+          ? new Date(lastRawBarTime * 1000).toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
@@ -452,7 +455,7 @@ export function FanChart({
         let nowLabel: string;
         let nowColor: string;
         let lineColor: string;
-        if (!lastCandleTime || delaySec < 120) {
+        if (!lastRawBarTime || delaySec < 120) {
           nowLabel = barTime;
           nowColor = "#94a3b8";
           lineColor = "#475569";
