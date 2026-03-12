@@ -160,10 +160,11 @@ export function FanChart({
         if (!items?.length) return "";
         const time = items[0].axisValue;
         const dataIndex = items[0].dataIndex;
-        const price = items.find(i => i.seriesName === "Price" && i.value !== null);
+        const inContext = dataIndex >= 0 && dataIndex < ctxLen;
+        const price = inContext ? items.find(i => i.seriesName === "Price" && i.value !== null) : null;
         const median = items.find(i => i.seriesName === "Median" && i.value !== null);
 
-        if (price?.value != null) {
+        if (inContext && price?.value != null) {
           // For candlestick/ohlc, look up full OHLC from context
           if (dataIndex >= 0 && dataIndex < candles.length && chartType !== "line") {
             const c = candles[dataIndex];
