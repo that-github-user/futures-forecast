@@ -17,12 +17,40 @@ interface Props {
 }
 
 export function Header({ instrument, connected, lastPredictionTime, prediction, marketStatus, timeframe = "5m" }: Props) {
-  // Compute session change: last_close vs open from ~2 hours ago (24 five-min bars)
+  // Compute change from prior RTH close (16:00 ET settlement).
+  // Scan context candles backwards to find the last bar at or before 16:00 ET.
   const ctxCandles = prediction.context_candles ?? [];
-  const sessionRefIdx = Math.max(0, ctxCandles.length - 24);
-  const firstOpen = ctxCandles[sessionRefIdx]?.open ?? prediction.last_close;
-  const sessionChange = prediction.last_close - firstOpen;
-  const sessionChangePct = firstOpen !== 0 ? (sessionChange / firstOpen) * 100 : 0;
+  let refPrice = prediction.last_close;
+  for (let i = ctxCandles.length - 1; i >= 0; i--) {
+    const d = new Date(ctxCandles[i].time * 1000);
+    // Convert to ET hours — approximate via UTC-5 (EST) or UTC-4 (EDT)
+    // Use the month to determine DST (Mar-Nov = EDT)
+    const month = d.getUTCMonth(); // 0-indexed
+    const isDST = month >= 2 && month <= 10; // Mar(2) through Nov(10)
+    const etHour = (d.getUTCHours() + (isDST ? 20 : 19)) % 24;
+    const etMinute = d.getUTCMinutes();
+    // RTH close = 16:00 ET. Find the candle at or just before that boundary.
+    if (etHour === 15 && etMinute >= 55) {
+      // Last 5-min bar of RTH (15:55-16:00)
+      refPrice = ctxCandles[i].close;
+      break;
+    }
+    if (etHour < 16 && i > 0) {
+      // Check if the NEXT candle crosses 16:00
+      const nextD = new Date(ctxCandles[i + 1]?.time * 1000);
+      const nextEtHour = (nextD.getUTCHours() + (isDST ? 20 : 19)) % 24;
+      if (nextEtHour >= 16 && etHour < 16) {
+        refPrice = ctxCandles[i].close;
+        break;
+      }
+    }
+  }
+  // Fallback: if no RTH close found, use oldest candle's open
+  if (refPrice === prediction.last_close && ctxCandles.length > 0) {
+    refPrice = ctxCandles[0].open;
+  }
+  const sessionChange = prediction.last_close - refPrice;
+  const sessionChangePct = refPrice !== 0 ? (sessionChange / refPrice) * 100 : 0;
   const changePositive = sessionChange >= 0;
   const changeColor = changePositive ? "#10b981" : "#ef4444";
 
