@@ -171,6 +171,7 @@ export function generateMockHistory(): HistoryResponse {
       },
       realized_return: i > 0 ? ret : null,
       realized_direction: i > 0 ? (ret > 0 ? "UP" as const : "DOWN" as const) : null,
+      realized_returns: null,
     });
   }
 
