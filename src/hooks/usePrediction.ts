@@ -1,4 +1,4 @@
-/** Hook: SSE subscription with polling fallback + auto demo mode. */
+/** Hook: SSE subscription with polling fallback + auto demo mode + retry. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribePredictions } from "../api/client";
@@ -6,6 +6,7 @@ import { generateMockPrediction } from "../api/mock";
 import type { PredictionResponse } from "../api/types";
 
 const POLL_INTERVAL = 30_000;
+const DEMO_HEALTH_CHECK_INTERVAL = 60_000;
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 
 export function usePrediction() {
@@ -37,15 +38,35 @@ export function usePrediction() {
     }
   }, [demoMode]);
 
+  const retryConnection = useCallback(async () => {
+    try {
+      await api.health();
+      // Health check passed — exit demo mode
+      setDemoMode(false);
+      failCountRef.current = 0;
+      setError(null);
+    } catch {
+      // Still unreachable
+    }
+  }, []);
+
   useEffect(() => {
     if (demoMode) {
       setPrediction(generateMockPrediction());
       setConnected(false);
+
       // Refresh mock data every 5 minutes
-      const id = setInterval(() => {
+      const mockId = setInterval(() => {
         setPrediction(generateMockPrediction());
       }, 300_000);
-      return () => clearInterval(id);
+
+      // Health-check retry every 60s to auto-exit demo mode
+      const healthId = setInterval(retryConnection, DEMO_HEALTH_CHECK_INTERVAL);
+
+      return () => {
+        clearInterval(mockId);
+        clearInterval(healthId);
+      };
     }
 
     // Try SSE first
@@ -75,7 +96,7 @@ export function usePrediction() {
         pollRef.current = null;
       }
     };
-  }, [fetchLatest, demoMode]);
+  }, [fetchLatest, demoMode, retryConnection]);
 
-  return { prediction, connected, demoMode, error, refetch: fetchLatest };
+  return { prediction, connected, demoMode, error, refetch: fetchLatest, retryConnection };
 }

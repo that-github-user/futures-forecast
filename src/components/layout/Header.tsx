@@ -1,17 +1,34 @@
 /**
- * Header: instrument label, connection status dot, countdown.
+ * Header: instrument label, price ticker, market status, connection status, countdown.
  */
 
+import type { PredictionResponse } from "../../api/types";
+import type { Timeframe } from "../../api/timeframe";
+import { getTimeframeLabel } from "../../api/timeframe";
 import { CountdownTimer } from "../indicators/CountdownTimer";
 
 interface Props {
   instrument: string;
   connected: boolean;
   lastPredictionTime: string | null;
-  dataFeedStatus?: string;
+  prediction: PredictionResponse;
+  marketStatus: "RTH" | "ETH" | "CLOSED" | null;
+  timeframe?: Timeframe;
 }
 
-export function Header({ instrument, connected, lastPredictionTime }: Props) {
+export function Header({ instrument, connected, lastPredictionTime, prediction, marketStatus, timeframe = "5m" }: Props) {
+  // Compute session change: last_close vs open from ~2 hours ago (24 five-min bars)
+  const ctxCandles = prediction.context_candles ?? [];
+  const sessionRefIdx = Math.max(0, ctxCandles.length - 24);
+  const firstOpen = ctxCandles[sessionRefIdx]?.open ?? prediction.last_close;
+  const sessionChange = prediction.last_close - firstOpen;
+  const sessionChangePct = firstOpen !== 0 ? (sessionChange / firstOpen) * 100 : 0;
+  const changePositive = sessionChange >= 0;
+  const changeColor = changePositive ? "#10b981" : "#ef4444";
+
+  const marketStatusColor =
+    marketStatus === "RTH" ? "#10b981" : marketStatus === "ETH" ? "#f59e0b" : "#ef4444";
+
   return (
     <header
       style={{
@@ -21,6 +38,8 @@ export function Header({ instrument, connected, lastPredictionTime }: Props) {
         padding: "12px 20px",
         borderBottom: "1px solid #1e293b",
         background: "#0d1117",
+        flexWrap: "wrap",
+        gap: 8,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -34,8 +53,50 @@ export function Header({ instrument, connected, lastPredictionTime }: Props) {
             letterSpacing: 0.5,
           }}
         >
-          {instrument} Forecast
+          {instrument}
         </h1>
+
+        {/* Price ticker */}
+        <span
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 16,
+            fontWeight: 700,
+            color: "#e2e8f0",
+          }}
+        >
+          {prediction.last_close.toFixed(2)}
+        </span>
+        <span
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 13,
+            fontWeight: 600,
+            color: changeColor,
+          }}
+        >
+          {changePositive ? "+" : ""}{sessionChange.toFixed(2)} ({changePositive ? "+" : ""}{sessionChangePct.toFixed(2)}%)
+        </span>
+
+        {/* Market status badge */}
+        {marketStatus && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: marketStatusColor,
+              fontFamily: "Inter, sans-serif",
+              background: marketStatusColor + "18",
+              border: `1px solid ${marketStatusColor}40`,
+              padding: "2px 8px",
+              borderRadius: 10,
+              letterSpacing: 0.5,
+            }}
+          >
+            {marketStatus}
+          </span>
+        )}
+
         <span
           style={{
             fontSize: 11,
@@ -46,7 +107,7 @@ export function Header({ instrument, connected, lastPredictionTime }: Props) {
             borderRadius: 4,
           }}
         >
-          5min bars | 2hr context | 6.5hr forecast
+          {getTimeframeLabel(timeframe)}
         </span>
       </div>
 

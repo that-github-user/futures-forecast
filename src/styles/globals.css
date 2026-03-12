@@ -141,11 +141,18 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Responsive: shrink sidebar at 1200px */
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
 /* Responsive: stack on narrow screens */
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: 400px auto auto;
+    grid-template-rows: 60vh auto auto;
   }
 
   .dashboard-grid > :first-child {

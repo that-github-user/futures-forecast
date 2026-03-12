@@ -7,6 +7,9 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { HistoryEntry } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
+import { useHealth } from "../../hooks/useHealth";
+import type { Timeframe } from "../../api/timeframe";
+import { TIMEFRAME_OPTIONS } from "../../api/timeframe";
 import { FanChart, type ChartType, type ForecastStyle } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
@@ -15,10 +18,13 @@ import { MetricsBar } from "../indicators/MetricsBar";
 import { Header } from "./Header";
 
 export function Dashboard() {
-  const { prediction, connected, demoMode, error } = usePrediction();
+  const { prediction, connected, demoMode, error, retryConnection } = usePrediction();
+  const health = useHealth();
   const [chartType, setChartType] = useState<ChartType>("candlestick");
   const [forecastStyle, setForecastStyle] = useState<ForecastStyle>("bands");
+  const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState(false);
   const [liveStats, setLiveStats] = useState<{
     pf: number | null;
     winRate: number | null;
@@ -36,8 +42,9 @@ export function Dashboard() {
           winRate: h.live_win_rate,
           numTrades: h.live_num_trades,
         });
+        setHistoryError(false);
       } catch {
-        // History not critical
+        setHistoryError(true);
       }
     };
 
@@ -91,12 +98,31 @@ export function Dashboard() {
         instrument={prediction.instrument}
         connected={connected}
         lastPredictionTime={prediction.timestamp}
+        prediction={prediction}
+        marketStatus={health?.market_status ?? null}
+        timeframe={timeframe}
       />
 
       {demoMode && (
         <div className="demo-banner">
-          Demo mode — showing simulated data. Connect to a live API for real predictions.
+          Demo mode — showing simulated data.
           {error && <span style={{ marginLeft: 8, color: "#94a3b8" }}>({error})</span>}
+          <button
+            onClick={retryConnection}
+            style={{
+              marginLeft: 12,
+              background: "rgba(245, 158, 11, 0.2)",
+              border: "1px solid rgba(245, 158, 11, 0.4)",
+              color: "#f59e0b",
+              borderRadius: 4,
+              padding: "2px 10px",
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "Inter, sans-serif",
+            }}
+          >
+            Retry Connection
+          </button>
         </div>
       )}
 
@@ -109,6 +135,7 @@ export function Dashboard() {
           <div className="panel-header">
             <span className="panel-title">Ensemble Forecast</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <TimeframeToggle value={timeframe} onChange={setTimeframe} />
               <ChartTypeToggle value={chartType} onChange={setChartType} />
               <ForecastStyleToggle value={forecastStyle} onChange={setForecastStyle} />
               <span
@@ -123,7 +150,7 @@ export function Dashboard() {
             </div>
           </div>
           <div style={{ height: "calc(100% - 28px)" }}>
-            <FanChart prediction={prediction} chartType={chartType} forecastStyle={forecastStyle} />
+            <FanChart prediction={prediction} chartType={chartType} forecastStyle={forecastStyle} timeframe={timeframe} />
           </div>
         </div>
 
@@ -148,6 +175,7 @@ export function Dashboard() {
               pf={liveStats.pf}
               winRate={liveStats.winRate}
               numTrades={liveStats.numTrades}
+              historyError={historyError}
             />
           </div>
           <div className="fade-in" style={{ flex: 1, minHeight: 150 }}>
@@ -164,10 +192,10 @@ export function Dashboard() {
   );
 }
 
-const chartTypeOptions: { value: ChartType; label: string; icon: string }[] = [
-  { value: "line", label: "Line", icon: "━" },
-  { value: "candlestick", label: "Candles", icon: "┃" },
-  { value: "ohlc", label: "OHLC", icon: "├" },
+const chartTypeOptions: { value: ChartType; label: string }[] = [
+  { value: "line", label: "Line" },
+  { value: "candlestick", label: "Candles" },
+  { value: "ohlc", label: "OHLC" },
 ];
 
 function ChartTypeToggle({
@@ -191,28 +219,66 @@ function ChartTypeToggle({
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          title={opt.label}
           style={{
             background: value === opt.value ? "#1e293b" : "transparent",
             color: value === opt.value ? "#e2e8f0" : "#475569",
             border: "none",
             padding: "2px 8px",
             fontSize: 11,
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: "Inter, sans-serif",
             cursor: "pointer",
             transition: "all 0.15s",
           }}
         >
-          {opt.icon}
+          {opt.label}
         </button>
       ))}
     </div>
   );
 }
 
-const forecastStyleOptions: { value: ForecastStyle; label: string; icon: string }[] = [
-  { value: "bands", label: "Percentile Bands", icon: "▒" },
-  { value: "spaghetti", label: "Ensemble Paths", icon: "≋" },
+function TimeframeToggle({
+  value,
+  onChange,
+}: {
+  value: Timeframe;
+  onChange: (tf: Timeframe) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        background: "#0f172a",
+        borderRadius: 4,
+        border: "1px solid #1e293b",
+        overflow: "hidden",
+      }}
+    >
+      {TIMEFRAME_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          style={{
+            background: value === opt.value ? "#1e293b" : "transparent",
+            color: value === opt.value ? "#e2e8f0" : "#475569",
+            border: "none",
+            padding: "2px 8px",
+            fontSize: 11,
+            fontFamily: "Inter, sans-serif",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const forecastStyleOptions: { value: ForecastStyle; label: string }[] = [
+  { value: "bands", label: "Bands" },
+  { value: "spaghetti", label: "Paths" },
 ];
 
 function ForecastStyleToggle({
@@ -236,19 +302,18 @@ function ForecastStyleToggle({
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          title={opt.label}
           style={{
             background: value === opt.value ? "#1e293b" : "transparent",
             color: value === opt.value ? "#e2e8f0" : "#475569",
             border: "none",
             padding: "2px 8px",
             fontSize: 11,
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: "Inter, sans-serif",
             cursor: "pointer",
             transition: "all 0.15s",
           }}
         >
-          {opt.icon}
+          {opt.label}
         </button>
       ))}
     </div>

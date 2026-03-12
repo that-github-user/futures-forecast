@@ -1,5 +1,11 @@
 /** API response types — mirrors server/schemas.py */
 
+export interface HorizonSignal {
+  direction: "LONG" | "SHORT" | "FLAT";
+  expected_return: number;
+  confidence: number;
+}
+
 export interface SignalResponse {
   composite_score: number;
   direction: "LONG" | "SHORT" | "FLAT";
@@ -9,6 +15,7 @@ export interface SignalResponse {
   p10_return: number;
   p90_return: number;
   long_frac: number;
+  horizon_signals?: Record<string, HorizonSignal> | null;
 }
 
 export interface CandleData {
@@ -44,6 +51,7 @@ export interface HistoryEntry {
   signal: SignalResponse;
   realized_return: number | null;
   realized_direction: "UP" | "DOWN" | null;
+  realized_returns: Record<string, number | null> | null;
 }
 
 export interface HistoryResponse {
@@ -61,4 +69,5 @@ export interface HealthResponse {
   data_feed_status: string;
   model_loaded: boolean;
   gpu_available: boolean;
+  market_status: "RTH" | "ETH" | "CLOSED" | null;
 }

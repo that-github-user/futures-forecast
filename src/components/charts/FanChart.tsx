@@ -4,6 +4,7 @@
  * Shows recent candles (history) + forecast percentile bands.
  * Gradient bands: P10-P90 (outer), P25-P75 (inner), bold P50 median.
  * Color tint shifts green/red based on signal direction.
+ * Supports multiple timeframes via candle aggregation + forecast subsampling.
  */
 
 import ReactEChartsCore from "echarts-for-react/lib/core";
@@ -18,6 +19,8 @@ import {
 import { CanvasRenderer } from "echarts/renderers";
 import { formatHorizon } from "../../api/format";
 import type { PredictionResponse } from "../../api/types";
+import type { Timeframe } from "../../api/timeframe";
+import { getContextCandles, subsampleForecast } from "../../api/timeframe";
 
 echarts.use([
   LineChart,
@@ -37,11 +40,22 @@ interface Props {
   prediction: PredictionResponse;
   chartType?: ChartType;
   forecastStyle?: ForecastStyle;
+  timeframe?: Timeframe;
 }
 
-export function FanChart({ prediction, chartType = "line", forecastStyle = "bands" }: Props) {
-  const { percentiles, horizons, last_close, signal, context_candles, sample_paths } =
-    prediction;
+export function FanChart({
+  prediction,
+  chartType = "line",
+  forecastStyle = "bands",
+  timeframe = "5m",
+}: Props) {
+  const { last_close, signal } = prediction;
+
+  // ── Timeframe transformation ──
+  // Aggregate context candles to the selected timeframe
+  const candles = getContextCandles(prediction.context_candles ?? [], timeframe);
+  // Subsample forecast data to match timeframe resolution
+  const { horizons, percentiles, samplePaths: sample_paths } = subsampleForecast(prediction, timeframe);
 
   const isLong = signal.direction === "LONG";
   const isShort = signal.direction === "SHORT";
@@ -55,7 +69,7 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
   const medianColor = isLong ? "#10b981" : isShort ? "#ef4444" : "#3b82f6";
 
   // Build time axis: context candles + forecast horizons
-  const contextTimes: string[] = (context_candles ?? []).map((c) => {
+  const contextTimes: string[] = candles.map((c) => {
     const d = new Date(c.time * 1000);
     return d.toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -64,9 +78,9 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
     });
   });
 
-  // Forecast times (offset from last context bar, 5 min each)
-  const lastTime = context_candles?.length
-    ? context_candles[context_candles.length - 1].time
+  // Forecast times (offset from last context bar, 5 min per original bar)
+  const lastTime = candles.length
+    ? candles[candles.length - 1].time
     : Math.floor(Date.now() / 1000);
 
   const forecastTimes = horizons.map((h) => {
@@ -82,7 +96,6 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
   const ctxLen = contextTimes.length;
 
   // Context price data (all OHLC for candlestick/ohlc modes)
-  const candles = context_candles ?? [];
   const contextCloses: (number | null)[] = candles.map((c) => c.close);
   // Candlestick data: [open, close, low, high]
   const contextOHLC = candles.map((c) => [c.open, c.close, c.low, c.high]);
@@ -95,14 +108,19 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
     ...percentiles[key],
   ];
 
-  // For filled bands, ECharts uses areaStyle with stack pairs
-  // P10-P90 band, P25-P75 band
-
   // Compute explicit y-axis bounds from all visible data
   const allPrices: number[] = [];
   candles.forEach((c) => { allPrices.push(c.high, c.low); });
   percentiles.p10.forEach((v) => allPrices.push(v));
   percentiles.p90.forEach((v) => allPrices.push(v));
+  // Include sample paths in bounds to prevent axis jumps when toggling spaghetti
+  if (forecastStyle === "spaghetti" && sample_paths?.length) {
+    for (const path of sample_paths) {
+      for (const v of path) {
+        allPrices.push(v);
+      }
+    }
+  }
   const yMin = Math.min(...allPrices);
   const yMax = Math.max(...allPrices);
   const yPad = (yMax - yMin) * 0.05 || 5;
@@ -133,17 +151,17 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
         },
       },
       formatter: (params: unknown) => {
-        const items = params as { seriesName: string; value: number | null; axisValue: string }[];
+        const items = params as { seriesName: string; value: number | null; axisValue: string; dataIndex: number }[];
         if (!items?.length) return "";
         const time = items[0].axisValue;
+        const dataIndex = items[0].dataIndex;
         const price = items.find(i => i.seriesName === "Price" && i.value !== null);
         const median = items.find(i => i.seriesName === "Median" && i.value !== null);
 
         if (price?.value != null) {
           // For candlestick/ohlc, look up full OHLC from context
-          const ctxIdx = contextTimes.indexOf(time);
-          if (ctxIdx >= 0 && ctxIdx < candles.length && chartType !== "line") {
-            const c = candles[ctxIdx];
+          if (dataIndex >= 0 && dataIndex < candles.length && chartType !== "line") {
+            const c = candles[dataIndex];
             const chg = c.close - c.open;
             const chgPct = ((chg / c.open) * 100).toFixed(2);
             const chgColor = chg >= 0 ? "#10b981" : "#ef4444";
@@ -159,18 +177,17 @@ export function FanChart({ prediction, chartType = "line", forecastStyle = "band
           return `<b>${time}</b><br/>Price: ${(typeof price.value === "number" ? price.value : 0).toFixed(2)}`;
         }
         if (median?.value) {
-          // Find p10/p90 from the raw percentiles based on forecast index
-          const forecastIdx = items[0].axisValue;
-          const hi = forecastTimes.indexOf(forecastIdx);
-          if (hi >= 0) {
-            const p10 = percentiles.p10[hi];
-            const p25 = percentiles.p25[hi];
-            const p50 = percentiles.p50[hi];
-            const p75 = percentiles.p75[hi];
-            const p90 = percentiles.p90[hi];
+          // Use dataIndex to compute forecast index deterministically
+          const forecastIdx = dataIndex - ctxLen;
+          if (forecastIdx >= 0 && forecastIdx < horizons.length) {
+            const p10 = percentiles.p10[forecastIdx];
+            const p25 = percentiles.p25[forecastIdx];
+            const p50 = percentiles.p50[forecastIdx];
+            const p75 = percentiles.p75[forecastIdx];
+            const p90 = percentiles.p90[forecastIdx];
             const delta = ((p50 - last_close) / last_close * 100).toFixed(2);
             return [
-              `<b>${time}</b> (+${formatHorizon(horizons[hi])})`,
+              `<b>${time}</b> (+${formatHorizon(horizons[forecastIdx])})`,
               `<span style="color:#64748b">P90:</span> ${p90.toFixed(2)}`,
               `<span style="color:#94a3b8">P75:</span> ${p75.toFixed(2)}`,
               `<b>P50: ${p50.toFixed(2)}</b> <span style="color:#64748b">(${delta}%)</span>`,

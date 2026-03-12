@@ -30,12 +30,12 @@ export function generateMockPrediction(): PredictionResponse {
   );
   const rand = seededRandom(minuteSlot * 1337 + now.getDate() * 7);
 
-  // Random walk for context candles (2 hours = 24 bars)
+  // Random walk for context candles (24 hours = 288 five-min bars)
   const contextCandles = [];
   let price = BASE_PRICE + (rand() - 0.5) * 80;
-  const baseTime = Math.floor(now.getTime() / 1000) - 24 * 300;
+  const baseTime = Math.floor(now.getTime() / 1000) - 288 * 300;
 
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 288; i++) {
     const ret = (rand() - 0.5) * 4;
     const open = round(price);
     const close = round(price + ret);

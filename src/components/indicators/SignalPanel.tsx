@@ -4,6 +4,7 @@
  * the model produces calibrated spreads, not directional signals.
  */
 
+import { formatHorizon } from "../../api/format";
 import type { SignalResponse } from "../../api/types";
 
 interface Props {
@@ -19,6 +20,7 @@ export function SignalPanel({ signal, lastClose }: Props) {
     long_frac,
     ensemble_sharpe,
     confidence,
+    horizon_signals,
   } = signal;
 
   // Derive bias from expected return direction
@@ -89,6 +91,47 @@ export function SignalPanel({ signal, lastClose }: Props) {
           median ensemble bias
         </div>
       </div>
+
+      {/* Horizon breakdown row */}
+      {horizon_signals && Object.keys(horizon_signals).length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${Object.keys(horizon_signals).length}, 1fr)`,
+            gap: 4,
+            margin: "8px 0",
+            padding: "8px 0",
+            borderTop: "1px solid #1e293b",
+            borderBottom: "1px solid #1e293b",
+          }}
+        >
+          {Object.entries(horizon_signals).map(([h, hs]) => {
+            const dirColor =
+              hs.direction === "LONG" ? "#10b981" : hs.direction === "SHORT" ? "#ef4444" : "#94a3b8";
+            const arrow = hs.direction === "LONG" ? "\u2191" : hs.direction === "SHORT" ? "\u2193" : "\u2192";
+            const expectedPts = hs.expected_return * lastClose;
+            return (
+              <div key={h} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>
+                  {formatHorizon(Number(h))}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: dirColor }}>
+                  {arrow}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: dirColor,
+                    fontFamily: "JetBrains Mono, monospace",
+                  }}
+                >
+                  {expectedPts >= 0 ? "+" : ""}{expectedPts.toFixed(1)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Spread visualization — P10 to P90 bar */}
       <div style={{ margin: "8px 0 12px", padding: "0 4px" }}>
@@ -172,8 +215,9 @@ export function SignalPanel({ signal, lastClose }: Props) {
           color={medianPts > 0 ? "#10b981" : medianPts < 0 ? "#ef4444" : "#94a3b8"}
         />
         <StatItem
-          label="Upside Frac"
+          label="Paths Up"
           value={`${(long_frac * 100).toFixed(0)}%`}
+          subtitle="% of paths ending higher"
           color={long_frac > 0.55 ? "#10b981" : long_frac < 0.45 ? "#ef4444" : "#94a3b8"}
         />
         <StatItem
@@ -186,10 +230,15 @@ export function SignalPanel({ signal, lastClose }: Props) {
           value={`${p90Pts >= 0 ? "+" : ""}${p90Pts.toFixed(1)} pts`}
           color="#10b981"
         />
-        <StatItem label="Ensemble Sharpe" value={ensemble_sharpe.toFixed(2)} />
         <StatItem
-          label="Conviction"
+          label="Signal Sharpe"
+          value={ensemble_sharpe.toFixed(2)}
+          subtitle="mean/std of returns"
+        />
+        <StatItem
+          label="Strength"
           value={`${(confidence * 100).toFixed(0)}%`}
+          subtitle="signal conviction"
           color={confidence > 0.6 ? "#10b981" : "#94a3b8"}
         />
       </div>
@@ -201,10 +250,12 @@ function StatItem({
   label,
   value,
   color,
+  subtitle,
 }: {
   label: string;
   value: string;
   color?: string;
+  subtitle?: string;
 }) {
   return (
     <div>
@@ -219,6 +270,9 @@ function StatItem({
       >
         {value}
       </div>
+      {subtitle && (
+        <div style={{ color: "#475569", fontSize: 9, marginTop: 1 }}>{subtitle}</div>
+      )}
     </div>
   );
 }
