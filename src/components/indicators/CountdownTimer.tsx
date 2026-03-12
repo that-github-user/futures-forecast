@@ -1,5 +1,12 @@
 /**
  * Countdown to next 5-minute prediction update.
+ *
+ * Anchored to the last bar's timestamp (the actual market data time),
+ * not the prediction generation time. The next update is expected ~one
+ * bar interval after the last bar, plus typical yfinance delay (~15-20s
+ * for server fetch + generation). We use wall-clock 5-minute boundaries
+ * relative to the last bar as the anchor.
+ *
  * Shows overdue state when past expected time, STALE when very overdue.
  */
 
@@ -7,30 +14,50 @@ import { useEffect, useState } from "react";
 
 interface Props {
   lastPredictionTime: string | null;
+  /** Unix timestamp (seconds) of the last context candle — the true data anchor. */
+  lastBarTime?: number | null;
   intervalSeconds?: number;
 }
 
-export function CountdownTimer({ lastPredictionTime, intervalSeconds = 300 }: Props) {
+export function CountdownTimer({ lastPredictionTime, lastBarTime, intervalSeconds = 300 }: Props) {
   const [remaining, setRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     const tick = () => {
-      if (!lastPredictionTime) {
+      if (!lastPredictionTime && !lastBarTime) {
         setRemaining(null);
         return;
       }
 
-      const lastTime = new Date(lastPredictionTime).getTime();
-      const nextTime = lastTime + intervalSeconds * 1000;
       const now = Date.now();
-      const diff = Math.floor((nextTime - now) / 1000);
-      setRemaining(diff);
+
+      if (lastBarTime) {
+        // Anchor to the bar schedule: next bar arrives at lastBarTime + interval,
+        // then add ~20s for server fetch + generation time
+        const serverDelay = 20_000; // typical fetch + generation overhead
+        const nextBarMs = (lastBarTime + intervalSeconds) * 1000 + serverDelay;
+        // If we've already passed that, compute the next one after now
+        if (nextBarMs < now) {
+          // How many intervals have we missed?
+          const elapsed = now - lastBarTime * 1000;
+          const intervalsElapsed = Math.floor(elapsed / (intervalSeconds * 1000));
+          const nextAfterNow = (lastBarTime + (intervalsElapsed + 1) * intervalSeconds) * 1000 + serverDelay;
+          setRemaining(Math.floor((nextAfterNow - now) / 1000));
+        } else {
+          setRemaining(Math.floor((nextBarMs - now) / 1000));
+        }
+      } else {
+        // Fallback: use prediction generation time
+        const lastTime = new Date(lastPredictionTime!).getTime();
+        const nextTime = lastTime + intervalSeconds * 1000;
+        setRemaining(Math.floor((nextTime - now) / 1000));
+      }
     };
 
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [lastPredictionTime, intervalSeconds]);
+  }, [lastPredictionTime, lastBarTime, intervalSeconds]);
 
   // Waiting state — no prediction received yet
   if (remaining === null) {

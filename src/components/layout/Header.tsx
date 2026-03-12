@@ -140,7 +140,10 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <CountdownTimer lastPredictionTime={lastPredictionTime} />
+        <CountdownTimer
+          lastPredictionTime={lastPredictionTime}
+          lastBarTime={ctxCandles.length ? ctxCandles[ctxCandles.length - 1].time : null}
+        />
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div
