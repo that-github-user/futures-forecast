@@ -18,9 +18,10 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { formatHorizon } from "../../api/format";
-import type { PredictionResponse } from "../../api/types";
+import type { HindcastPrediction, PredictionResponse } from "../../api/types";
 import type { Timeframe } from "../../api/timeframe";
 import { getContextCandles, subsampleForecast } from "../../api/timeframe";
+import { findBestMatchPaths } from "../../api/pathMatch";
 
 echarts.use([
   LineChart,
@@ -41,6 +42,8 @@ interface Props {
   chartType?: ChartType;
   forecastStyle?: ForecastStyle;
   timeframe?: Timeframe;
+  hindcast?: HindcastPrediction[];
+  showHindcast?: boolean;
 }
 
 export function FanChart({
@@ -48,6 +51,8 @@ export function FanChart({
   chartType = "line",
   forecastStyle = "bands",
   timeframe = "5m",
+  hindcast,
+  showHindcast = false,
 }: Props) {
   const { last_close, signal } = prediction;
 
@@ -432,29 +437,229 @@ export function FanChart({
               z: 5,
             },
           ]),
-      // Vertical "now" line
-      {
-        name: "Now",
-        type: "line",
-        markLine: {
-          silent: true,
-          symbol: "none",
-          lineStyle: { color: "#475569", width: 1, type: "dashed" },
-          data: [{ xAxis: ctxLen - 1 }],
-          label: {
-            formatter: "NOW",
-            color: "#94a3b8",
-            fontSize: 10,
-            fontFamily: "Inter, sans-serif",
+      // Vertical "now" line with delay indicator
+      (() => {
+        const lastCandleTime = candles.length ? candles[candles.length - 1].time : 0;
+        const delaySec = lastCandleTime ? Math.floor(Date.now() / 1000 - lastCandleTime) : 0;
+        const barTime = lastCandleTime
+          ? new Date(lastCandleTime * 1000).toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })
+          : "NOW";
+        let nowLabel: string;
+        let nowColor: string;
+        let lineColor: string;
+        if (!lastCandleTime || delaySec < 120) {
+          nowLabel = barTime;
+          nowColor = "#94a3b8";
+          lineColor = "#475569";
+        } else if (delaySec <= 1200) {
+          const delayMin = Math.round(delaySec / 60);
+          nowLabel = `${barTime} (~${delayMin}m delay)`;
+          nowColor = "#f59e0b";
+          lineColor = "#f59e0b";
+        } else {
+          nowLabel = `${barTime} (STALE)`;
+          nowColor = "#ef4444";
+          lineColor = "#ef4444";
+        }
+        return {
+          name: "Now",
+          type: "line" as const,
+          markLine: {
+            silent: true,
+            symbol: "none",
+            lineStyle: { color: lineColor, width: 1, type: "dashed" as const },
+            data: [{ xAxis: ctxLen - 1 }],
+            label: {
+              formatter: nowLabel,
+              color: nowColor,
+              fontSize: 10,
+              fontFamily: "Inter, sans-serif",
+            },
           },
-        },
-        data: [],
-      },
+          data: [],
+        };
+      })(),
+      // ── Ghost fan overlay: past prediction bands + realized price lines ──
+      ...(showHindcast && hindcast?.length
+        ? hindcast.flatMap((hc, hci) => {
+            // Map hindcast prediction time onto context x-axis
+            const predTs = new Date(hc.timestamp).getTime() / 1000;
+            // Find the context bar index closest to this prediction's time
+            let anchorIdx = -1;
+            for (let i = candles.length - 1; i >= 0; i--) {
+              if (candles[i].time <= predTs) {
+                anchorIdx = i;
+                break;
+              }
+            }
+            // Skip if prediction is outside the visible context window
+            if (anchorIdx < 0) return [];
+
+            // Build series data aligned to the chart x-axis
+            const totalLen = allTimes.length;
+            const ghostSeries: Record<string, unknown>[] = [];
+
+            // P25-P75 ghost band (faded gray)
+            const ghostP25: (number | null)[] = new Array(totalLen).fill(null);
+            const ghostSpread: (number | null)[] = new Array(totalLen).fill(null);
+            for (let hi = 0; hi < hc.horizons.length; hi++) {
+              const xIdx = anchorIdx + hc.horizons[hi];
+              if (xIdx >= 0 && xIdx < totalLen) {
+                ghostP25[xIdx] = hc.percentiles.p25[hi];
+                ghostSpread[xIdx] = hc.percentiles.p75[hi] - hc.percentiles.p25[hi];
+              }
+            }
+
+            ghostSeries.push(
+              {
+                name: "",
+                type: "line" as const,
+                data: ghostP25,
+                lineStyle: { width: 0 },
+                symbol: "none" as const,
+                stack: `ghost-${hci}`,
+                areaStyle: { color: "transparent" },
+                z: 0,
+                silent: true,
+              },
+              {
+                name: "",
+                type: "line" as const,
+                data: ghostSpread,
+                lineStyle: { width: 0 },
+                symbol: "none" as const,
+                stack: `ghost-${hci}`,
+                areaStyle: { color: "rgba(148, 163, 184, 0.10)" },
+                z: 0,
+                silent: true,
+              },
+            );
+
+            // Realized price line — color-coded by accuracy
+            const realizedData: (number | null)[] = new Array(totalLen).fill(null);
+            let inP25P75 = 0;
+            let inP10P90 = 0;
+            let totalRealized = 0;
+            for (let hi = 0; hi < hc.horizons.length; hi++) {
+              const rp = hc.realized_prices[hi];
+              if (rp == null) continue;
+              const xIdx = anchorIdx + hc.horizons[hi];
+              if (xIdx >= 0 && xIdx < totalLen) {
+                realizedData[xIdx] = rp;
+                totalRealized++;
+                if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
+                  inP25P75++;
+                  inP10P90++;
+                } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
+                  inP10P90++;
+                }
+              }
+            }
+
+            // Color: green if mostly in P25-P75, amber if in P10-P90, red if outside
+            let realizedColor = "#ef4444"; // red
+            if (totalRealized > 0) {
+              const p2575Frac = inP25P75 / totalRealized;
+              const p1090Frac = inP10P90 / totalRealized;
+              if (p2575Frac >= 0.5) realizedColor = "#10b981"; // green
+              else if (p1090Frac >= 0.5) realizedColor = "#f59e0b"; // amber
+            }
+
+            if (totalRealized > 0) {
+              ghostSeries.push({
+                name: "",
+                type: "line" as const,
+                data: realizedData,
+                lineStyle: { color: realizedColor, width: 1.5, type: "dotted" as const },
+                symbol: "circle" as const,
+                symbolSize: 3,
+                itemStyle: { color: realizedColor },
+                z: 3,
+                silent: true,
+              });
+            }
+
+            return ghostSeries;
+          })
+        : []),
+      // ── Best-match path highlighting in spaghetti mode ──
+      ...(forecastStyle === "spaghetti" && sample_paths?.length && hindcast?.length
+        ? (() => {
+            // Find the most recent hindcast for the current prediction
+            const currentHc = hindcast[hindcast.length - 1];
+            if (!currentHc) return [];
+            const realizedValues = currentHc.realized_prices.filter(
+              (v): v is number => v != null,
+            );
+            if (realizedValues.length < 3) return []; // Need at least 3 realized points
+
+            const matches = findBestMatchPaths(sample_paths, currentHc.realized_prices);
+            if (!matches.length) return [];
+
+            return matches.map((m, mi) => ({
+              name: mi === 0 ? `Top ${matches.length} matches` : "",
+              type: "line" as const,
+              data: [...ctxPad, ...sample_paths[m.index]],
+              lineStyle: { color: medianColor, width: 2, opacity: 0.7 },
+              symbol: "none" as const,
+              smooth: 0.3,
+              z: 4,
+              silent: true,
+            }));
+          })()
+        : []),
     ],
   };
 
+  // ── Calibration badge computation ──
+  let calibrationBadge: { pct: number; n: number; color: string } | null = null;
+  if (showHindcast && hindcast?.length) {
+    let totalPts = 0;
+    let inBand = 0;
+    for (const hc of hindcast) {
+      for (let hi = 0; hi < hc.horizons.length; hi++) {
+        const rp = hc.realized_prices[hi];
+        if (rp == null) continue;
+        totalPts++;
+        if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
+          inBand++;
+        }
+      }
+    }
+    if (totalPts > 0) {
+      const pct = Math.round((inBand / totalPts) * 100);
+      let color = "#f59e0b"; // amber by default
+      if (pct >= 70 && pct <= 90) color = "#10b981"; // green — well calibrated
+      else if (pct < 50 || pct > 95) color = "#ef4444"; // red — badly calibrated
+      calibrationBadge = { pct, n: hindcast.length, color };
+    }
+  }
+
   return (
-    <div style={{ width: "100%", height: "100%" }}>
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      {calibrationBadge && (
+        <div
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 24,
+            fontSize: 10,
+            fontFamily: "JetBrains Mono, monospace",
+            color: calibrationBadge.color,
+            background: "#0f172acc",
+            padding: "2px 6px",
+            borderRadius: 3,
+            zIndex: 10,
+          }}
+          title="Percentage of realized prices within P10-P90 bands across recent predictions"
+        >
+          Cal: {calibrationBadge.pct}% in-band (n={calibrationBadge.n})
+        </div>
+      )}
       <ReactEChartsCore
         echarts={echarts}
         option={option}

@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { HistoryEntry } from "../../api/types";
+import type { HindcastPrediction, HistoryEntry } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
 import { useHealth } from "../../hooks/useHealth";
 import type { Timeframe } from "../../api/timeframe";
@@ -30,8 +30,10 @@ export function Dashboard() {
     winRate: number | null;
     numTrades: number | null;
   }>({ pf: null, winRate: null, numTrades: null });
+  const [hindcast, setHindcast] = useState<HindcastPrediction[]>([]);
+  const [showHindcast, setShowHindcast] = useState(false);
 
-  // Fetch history periodically
+  // Fetch history + hindcast periodically
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -48,8 +50,21 @@ export function Dashboard() {
       }
     };
 
+    const fetchHindcast = async () => {
+      try {
+        const hc = await api.hindcast(6);
+        setHindcast(hc.predictions);
+      } catch {
+        // Non-critical — silently ignore
+      }
+    };
+
     fetchHistory();
-    const id = setInterval(fetchHistory, 60_000);
+    fetchHindcast();
+    const id = setInterval(() => {
+      fetchHistory();
+      fetchHindcast();
+    }, 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -138,6 +153,24 @@ export function Dashboard() {
               <TimeframeToggle value={timeframe} onChange={setTimeframe} />
               <ChartTypeToggle value={chartType} onChange={setChartType} />
               <ForecastStyleToggle value={forecastStyle} onChange={setForecastStyle} />
+              <HindcastToggle value={showHindcast} onChange={setShowHindcast} />
+              {forecastStyle !== "spaghetti" &&
+                hindcast.length > 0 &&
+                hindcast[hindcast.length - 1]?.bars_elapsed >= 3 && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "#64748b",
+                      fontStyle: "italic",
+                      fontFamily: "Inter, sans-serif",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setForecastStyle("spaghetti")}
+                    title="Switch to Paths view to see best-match trajectories"
+                  >
+                    Path match available
+                  </span>
+                )}
               <span
                 style={{
                   fontFamily: "JetBrains Mono, monospace",
@@ -150,7 +183,14 @@ export function Dashboard() {
             </div>
           </div>
           <div style={{ height: "calc(100% - 28px)" }}>
-            <FanChart prediction={prediction} chartType={chartType} forecastStyle={forecastStyle} timeframe={timeframe} />
+            <FanChart
+              prediction={prediction}
+              chartType={chartType}
+              forecastStyle={forecastStyle}
+              timeframe={timeframe}
+              hindcast={showHindcast ? hindcast : undefined}
+              showHindcast={showHindcast}
+            />
           </div>
         </div>
 
@@ -273,6 +313,34 @@ function TimeframeToggle({
         </button>
       ))}
     </div>
+  );
+}
+
+function HindcastToggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      style={{
+        background: value ? "#1e293b" : "transparent",
+        color: value ? "#e2e8f0" : "#475569",
+        border: "1px solid #1e293b",
+        borderRadius: 4,
+        padding: "2px 8px",
+        fontSize: 11,
+        fontFamily: "Inter, sans-serif",
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
+      title="Show past prediction accuracy overlay"
+    >
+      Hindcast
+    </button>
   );
 }
 

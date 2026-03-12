@@ -61,6 +61,26 @@ export interface HistoryResponse {
   live_num_trades: number | null;
 }
 
+export interface HindcastPrediction {
+  timestamp: string;
+  last_close: number;
+  horizons: number[];
+  percentiles: {
+    p10: number[];
+    p25: number[];
+    p50: number[];
+    p75: number[];
+    p90: number[];
+  };
+  sample_paths: number[][] | null;
+  realized_prices: (number | null)[];
+  bars_elapsed: number;
+}
+
+export interface HindcastResponse {
+  predictions: HindcastPrediction[];
+}
+
 export interface HealthResponse {
   status: string;
   uptime_seconds: number;

@@ -4,7 +4,7 @@
  * Generates realistic-looking data that updates every 5 minutes.
  */
 
-import type { HistoryResponse, PredictionResponse } from "./types";
+import type { HindcastResponse, HistoryResponse, PredictionResponse } from "./types";
 
 const BASE_PRICE = 5850;
 const TICK = 0.25;
@@ -121,6 +121,70 @@ export function generateMockPrediction(): PredictionResponse {
     },
     context_candles: contextCandles,
   };
+}
+
+export function generateMockHindcast(n = 6): HindcastResponse {
+  const now = Date.now();
+  const rand = seededRandom(77);
+  const predictions = [];
+
+  for (let i = n; i >= 1; i--) {
+    const predTime = now - i * 300_000; // Each prediction 5 min apart
+    const barsElapsed = i;
+    let price = BASE_PRICE + (rand() - 0.5) * 40;
+    const drift = (rand() - 0.45) * 0.12;
+
+    const horizons = [...Array.from({ length: 26 }, (_, j) => 1 + j * 3), 78]
+      .filter((v, j, a) => a.indexOf(v) === j)
+      .sort((a, b) => a - b);
+
+    const percentiles: PredictionResponse["percentiles"] = {
+      p10: [], p25: [], p50: [], p75: [], p90: [],
+    };
+    for (const h of horizons) {
+      const spread = Math.sqrt(h) * 2.5;
+      const mid = price + drift * h * 0.3;
+      percentiles.p10.push(round(mid - spread * 1.3));
+      percentiles.p25.push(round(mid - spread * 0.7));
+      percentiles.p50.push(round(mid));
+      percentiles.p75.push(round(mid + spread * 0.7));
+      percentiles.p90.push(round(mid + spread * 1.3));
+    }
+
+    // Sample paths
+    const samplePaths: number[][] = [];
+    for (let s = 0; s < 30; s++) {
+      const path: number[] = [];
+      for (let hi = 0; hi < horizons.length; hi++) {
+        const spread = Math.sqrt(horizons[hi]) * 2.5;
+        const step = (rand() - 0.5) * spread * 0.8 + drift * horizons[hi] * 0.3;
+        path.push(round(price + step));
+      }
+      samplePaths.push(path);
+    }
+
+    // Realized prices: fill in for elapsed bars, null for future
+    const realizedPrices: (number | null)[] = horizons.map((h) => {
+      if (h <= barsElapsed) {
+        // Simulate realized price near median with some noise
+        const mid = price + drift * h * 0.3;
+        return round(mid + (rand() - 0.5) * 4);
+      }
+      return null;
+    });
+
+    predictions.push({
+      timestamp: new Date(predTime).toISOString(),
+      last_close: round(price),
+      horizons,
+      percentiles,
+      sample_paths: samplePaths,
+      realized_prices: realizedPrices,
+      bars_elapsed: barsElapsed,
+    });
+  }
+
+  return { predictions };
 }
 
 export function generateMockHistory(): HistoryResponse {
