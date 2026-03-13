@@ -20,7 +20,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { formatHorizon } from "../../api/format";
 import type { HindcastPrediction, PredictionResponse } from "../../api/types";
 import type { Timeframe } from "../../api/timeframe";
-import { getContextCandles, subsampleForecast } from "../../api/timeframe";
+import { getContextCandles, subsampleForecast, TIMEFRAME_FACTORS } from "../../api/timeframe";
 import { findBestMatchPaths } from "../../api/pathMatch";
 
 echarts.use([
@@ -490,101 +490,141 @@ export function FanChart({
       // ── Ghost fan overlay: past prediction bands + realized price lines ──
       ...(showHindcast && hindcast?.length
         ? hindcast.flatMap((hc, hci) => {
-            // Map hindcast prediction time onto context x-axis
             const predTs = new Date(hc.timestamp).getTime() / 1000;
-            // Find the context bar index closest to this prediction's time
             let anchorIdx = -1;
             for (let i = candles.length - 1; i >= 0; i--) {
-              if (candles[i].time <= predTs) {
-                anchorIdx = i;
-                break;
-              }
+              if (candles[i].time <= predTs) { anchorIdx = i; break; }
             }
-            // Skip if prediction is outside the visible context window
             if (anchorIdx < 0) return [];
 
-            // Build series data aligned to the chart x-axis
             const totalLen = allTimes.length;
+            const factor = TIMEFRAME_FACTORS[timeframe];
             const ghostSeries: Record<string, unknown>[] = [];
 
-            // P25-P75 ghost band (faded gray)
-            const ghostP25: (number | null)[] = new Array(totalLen).fill(null);
-            const ghostSpread: (number | null)[] = new Array(totalLen).fill(null);
+            // Build interpolation points at fractional x-positions
+            type PctPt = { x: number; p10: number; p25: number; p50: number; p75: number; p90: number };
+            const pts: PctPt[] = [];
             for (let hi = 0; hi < hc.horizons.length; hi++) {
-              const xIdx = anchorIdx + hc.horizons[hi];
-              if (xIdx >= 0 && xIdx < totalLen) {
-                ghostP25[xIdx] = hc.percentiles.p25[hi];
-                ghostSpread[xIdx] = hc.percentiles.p75[hi] - hc.percentiles.p25[hi];
-              }
+              const fx = anchorIdx + hc.horizons[hi] / factor;
+              if (fx >= totalLen) break;
+              pts.push({
+                x: fx,
+                p10: hc.percentiles.p10[hi], p25: hc.percentiles.p25[hi],
+                p50: hc.percentiles.p50[hi], p75: hc.percentiles.p75[hi],
+                p90: hc.percentiles.p90[hi],
+              });
             }
+            if (pts.length < 2) return [];
 
-            ghostSeries.push(
-              {
-                name: "",
-                type: "line" as const,
-                data: ghostP25,
-                lineStyle: { width: 0 },
-                symbol: "none" as const,
-                stack: `ghost-${hci}`,
-                areaStyle: { color: "transparent" },
-                z: 0,
-                silent: true,
-              },
-              {
-                name: "",
-                type: "line" as const,
-                data: ghostSpread,
-                lineStyle: { width: 0 },
-                symbol: "none" as const,
-                stack: `ghost-${hci}`,
-                areaStyle: { color: "rgba(148, 163, 184, 0.10)" },
-                z: 0,
-                silent: true,
-              },
-            );
+            const xStart = Math.max(0, Math.ceil(pts[0].x));
+            const xEnd = Math.min(totalLen - 1, Math.floor(pts[pts.length - 1].x));
 
-            // Realized price line — color-coded by accuracy
-            const realizedData: (number | null)[] = new Array(totalLen).fill(null);
-            let inP25P75 = 0;
-            let inP10P90 = 0;
-            let totalRealized = 0;
+            // Linear interpolation helper
+            const lerp = (x: number, key: keyof Omit<PctPt, "x">): number => {
+              let lo = 0;
+              for (let i = 0; i < pts.length - 1; i++) {
+                if (pts[i].x <= x && pts[i + 1].x >= x) { lo = i; break; }
+              }
+              const hi = Math.min(lo + 1, pts.length - 1);
+              if (pts[hi].x === pts[lo].x) return pts[lo][key];
+              const t = (x - pts[lo].x) / (pts[hi].x - pts[lo].x);
+              return pts[lo][key] + t * (pts[hi][key] - pts[lo][key]);
+            };
+
+            // Compute accuracy for color-coding
+            let inP25P75 = 0, inP10P90 = 0, totalRealized = 0;
             for (let hi = 0; hi < hc.horizons.length; hi++) {
               const rp = hc.realized_prices[hi];
               if (rp == null) continue;
-              const xIdx = anchorIdx + hc.horizons[hi];
-              if (xIdx >= 0 && xIdx < totalLen) {
-                realizedData[xIdx] = rp;
-                totalRealized++;
-                if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
-                  inP25P75++;
-                  inP10P90++;
-                } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
-                  inP10P90++;
-                }
+              totalRealized++;
+              if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
+                inP25P75++; inP10P90++;
+              } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
+                inP10P90++;
               }
             }
 
-            // Color: green if mostly in P25-P75, amber if in P10-P90, red if outside
-            let realizedColor = "#ef4444"; // red
+            // Tint by accuracy: green=accurate, amber=partial, red=missed, gray=no data
+            let bandTint = "148, 163, 184";
             if (totalRealized > 0) {
               const p2575Frac = inP25P75 / totalRealized;
               const p1090Frac = inP10P90 / totalRealized;
-              if (p2575Frac >= 0.5) realizedColor = "#10b981"; // green
-              else if (p1090Frac >= 0.5) realizedColor = "#f59e0b"; // amber
+              if (p2575Frac >= 0.5) bandTint = "16, 185, 129";
+              else if (p1090Frac >= 0.5) bandTint = "245, 158, 11";
+              else bandTint = "239, 68, 68";
             }
 
-            if (totalRealized > 0) {
-              ghostSeries.push({
-                name: "",
-                type: "line" as const,
-                data: realizedData,
-                lineStyle: { color: realizedColor, width: 1.5, type: "dotted" as const },
-                symbol: "circle" as const,
-                symbolSize: 3,
-                itemStyle: { color: realizedColor },
-                z: 3,
-                silent: true,
-              });
+            // Build continuous arrays via interpolation
+            const gP10: (number | null)[] = new Array(totalLen).fill(null);
+            const gP90Sp: (number | null)[] = new Array(totalLen).fill(null);
+            const gP25: (number | null)[] = new Array(totalLen).fill(null);
+            const gP75Sp: (number | null)[] = new Array(totalLen).fill(null);
+            const gP50: (number | null)[] = new Array(totalLen).fill(null);
+            for (let x = xStart; x <= xEnd; x++) {
+              const p10v = lerp(x, "p10"), p25v = lerp(x, "p25");
+              const p75v = lerp(x, "p75"), p90v = lerp(x, "p90");
+              gP10[x] = p10v;
+              gP90Sp[x] = p90v - p10v;
+              gP25[x] = p25v;
+              gP75Sp[x] = p75v - p25v;
+              gP50[x] = lerp(x, "p50");
+            }
+
+            // Outer band (P10-P90)
+            ghostSeries.push(
+              { name: "", type: "line" as const, data: gP10,
+                lineStyle: { width: 0 }, symbol: "none" as const,
+                stack: `gho-${hci}`, areaStyle: { color: "transparent" },
+                z: 0, silent: true },
+              { name: "", type: "line" as const, data: gP90Sp,
+                lineStyle: { width: 0 }, symbol: "none" as const,
+                stack: `gho-${hci}`, areaStyle: { color: `rgba(${bandTint}, 0.07)` },
+                z: 0, silent: true },
+            );
+            // Inner band (P25-P75)
+            ghostSeries.push(
+              { name: "", type: "line" as const, data: gP25,
+                lineStyle: { width: 0 }, symbol: "none" as const,
+                stack: `ghi-${hci}`, areaStyle: { color: "transparent" },
+                z: 0, silent: true },
+              { name: "", type: "line" as const, data: gP75Sp,
+                lineStyle: { width: 0 }, symbol: "none" as const,
+                stack: `ghi-${hci}`, areaStyle: { color: `rgba(${bandTint}, 0.14)` },
+                z: 0, silent: true },
+            );
+            // Ghost P50 median — thin dashed
+            ghostSeries.push({
+              name: "", type: "line" as const, data: gP50,
+              lineStyle: { color: `rgba(${bandTint}, 0.4)`, width: 1, type: "dashed" as const },
+              symbol: "none" as const, z: 1, silent: true,
+            });
+
+            // Realized price line — solid, interpolated for continuity
+            if (totalRealized > 1) {
+              const realColor = bandTint === "16, 185, 129" ? "#10b981"
+                : bandTint === "245, 158, 11" ? "#f59e0b" : "#ef4444";
+              const rpPts: { x: number; v: number }[] = [];
+              for (let hi = 0; hi < hc.horizons.length; hi++) {
+                const rp = hc.realized_prices[hi];
+                if (rp == null) continue;
+                const rx = Math.round(anchorIdx + hc.horizons[hi] / factor);
+                if (rx >= 0 && rx < totalLen) rpPts.push({ x: rx, v: rp });
+              }
+              if (rpPts.length >= 2) {
+                const realLine: (number | null)[] = new Array(totalLen).fill(null);
+                for (let ri = 0; ri < rpPts.length - 1; ri++) {
+                  const a = rpPts[ri], b = rpPts[ri + 1];
+                  for (let x = a.x; x <= b.x; x++) {
+                    const t = a.x === b.x ? 0 : (x - a.x) / (b.x - a.x);
+                    realLine[x] = a.v + t * (b.v - a.v);
+                  }
+                }
+                ghostSeries.push({
+                  name: "", type: "line" as const, data: realLine,
+                  lineStyle: { color: realColor, width: 1.5 },
+                  symbol: "none" as const, z: 3, silent: true,
+                });
+              }
             }
 
             return ghostSeries;

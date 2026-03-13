@@ -3,7 +3,7 @@
  * Assembles all components with smooth transitions.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
 import type { HindcastPrediction, HistoryEntry } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
@@ -67,6 +67,31 @@ export function Dashboard() {
     }, 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Compute range accuracy metrics from hindcast data
+  const rangeMetrics = useMemo(() => {
+    if (!hindcast?.length) return null;
+    let inP2575 = 0, inP1090 = 0, total = 0;
+    for (const hc of hindcast) {
+      for (let hi = 0; hi < hc.horizons.length; hi++) {
+        const rp = hc.realized_prices[hi];
+        if (rp == null) continue;
+        total++;
+        if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
+          inP2575++; inP1090++;
+        } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
+          inP1090++;
+        }
+      }
+    }
+    if (total === 0) return null;
+    return {
+      innerPct: inP2575 / total,
+      outerPct: inP1090 / total,
+      totalPoints: total,
+      numPredictions: hindcast.length,
+    };
+  }, [hindcast]);
 
   if (!prediction) {
     return (
@@ -199,6 +224,7 @@ export function Dashboard() {
               winRate={liveStats.winRate}
               numTrades={liveStats.numTrades}
               historyError={historyError}
+              rangeAccuracy={rangeMetrics}
             />
           </div>
           <div className="fade-in" style={{ flex: 1, minHeight: 150 }}>
