@@ -112,14 +112,16 @@ export function ProbabilityDist({ prediction }: Props) {
         return `${p.name}<br/>Count: ${p.value}`;
       },
     },
-    grid: { left: 40, right: 10, top: 10, bottom: hasSamplePaths ? 50 : 30 },
+    grid: { left: 40, right: 10, top: 10, bottom: 45 },
     xAxis: {
       type: "category",
       data: bins.map((b) => b.label),
       axisLabel: {
         color: "#94a3b8",
-        fontSize: 9,
-        rotate: bins.length > 10 ? 45 : 0,
+        fontSize: 8,
+        rotate: bins.length > 8 ? 45 : 0,
+        overflow: "truncate" as const,
+        width: 50,
       },
       axisLine: { lineStyle: { color: "#334155" } },
     },
@@ -175,7 +177,7 @@ export function ProbabilityDist({ prediction }: Props) {
           ))}
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <ReactEChartsCore
           echarts={echarts}
           option={option}
@@ -190,10 +192,12 @@ export function ProbabilityDist({ prediction }: Props) {
           style={{
             display: "flex",
             justifyContent: "space-around",
-            padding: "6px 4px 2px",
+            padding: "4px 2px 2px",
             borderTop: "1px solid #1e293b",
             fontFamily: "JetBrains Mono, monospace",
-            fontSize: 11,
+            fontSize: 10,
+            flexWrap: "wrap",
+            gap: 2,
           }}
         >
           <span>

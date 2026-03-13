@@ -27,9 +27,14 @@ export function EquityCurve({ history }: Props) {
   // Check if multi-horizon data is available
   const hasMultiHorizon = history.some((e) => e.realized_returns != null);
 
+  // Sort history by timestamp to ensure chronological order
+  const sorted = [...history].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
+
   // Compute cumulative equity from realized returns at selected horizon
   let cumReturn = 0;
-  const equity = history
+  const equity = sorted
     .filter((e) => {
       if (hasMultiHorizon && e.realized_returns) {
         const ret = e.realized_returns[String(selectedHorizon)];
@@ -50,15 +55,24 @@ export function EquityCurve({ history }: Props) {
 
       const pnl = signalDir * ret;
       cumReturn += pnl;
+
+      // Include date if history spans multiple days
+      const d = new Date(e.timestamp);
+      const timeStr = d.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
       return {
-        time: new Date(e.timestamp).toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }),
+        time: timeStr,
+        fullTime: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " + timeStr,
         value: +(cumReturn * 100).toFixed(3),
       };
     });
+
+  // Detect if entries span multiple calendar days
+  const multiDay = equity.length > 1 &&
+    equity[0].fullTime.slice(0, 6) !== equity[equity.length - 1].fullTime.slice(0, 6);
 
   const isPositive = cumReturn >= 0;
 
@@ -73,8 +87,8 @@ export function EquityCurve({ history }: Props) {
     grid: { left: 50, right: 10, top: 10, bottom: 30 },
     xAxis: {
       type: "category",
-      data: equity.map((e) => e.time),
-      axisLabel: { color: "#94a3b8", fontSize: 10, interval: Math.max(0, Math.floor(equity.length / 6)) },
+      data: equity.map((e) => multiDay ? e.fullTime : e.time),
+      axisLabel: { color: "#94a3b8", fontSize: multiDay ? 8 : 10, interval: Math.max(0, Math.floor(equity.length / 6)), rotate: multiDay ? 30 : 0 },
       axisLine: { lineStyle: { color: "#334155" } },
     },
     yAxis: {

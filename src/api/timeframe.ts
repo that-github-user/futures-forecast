@@ -27,23 +27,44 @@ export const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
 /** Number of aggregated context bars to display */
 const DISPLAY_BARS = 24;
 
-/** Aggregate 5-min candles into larger timeframe bars, aligned from the end. */
+/** Aggregate 5-min candles into larger timeframe bars, aligned to wall-clock boundaries.
+ *  15m bars snap to :00/:15/:30/:45, 30m to :00/:30, 1h to :00. */
 export function aggregateCandles(candles: CandleData[], factor: number): CandleData[] {
   if (factor <= 1) return candles;
 
+  const intervalSec = factor * 300; // seconds per aggregated bar
   const result: CandleData[] = [];
-  // Align from the end so the last group is complete
-  const alignedStart = candles.length % factor;
-  for (let i = alignedStart; i < candles.length; i += factor) {
-    const group = candles.slice(i, i + factor);
-    if (group.length === 0) continue;
+  let currentBucket = -1;
+  let group: CandleData[] = [];
+
+  for (const c of candles) {
+    const bucket = Math.floor(c.time / intervalSec) * intervalSec;
+    if (bucket !== currentBucket) {
+      if (group.length > 0) {
+        result.push({
+          time: currentBucket,
+          open: group[0].open,
+          high: Math.max(...group.map((g) => g.high)),
+          low: Math.min(...group.map((g) => g.low)),
+          close: group[group.length - 1].close,
+          volume: group.reduce((sum, g) => sum + g.volume, 0),
+        });
+      }
+      currentBucket = bucket;
+      group = [c];
+    } else {
+      group.push(c);
+    }
+  }
+  // Flush last group
+  if (group.length > 0) {
     result.push({
-      time: group[0].time,
+      time: currentBucket,
       open: group[0].open,
-      high: Math.max(...group.map((c) => c.high)),
-      low: Math.min(...group.map((c) => c.low)),
+      high: Math.max(...group.map((g) => g.high)),
+      low: Math.min(...group.map((g) => g.low)),
       close: group[group.length - 1].close,
-      volume: group.reduce((sum, c) => sum + c.volume, 0),
+      volume: group.reduce((sum, g) => sum + g.volume, 0),
     });
   }
   return result;
