@@ -130,6 +130,52 @@ html, body, #root {
   font-weight: 600;
 }
 
+/* App root + content container */
+.app-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Dashboard root */
+.dashboard-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0a0e17;
+  color: #e2e8f0;
+  overflow: hidden;
+}
+
+/* Dashboard header */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid #1e293b;
+  background: #0d1117;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 /* Dashboard grid */
 .dashboard-grid {
   flex: 1;
@@ -141,6 +187,33 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Fan chart cell */
+.fan-chart-cell {
+  grid-row: 1 / 3;
+  padding: 8px;
+  min-height: 0;
+}
+
+/* Panel controls row */
+.panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Sidebar layout */
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.sidebar-bottom {
+  min-height: 0;
+}
+
 /* Responsive: shrink sidebar at 1200px */
 @media (max-width: 1200px) {
   .dashboard-grid {
@@ -148,15 +221,83 @@ html, body, #root {
   }
 }
 
-/* Responsive: stack on narrow screens */
+/* Responsive: stack on narrow/mobile screens */
 @media (max-width: 900px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: 60vh auto auto;
+  .app-root {
+    height: auto;
+    min-height: 100vh;
   }
 
-  .dashboard-grid > :first-child {
+  .app-content {
+    overflow: visible;
+  }
+
+  .dashboard-root {
+    overflow: visible;
+    height: auto;
+  }
+
+  .dashboard-header {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .header-left {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-right {
+    gap: 10px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    overflow: visible;
+  }
+
+  .fan-chart-cell {
     grid-row: auto;
+    min-height: 350px;
+    height: 50vh;
+  }
+
+  .panel-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .panel-controls {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .sidebar-top {
+    overflow: visible;
+    min-height: auto;
+  }
+
+  .sidebar-top > .fade-in:last-child {
+    min-height: 250px;
+  }
+
+  .sidebar-bottom {
+    min-height: 200px;
+  }
+
+  .tab-bar {
+    padding: 0 8px;
+  }
+
+  .tab-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .demo-banner {
+    padding: 6px 12px;
+    flex-wrap: wrap;
   }
 }
 

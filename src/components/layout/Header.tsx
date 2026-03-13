@@ -58,19 +58,8 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
     marketStatus === "RTH" ? "#10b981" : marketStatus === "ETH" ? "#f59e0b" : "#ef4444";
 
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "12px 20px",
-        borderBottom: "1px solid #1e293b",
-        background: "#0d1117",
-        flexWrap: "wrap",
-        gap: 8,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <header className="dashboard-header">
+      <div className="header-left">
         <h1
           style={{
             margin: 0,
@@ -139,7 +128,7 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
         </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div className="header-right">
         <CountdownTimer
           lastPredictionTime={lastPredictionTime}
           lastBarTime={ctxCandles.length ? ctxCandles[ctxCandles.length - 1].time : null}

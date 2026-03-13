@@ -8,7 +8,7 @@ function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+    <div className="app-root">
       <nav className="tab-bar">
         <button
           className={`tab-btn ${tab === "dashboard" ? "active" : ""}`}
@@ -24,7 +24,7 @@ function App() {
         </button>
       </nav>
 
-      <div style={{ flex: 1, overflow: "hidden" }}>
+      <div className="app-content">
         {tab === "dashboard" && <Dashboard />}
         {tab === "backtest" && <BacktestPage />}
       </div>

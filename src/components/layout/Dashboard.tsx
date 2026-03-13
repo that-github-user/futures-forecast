@@ -99,16 +99,8 @@ export function Dashboard() {
   }
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        background: "#0a0e17",
-        color: "#e2e8f0",
-        overflow: "hidden",
-      }}
-    >
+    <div className="dashboard-root">
+
       <Header
         instrument={prediction.instrument}
         connected={connected}
@@ -144,12 +136,11 @@ export function Dashboard() {
       <div className="dashboard-grid">
         {/* Main fan chart */}
         <div
-          className="panel fade-in"
-          style={{ gridRow: "1 / 3", padding: 8, minHeight: 0 }}
+          className="panel fade-in fan-chart-cell"
         >
           <div className="panel-header">
             <span className="panel-title">Ensemble Forecast</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="panel-controls">
               <TimeframeToggle value={timeframe} onChange={setTimeframe} />
               <ChartTypeToggle value={chartType} onChange={setChartType} />
               <ForecastStyleToggle value={forecastStyle} onChange={setForecastStyle} />
@@ -195,15 +186,7 @@ export function Dashboard() {
         </div>
 
         {/* Sidebar top: signal + metrics */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            overflow: "auto",
-            minHeight: 0,
-          }}
-        >
+        <div className="sidebar-top">
           <div className="fade-in">
             <SignalPanel
               signal={prediction.signal}
@@ -224,7 +207,7 @@ export function Dashboard() {
         </div>
 
         {/* Sidebar bottom: equity curve */}
-        <div className="fade-in" style={{ minHeight: 0 }}>
+        <div className="fade-in sidebar-bottom">
           <EquityCurve history={history} />
         </div>
       </div>
