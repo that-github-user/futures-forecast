@@ -133,6 +133,48 @@ export function FanChart({
   const yMax = Math.max(...allPrices);
   const yPad = (yMax - yMin) * 0.05 || 5;
 
+  // ── Hindcast analysis — pre-compute before building ECharts option ──
+  const hindcastInfo = (() => {
+    if (!showHindcast || !hindcast?.length) return null;
+    const factor = TIMEFRAME_FACTORS[timeframe];
+
+    // Per-prediction P10-P90 accuracy
+    const perPred = hindcast.map((hc) => {
+      let inBand = 0, total = 0;
+      for (let hi = 0; hi < hc.horizons.length; hi++) {
+        const rp = hc.realized_prices[hi];
+        if (rp == null) continue;
+        total++;
+        if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) inBand++;
+      }
+      return { accuracy: total > 0 ? inBand / total : 0, total };
+    });
+
+    // Find the best candidate for single ghost band (most realized bars, overlaps context)
+    let bestIdx = -1, bestAnchor = -1, bestRealized = 0;
+    for (let i = 0; i < hindcast.length; i++) {
+      const predTs = new Date(hindcast[i].timestamp).getTime() / 1000;
+      let anchor = -1;
+      for (let ci = candles.length - 1; ci >= 0; ci--) {
+        if (candles[ci].time <= predTs) { anchor = ci; break; }
+      }
+      if (anchor < 0) continue;
+      const realized = hindcast[i].realized_prices.filter(v => v != null).length;
+      if (realized >= 3 && realized > bestRealized) {
+        bestIdx = i; bestAnchor = anchor; bestRealized = realized;
+      }
+    }
+
+    // Aggregate accuracy
+    let aggIn = 0, aggTotal = 0;
+    for (const p of perPred) {
+      aggIn += Math.round(p.accuracy * p.total);
+      aggTotal += p.total;
+    }
+
+    return { perPred, bestIdx, bestAnchor, factor, aggAccuracy: aggTotal > 0 ? aggIn / aggTotal : 0, aggTotal };
+  })();
+
   const option: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
     tooltip: {
@@ -487,39 +529,32 @@ export function FanChart({
           data: [],
         };
       })(),
-      // ── Ghost fan overlay: past prediction bands + realized price lines ──
-      ...(showHindcast && hindcast?.length
-        ? hindcast.flatMap((hc, hci) => {
-            const predTs = new Date(hc.timestamp).getTime() / 1000;
-            let anchorIdx = -1;
-            for (let i = candles.length - 1; i >= 0; i--) {
-              if (candles[i].time <= predTs) { anchorIdx = i; break; }
-            }
-            if (anchorIdx < 0) return [];
-
+      // ── Hindcast: single ghost band from best past prediction ──
+      // Shows ONE clean overlay behind context candles — the candles themselves
+      // are the proof of accuracy. No multi-layer mess.
+      ...(hindcastInfo && hindcastInfo.bestIdx >= 0
+        ? (() => {
+            const hc = hindcast![hindcastInfo.bestIdx];
+            const anchor = hindcastInfo.bestAnchor;
+            const fac = hindcastInfo.factor;
             const totalLen = allTimes.length;
-            const factor = TIMEFRAME_FACTORS[timeframe];
-            const ghostSeries: Record<string, unknown>[] = [];
 
-            // Build interpolation points at fractional x-positions
-            type PctPt = { x: number; p10: number; p25: number; p50: number; p75: number; p90: number };
+            type PctPt = { x: number; p10: number; p25: number; p75: number; p90: number };
             const pts: PctPt[] = [];
             for (let hi = 0; hi < hc.horizons.length; hi++) {
-              const fx = anchorIdx + hc.horizons[hi] / factor;
-              if (fx >= totalLen) break;
+              const fx = anchor + hc.horizons[hi] / fac;
+              if (fx >= ctxLen || fx >= totalLen) break; // clip to proven context area
               pts.push({
                 x: fx,
                 p10: hc.percentiles.p10[hi], p25: hc.percentiles.p25[hi],
-                p50: hc.percentiles.p50[hi], p75: hc.percentiles.p75[hi],
-                p90: hc.percentiles.p90[hi],
+                p75: hc.percentiles.p75[hi], p90: hc.percentiles.p90[hi],
               });
             }
             if (pts.length < 2) return [];
 
-            const xStart = Math.max(0, Math.ceil(pts[0].x));
-            const xEnd = Math.min(totalLen - 1, Math.floor(pts[pts.length - 1].x));
+            const xS = Math.max(0, Math.ceil(pts[0].x));
+            const xE = Math.min(ctxLen - 1, Math.floor(pts[pts.length - 1].x));
 
-            // Linear interpolation helper
             const lerp = (x: number, key: keyof Omit<PctPt, "x">): number => {
               let lo = 0;
               for (let i = 0; i < pts.length - 1; i++) {
@@ -531,104 +566,42 @@ export function FanChart({
               return pts[lo][key] + t * (pts[hi][key] - pts[lo][key]);
             };
 
-            // Compute accuracy for color-coding
-            let inP25P75 = 0, inP10P90 = 0, totalRealized = 0;
-            for (let hi = 0; hi < hc.horizons.length; hi++) {
-              const rp = hc.realized_prices[hi];
-              if (rp == null) continue;
-              totalRealized++;
-              if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
-                inP25P75++; inP10P90++;
-              } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
-                inP10P90++;
-              }
-            }
+            const acc = hindcastInfo.perPred[hindcastInfo.bestIdx].accuracy;
+            const rgb = acc >= 0.7 ? "16, 185, 129"
+              : acc >= 0.5 ? "245, 158, 11" : "239, 68, 68";
 
-            // Tint by accuracy: green=accurate, amber=partial, red=missed, gray=no data
-            let bandTint = "148, 163, 184";
-            if (totalRealized > 0) {
-              const p2575Frac = inP25P75 / totalRealized;
-              const p1090Frac = inP10P90 / totalRealized;
-              if (p2575Frac >= 0.5) bandTint = "16, 185, 129";
-              else if (p1090Frac >= 0.5) bandTint = "245, 158, 11";
-              else bandTint = "239, 68, 68";
-            }
-
-            // Build continuous arrays via interpolation
             const gP10: (number | null)[] = new Array(totalLen).fill(null);
-            const gP90Sp: (number | null)[] = new Array(totalLen).fill(null);
+            const gOSp: (number | null)[] = new Array(totalLen).fill(null);
             const gP25: (number | null)[] = new Array(totalLen).fill(null);
-            const gP75Sp: (number | null)[] = new Array(totalLen).fill(null);
-            const gP50: (number | null)[] = new Array(totalLen).fill(null);
-            for (let x = xStart; x <= xEnd; x++) {
+            const gISp: (number | null)[] = new Array(totalLen).fill(null);
+            for (let x = xS; x <= xE; x++) {
               const p10v = lerp(x, "p10"), p25v = lerp(x, "p25");
               const p75v = lerp(x, "p75"), p90v = lerp(x, "p90");
-              gP10[x] = p10v;
-              gP90Sp[x] = p90v - p10v;
-              gP25[x] = p25v;
-              gP75Sp[x] = p75v - p25v;
-              gP50[x] = lerp(x, "p50");
+              gP10[x] = p10v; gOSp[x] = p90v - p10v;
+              gP25[x] = p25v; gISp[x] = p75v - p25v;
             }
 
-            // Outer band (P10-P90)
-            ghostSeries.push(
+            return [
+              // Outer P10-P90 — very faint
               { name: "", type: "line" as const, data: gP10,
                 lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: `gho-${hci}`, areaStyle: { color: "transparent" },
+                stack: "ghost-o", areaStyle: { color: "transparent" },
                 z: 0, silent: true },
-              { name: "", type: "line" as const, data: gP90Sp,
+              { name: "", type: "line" as const, data: gOSp,
                 lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: `gho-${hci}`, areaStyle: { color: `rgba(${bandTint}, 0.07)` },
+                stack: "ghost-o", areaStyle: { color: `rgba(${rgb}, 0.06)` },
                 z: 0, silent: true },
-            );
-            // Inner band (P25-P75)
-            ghostSeries.push(
+              // Inner P25-P75
               { name: "", type: "line" as const, data: gP25,
                 lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: `ghi-${hci}`, areaStyle: { color: "transparent" },
+                stack: "ghost-i", areaStyle: { color: "transparent" },
                 z: 0, silent: true },
-              { name: "", type: "line" as const, data: gP75Sp,
+              { name: "", type: "line" as const, data: gISp,
                 lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: `ghi-${hci}`, areaStyle: { color: `rgba(${bandTint}, 0.14)` },
+                stack: "ghost-i", areaStyle: { color: `rgba(${rgb}, 0.15)` },
                 z: 0, silent: true },
-            );
-            // Ghost P50 median — thin dashed
-            ghostSeries.push({
-              name: "", type: "line" as const, data: gP50,
-              lineStyle: { color: `rgba(${bandTint}, 0.4)`, width: 1, type: "dashed" as const },
-              symbol: "none" as const, z: 1, silent: true,
-            });
-
-            // Realized price line — solid, interpolated for continuity
-            if (totalRealized > 1) {
-              const realColor = bandTint === "16, 185, 129" ? "#10b981"
-                : bandTint === "245, 158, 11" ? "#f59e0b" : "#ef4444";
-              const rpPts: { x: number; v: number }[] = [];
-              for (let hi = 0; hi < hc.horizons.length; hi++) {
-                const rp = hc.realized_prices[hi];
-                if (rp == null) continue;
-                const rx = Math.round(anchorIdx + hc.horizons[hi] / factor);
-                if (rx >= 0 && rx < totalLen) rpPts.push({ x: rx, v: rp });
-              }
-              if (rpPts.length >= 2) {
-                const realLine: (number | null)[] = new Array(totalLen).fill(null);
-                for (let ri = 0; ri < rpPts.length - 1; ri++) {
-                  const a = rpPts[ri], b = rpPts[ri + 1];
-                  for (let x = a.x; x <= b.x; x++) {
-                    const t = a.x === b.x ? 0 : (x - a.x) / (b.x - a.x);
-                    realLine[x] = a.v + t * (b.v - a.v);
-                  }
-                }
-                ghostSeries.push({
-                  name: "", type: "line" as const, data: realLine,
-                  lineStyle: { color: realColor, width: 1.5 },
-                  symbol: "none" as const, z: 3, silent: true,
-                });
-              }
-            }
-
-            return ghostSeries;
-          })
+            ];
+          })()
         : []),
       // ── Best-match path highlighting in spaghetti mode ──
       ...(forecastStyle === "spaghetti" && sample_paths?.length && hindcast?.length
@@ -659,33 +632,22 @@ export function FanChart({
     ],
   };
 
-  // ── Calibration badge computation ──
-  let calibrationBadge: { pct: number; n: number; color: string } | null = null;
-  if (showHindcast && hindcast?.length) {
-    let totalPts = 0;
-    let inBand = 0;
-    for (const hc of hindcast) {
-      for (let hi = 0; hi < hc.horizons.length; hi++) {
-        const rp = hc.realized_prices[hi];
-        if (rp == null) continue;
-        totalPts++;
-        if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
-          inBand++;
-        }
-      }
-    }
-    if (totalPts > 0) {
-      const pct = Math.round((inBand / totalPts) * 100);
-      let color = "#f59e0b"; // amber by default
-      if (pct >= 70 && pct <= 90) color = "#10b981"; // green — well calibrated
-      else if (pct < 50 || pct > 95) color = "#ef4444"; // red — badly calibrated
-      calibrationBadge = { pct, n: hindcast.length, color };
-    }
-  }
+  // ── Calibration badge ──
+  const calBadge = (() => {
+    if (!hindcastInfo || hindcastInfo.aggTotal === 0) return null;
+    const aggPct = Math.round(hindcastInfo.aggAccuracy * 100);
+    const bestPct = hindcastInfo.bestIdx >= 0
+      ? Math.round(hindcastInfo.perPred[hindcastInfo.bestIdx].accuracy * 100)
+      : null;
+    let color = "#f59e0b";
+    if (aggPct >= 70 && aggPct <= 90) color = "#10b981";
+    else if (aggPct < 50 || aggPct > 95) color = "#ef4444";
+    return { bestPct, aggPct, n: hindcast!.length, color };
+  })();
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {calibrationBadge && (
+      {calBadge && (
         <div
           style={{
             position: "absolute",
@@ -693,15 +655,54 @@ export function FanChart({
             right: 24,
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
-            color: calibrationBadge.color,
+            color: calBadge.color,
             background: "#0f172acc",
-            padding: "2px 6px",
+            padding: "2px 8px",
             borderRadius: 3,
             zIndex: 10,
           }}
-          title="Percentage of realized prices within P10-P90 bands across recent predictions"
+          title="P10-P90 coverage — how often realized prices fell within predicted bands"
         >
-          Cal: {calibrationBadge.pct}% in-band (n={calibrationBadge.n})
+          {calBadge.bestPct !== null && (
+            <span style={{ color: "#94a3b8" }}>Shown: {calBadge.bestPct}% | </span>
+          )}
+          {calBadge.aggPct}% in-band (n={calBadge.n})
+        </div>
+      )}
+      {/* Accuracy timeline — one colored block per past prediction */}
+      {hindcastInfo && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 6,
+            right: 24,
+            display: "flex",
+            alignItems: "center",
+            gap: 3,
+            zIndex: 10,
+            background: "#0f172acc",
+            padding: "2px 6px",
+            borderRadius: 3,
+          }}
+        >
+          <span style={{ fontSize: 9, color: "#64748b", marginRight: 2 }}>accuracy</span>
+          {hindcastInfo.perPred.map((p, i) => (
+            <div
+              key={i}
+              style={{
+                width: 10,
+                height: 5,
+                borderRadius: 1,
+                background: p.total === 0 ? "#334155"
+                  : p.accuracy >= 0.7 ? "#10b981"
+                  : p.accuracy >= 0.5 ? "#f59e0b"
+                  : "#ef4444",
+                opacity: p.total === 0 ? 0.4 : 0.9,
+                border: hindcastInfo.bestIdx === i ? "1px solid #e2e8f0" : "none",
+              }}
+              title={`Prediction ${i + 1}: ${p.total > 0 ? `${Math.round(p.accuracy * 100)}% in P10-P90 (${p.total} pts)` : "awaiting data"}`}
+            />
+          ))}
         </div>
       )}
       <ReactEChartsCore
