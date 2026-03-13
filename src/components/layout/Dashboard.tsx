@@ -247,38 +247,11 @@ const chartTypeOptions: { value: ChartType; label: string }[] = [
   { value: "ohlc", label: "OHLC" },
 ];
 
-function ChartTypeToggle({
-  value,
-  onChange,
-}: {
-  value: ChartType;
-  onChange: (t: ChartType) => void;
-}) {
+function ChartTypeToggle({ value, onChange }: { value: ChartType; onChange: (t: ChartType) => void }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        background: "#0f172a",
-        borderRadius: 4,
-        border: "1px solid #1e293b",
-        overflow: "hidden",
-      }}
-    >
+    <div className="toggle-group">
       {chartTypeOptions.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          style={{
-            background: value === opt.value ? "#1e293b" : "transparent",
-            color: value === opt.value ? "#e2e8f0" : "#475569",
-            border: "none",
-            padding: "2px 8px",
-            fontSize: 11,
-            fontFamily: "Inter, sans-serif",
-            cursor: "pointer",
-            transition: "all 0.15s",
-          }}
-        >
+        <button key={opt.value} className={value === opt.value ? "active" : ""} onClick={() => onChange(opt.value)}>
           {opt.label}
         </button>
       ))}
@@ -286,38 +259,11 @@ function ChartTypeToggle({
   );
 }
 
-function TimeframeToggle({
-  value,
-  onChange,
-}: {
-  value: Timeframe;
-  onChange: (tf: Timeframe) => void;
-}) {
+function TimeframeToggle({ value, onChange }: { value: Timeframe; onChange: (tf: Timeframe) => void }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        background: "#0f172a",
-        borderRadius: 4,
-        border: "1px solid #1e293b",
-        overflow: "hidden",
-      }}
-    >
+    <div className="toggle-group">
       {TIMEFRAME_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          style={{
-            background: value === opt.value ? "#1e293b" : "transparent",
-            color: value === opt.value ? "#e2e8f0" : "#475569",
-            border: "none",
-            padding: "2px 8px",
-            fontSize: 11,
-            fontFamily: "Inter, sans-serif",
-            cursor: "pointer",
-            transition: "all 0.15s",
-          }}
-        >
+        <button key={opt.value} className={value === opt.value ? "active" : ""} onClick={() => onChange(opt.value)}>
           {opt.label}
         </button>
       ))}
@@ -325,27 +271,11 @@ function TimeframeToggle({
   );
 }
 
-function HindcastToggle({
-  value,
-  onChange,
-}: {
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
+function HindcastToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
+      className={`toggle-btn-solo ${value ? "active" : ""}`}
       onClick={() => onChange(!value)}
-      style={{
-        background: value ? "#1e293b" : "transparent",
-        color: value ? "#e2e8f0" : "#475569",
-        border: "1px solid #1e293b",
-        borderRadius: 4,
-        padding: "2px 8px",
-        fontSize: 11,
-        fontFamily: "Inter, sans-serif",
-        cursor: "pointer",
-        transition: "all 0.15s",
-      }}
       title="Show past prediction accuracy overlay"
     >
       Hindcast
@@ -358,38 +288,11 @@ const forecastStyleOptions: { value: ForecastStyle; label: string }[] = [
   { value: "spaghetti", label: "Paths" },
 ];
 
-function ForecastStyleToggle({
-  value,
-  onChange,
-}: {
-  value: ForecastStyle;
-  onChange: (s: ForecastStyle) => void;
-}) {
+function ForecastStyleToggle({ value, onChange }: { value: ForecastStyle; onChange: (s: ForecastStyle) => void }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        background: "#0f172a",
-        borderRadius: 4,
-        border: "1px solid #1e293b",
-        overflow: "hidden",
-      }}
-    >
+    <div className="toggle-group">
       {forecastStyleOptions.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          style={{
-            background: value === opt.value ? "#1e293b" : "transparent",
-            color: value === opt.value ? "#e2e8f0" : "#475569",
-            border: "none",
-            padding: "2px 8px",
-            fontSize: 11,
-            fontFamily: "Inter, sans-serif",
-            cursor: "pointer",
-            transition: "all 0.15s",
-          }}
-        >
+        <button key={opt.value} className={value === opt.value ? "active" : ""} onClick={() => onChange(opt.value)}>
           {opt.label}
         </button>
       ))}

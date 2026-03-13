@@ -118,6 +118,7 @@ export function BacktestPage() {
                     {prob.total_folds} folds | vs random walk baseline
                   </span>
                 </div>
+                <div className="table-scroll">
                 <table className="summary-table">
                   <thead>
                     <tr>
@@ -224,6 +225,7 @@ export function BacktestPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 

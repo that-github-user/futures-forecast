@@ -389,14 +389,7 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
           </span>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 16,
-            marginTop: 12,
-          }}
-        >
+        <div className="stat-grid" style={{ marginTop: 12 }}>
           <BigStat
             label="CRPS Skill vs Random Walk"
             value={`+${(meanSkill * 100).toFixed(1)}%`}
@@ -432,7 +425,7 @@ function ProbabilisticSection({ prob }: { prob: ProbabilisticResults }) {
       </div>
 
       {/* Charts row 1: CRPS Skill + Calibration by horizon */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className="chart-grid-2">
         <div className="panel fade-in" style={{ padding: 16 }}>
           <div className="panel-title" style={{ marginBottom: 8 }}>
             CRPS Skill vs Random Walk by Horizon
@@ -503,32 +496,11 @@ function BigStat({
   target?: string;
 }) {
   return (
-    <div
-      style={{
-        textAlign: "center",
-        padding: "12px 8px",
-        background: "#0f172a",
-        borderRadius: 8,
-        border: "1px solid #1e293b",
-      }}
-    >
-      <div style={{ fontSize: 10, color: "#64748b", marginBottom: 6 }}>{label}</div>
-      <div
-        style={{
-          fontFamily: "JetBrains Mono, monospace",
-          fontSize: 22,
-          fontWeight: 700,
-          color,
-        }}
-      >
-        {value}
-      </div>
-      {target && (
-        <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>target: {target}</div>
-      )}
-      {detail && (
-        <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>{detail}</div>
-      )}
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value" style={{ color }}>{value}</div>
+      {target && <div className="stat-target">target: {target}</div>}
+      {detail && <div className="stat-detail">{detail}</div>}
     </div>
   );
 }
