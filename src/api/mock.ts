@@ -102,6 +102,8 @@ export function generateMockPrediction(): PredictionResponse {
       ? -(0.15 + rand() * 0.4)
       : (rand() - 0.5) * 0.2;
 
+  const regimeLabels = ["trending", "mean-reverting", "volatile", "quiet"] as const;
+
   return {
     timestamp: now.toISOString(),
     instrument: "ES",
@@ -120,6 +122,31 @@ export function generateMockPrediction(): PredictionResponse {
       long_frac: +(0.5 + drift * 2).toFixed(4),
     },
     context_candles: contextCandles,
+    // Analytics engine fields
+    exhaustion_score: +(0.3 + rand() * 2.2).toFixed(2),
+    regime: {
+      label: regimeLabels[Math.floor(rand() * 4)],
+      confidence: +(0.5 + rand() * 0.5).toFixed(2),
+    },
+    ensemble_agreement: +(0.3 + rand() * 0.7).toFixed(2),
+    signal_percentile: Math.floor(rand() * 100),
+    invalidation: {
+      price_level: round(
+        isLong ? lastClose - (4 + rand() * 8) : lastClose + (4 + rand() * 8),
+      ),
+      price_direction: isLong ? "below" : isShort ? "above" : "either",
+      description: isLong
+        ? "Close below support invalidates bullish thesis"
+        : isShort
+          ? "Close above resistance invalidates bearish thesis"
+          : "Breakout from range invalidates neutral stance",
+      ensemble_contradiction: +(rand() * 0.4).toFixed(4),
+    },
+    regime_performance: {
+      win_rate: +(0.4 + rand() * 0.25).toFixed(2),
+      profit_factor: +(0.8 + rand() * 1.2).toFixed(2),
+      n_trades: Math.floor(30 + rand() * 150),
+    },
   };
 }
 

@@ -13,8 +13,11 @@ import { TIMEFRAME_OPTIONS } from "../../api/timeframe";
 import { FanChart, type ChartType, type ForecastStyle } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
+import { ScenarioCluster } from "../charts/ScenarioCluster";
 import { SignalPanel } from "../indicators/SignalPanel";
 import { MetricsBar } from "../indicators/MetricsBar";
+import { AnalyticsCards } from "../indicators/AnalyticsCards";
+import { SidebarTabs, type SidebarTab } from "./SidebarTabs";
 import { Header } from "./Header";
 
 export function Dashboard() {
@@ -32,6 +35,8 @@ export function Dashboard() {
   }>({ pf: null, winRate: null, numTrades: null });
   const [hindcast, setHindcast] = useState<HindcastPrediction[]>([]);
   const [showHindcast, setShowHindcast] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("signal");
+  const [highlightedPaths, setHighlightedPaths] = useState<number[] | null>(null);
 
   // Fetch history + hindcast periodically
   useEffect(() => {
@@ -206,34 +211,70 @@ export function Dashboard() {
               timeframe={timeframe}
               hindcast={showHindcast ? hindcast : undefined}
               showHindcast={showHindcast}
+              invalidationLevel={prediction.invalidation?.price_level ?? null}
+              highlightedPaths={highlightedPaths}
             />
           </div>
         </div>
 
-        {/* Sidebar top: signal + metrics */}
-        <div className="sidebar-top">
-          <div className="fade-in">
-            <SignalPanel
-              signal={prediction.signal}
-              lastClose={prediction.last_close}
-            />
-          </div>
-          <div className="fade-in">
-            <MetricsBar
-              pf={liveStats.pf}
-              winRate={liveStats.winRate}
-              numTrades={liveStats.numTrades}
-              historyError={historyError}
-              rangeAccuracy={rangeMetrics}
-            />
-          </div>
-          <div className="fade-in" style={{ flex: 1, minHeight: 150 }}>
-            <ProbabilityDist prediction={prediction} />
-          </div>
+        {/* Sidebar: analytics cards */}
+        <div className="sidebar-cards fade-in">
+          <AnalyticsCards
+            regime={prediction.regime ?? null}
+            exhaustionScore={prediction.exhaustion_score ?? null}
+            ensembleAgreement={prediction.ensemble_agreement ?? null}
+            signalPercentile={prediction.signal_percentile ?? null}
+            invalidation={prediction.invalidation ?? null}
+            regimePerformance={prediction.regime_performance ?? null}
+            lastClose={prediction.last_close}
+            direction={prediction.signal.direction}
+          />
         </div>
 
-        {/* Sidebar bottom: equity curve */}
-        <div className="fade-in sidebar-bottom">
+        {/* Sidebar: tabbed middle */}
+        <div className="sidebar-middle">
+          <SidebarTabs activeTab={sidebarTab} onChange={setSidebarTab} />
+          {sidebarTab === "signal" && (
+            <>
+              <div className="fade-in">
+                <SignalPanel
+                  signal={prediction.signal}
+                  lastClose={prediction.last_close}
+                  regime={prediction.regime}
+                />
+              </div>
+              <div className="fade-in">
+                <MetricsBar
+                  pf={liveStats.pf}
+                  winRate={liveStats.winRate}
+                  numTrades={liveStats.numTrades}
+                  historyError={historyError}
+                  rangeAccuracy={rangeMetrics}
+                  regimeLabel={prediction.regime?.label}
+                />
+              </div>
+            </>
+          )}
+          {sidebarTab === "distribution" && (
+            <div className="fade-in" style={{ flex: 1, minHeight: 150 }}>
+              <ProbabilityDist prediction={prediction} />
+            </div>
+          )}
+          {sidebarTab === "scenarios" && (
+            <div className="fade-in" style={{ flex: 1 }}>
+              <ScenarioCluster
+                samplePaths={prediction.sample_paths}
+                horizons={prediction.horizons}
+                lastClose={prediction.last_close}
+                percentiles={prediction.percentiles}
+                onClusterHighlight={setHighlightedPaths}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar: equity curve */}
+        <div className="fade-in sidebar-equity">
           <EquityCurve history={history} />
         </div>
       </div>

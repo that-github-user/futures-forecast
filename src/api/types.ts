@@ -27,6 +27,24 @@ export interface CandleData {
   volume: number;
 }
 
+export interface RegimeInfo {
+  label: "trending" | "mean-reverting" | "volatile" | "quiet";
+  confidence: number;
+}
+
+export interface InvalidationInfo {
+  price_level: number;
+  price_direction: string;
+  description: string;
+  ensemble_contradiction: number;
+}
+
+export interface RegimePerformance {
+  win_rate: number;
+  profit_factor: number;
+  n_trades: number;
+}
+
 export interface PredictionResponse {
   timestamp: string;
   instrument: string;
@@ -42,6 +60,13 @@ export interface PredictionResponse {
   sample_paths: number[][] | null;
   signal: SignalResponse;
   context_candles: CandleData[] | null;
+  // Analytics engine fields
+  exhaustion_score?: number | null;
+  regime?: RegimeInfo | null;
+  ensemble_agreement?: number | null;
+  signal_percentile?: number | null;
+  invalidation?: InvalidationInfo | null;
+  regime_performance?: RegimePerformance | null;
 }
 
 export interface HistoryEntry {
