@@ -44,6 +44,8 @@ interface Props {
   timeframe?: Timeframe;
   hindcast?: HindcastPrediction[];
   showHindcast?: boolean;
+  invalidationLevel?: number | null;
+  highlightedPaths?: number[] | null;
 }
 
 export function FanChart({
@@ -53,6 +55,8 @@ export function FanChart({
   timeframe = "5m",
   hindcast,
   showHindcast = false,
+  invalidationLevel,
+  highlightedPaths,
 }: Props) {
   const { last_close, signal } = prediction;
 
@@ -399,16 +403,24 @@ export function FanChart({
       ...(forecastStyle === "spaghetti" && sample_paths?.length
         ? [
             // Individual sample trajectories
-            ...(sample_paths).map((path, si) => ({
-              name: si === 0 ? "Sample" : "",
-              type: "line" as const,
-              data: [...ctxPad, ...path],
-              lineStyle: { color: bandColor + "0.2)", width: 0.8 },
-              symbol: "none" as const,
-              smooth: 0.3,
-              z: 1,
-              silent: true,
-            })),
+            ...(sample_paths).map((path, si) => {
+              const isHighlighted = highlightedPaths?.includes(si);
+              const hasSomeHighlighted = highlightedPaths != null && highlightedPaths.length > 0;
+              const opacity = hasSomeHighlighted
+                ? (isHighlighted ? 0.7 : 0.08)
+                : 0.2;
+              const width = hasSomeHighlighted && isHighlighted ? 1.5 : 0.8;
+              return {
+                name: si === 0 ? "Sample" : "",
+                type: "line" as const,
+                data: [...ctxPad, ...path],
+                lineStyle: { color: bandColor + `${opacity})`, width },
+                symbol: "none" as const,
+                smooth: 0.3,
+                z: isHighlighted ? 4 : 1,
+                silent: true,
+              };
+            }),
             // P50 median line on top of spaghetti
             {
               name: "Median",
@@ -529,6 +541,29 @@ export function FanChart({
           data: [],
         };
       })(),
+      // ── Invalidation level markLine ──
+      ...(invalidationLevel != null
+        ? [
+            {
+              name: "Invalidation",
+              type: "line" as const,
+              markLine: {
+                silent: true,
+                symbol: "none",
+                lineStyle: { color: "#ef4444", width: 1, type: "dashed" as const, opacity: 0.5 },
+                data: [{ yAxis: invalidationLevel }],
+                label: {
+                  formatter: `INVALIDATION ${invalidationLevel.toFixed(2)}`,
+                  color: "#ef4444",
+                  fontSize: 9,
+                  fontFamily: "Inter, sans-serif",
+                  position: "insideEndTop" as const,
+                },
+              },
+              data: [],
+            },
+          ]
+        : []),
       // ── Hindcast: single ghost band from best past prediction ──
       // Shows ONE clean overlay behind context candles — the candles themselves
       // are the proof of accuracy. No multi-layer mess.

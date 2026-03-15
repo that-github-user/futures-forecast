@@ -15,9 +15,10 @@ interface Props {
   numTrades: number | null;
   historyError?: boolean;
   rangeAccuracy?: RangeAccuracy | null;
+  regimeLabel?: string | null;
 }
 
-export function MetricsBar({ pf, winRate, numTrades, historyError, rangeAccuracy }: Props) {
+export function MetricsBar({ pf, winRate, numTrades, historyError, rangeAccuracy, regimeLabel }: Props) {
   const noTrades = numTrades === null || numTrades === 0;
 
   // Ideal calibration: P25-P75 should capture ~50%, P10-P90 should capture ~80%
@@ -68,6 +69,7 @@ export function MetricsBar({ pf, winRate, numTrades, historyError, rangeAccuracy
           label="Profit Factor"
           value={historyError ? "—" : noTrades ? "—" : pf !== null ? pf.toFixed(2) : "—"}
           color={historyError ? "#64748b" : pf !== null ? (pf >= 1 ? "#10b981" : "#ef4444") : "#64748b"}
+          sub={regimeLabel ? `in ${regimeLabel.replace("_", "-")}` : undefined}
         />
         <div style={{ width: 1, background: "#1e293b" }} />
         <Metric

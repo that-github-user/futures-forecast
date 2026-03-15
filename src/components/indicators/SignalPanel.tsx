@@ -5,21 +5,21 @@
  */
 
 import { formatHorizon } from "../../api/format";
-import type { SignalResponse } from "../../api/types";
+import type { RegimeInfo, SignalResponse } from "../../api/types";
 
 interface Props {
   signal: SignalResponse;
   lastClose: number;
+  regime?: RegimeInfo | null;
 }
 
-export function SignalPanel({ signal, lastClose }: Props) {
+export function SignalPanel({ signal, lastClose, regime }: Props) {
   const {
     expected_return,
     p10_return,
     p90_return,
     long_frac,
     ensemble_sharpe,
-    confidence,
     horizon_signals,
   } = signal;
 
@@ -90,6 +90,11 @@ export function SignalPanel({ signal, lastClose }: Props) {
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
           median ensemble bias
         </div>
+        {regime && (
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+            {regime.label.replace("_", "-")} regime ({(regime.confidence * 100).toFixed(0)}% conf)
+          </div>
+        )}
       </div>
 
       {/* Horizon breakdown row */}
@@ -236,10 +241,21 @@ export function SignalPanel({ signal, lastClose }: Props) {
           subtitle="mean/std of returns"
         />
         <StatItem
-          label="Strength"
-          value={`${(confidence * 100).toFixed(0)}%`}
-          subtitle="signal conviction"
-          color={confidence > 0.6 ? "#10b981" : "#94a3b8"}
+          label="Risk/Reward"
+          value={(() => {
+            const absP10 = Math.abs(p10Pts);
+            const absP90 = Math.abs(p90Pts);
+            if (absP10 < 0.01) return "--";
+            const rr = absP90 / absP10;
+            return `${rr.toFixed(1)}:1`;
+          })()}
+          subtitle="P90/P10 asymmetry"
+          color={(() => {
+            const absP10 = Math.abs(p10Pts);
+            const absP90 = Math.abs(p90Pts);
+            if (absP10 < 0.01) return "#94a3b8";
+            return absP90 / absP10 > 1.2 ? "#10b981" : "#ef4444";
+          })()}
         />
       </div>
     </div>
