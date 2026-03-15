@@ -5,18 +5,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { HindcastPrediction, HistoryEntry } from "../../api/types";
+import type { HindcastPrediction, HistoryEntry, RollingAccuracy } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
 import { useHealth } from "../../hooks/useHealth";
 import type { Timeframe } from "../../api/timeframe";
 import { TIMEFRAME_OPTIONS } from "../../api/timeframe";
-import { FanChart, type ChartType, type ForecastStyle } from "../charts/FanChart";
+import { FanChart, type ChartType, type ForecastStyle, type TrackingPath } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
 import { ScenarioCluster } from "../charts/ScenarioCluster";
 import { SignalPanel } from "../indicators/SignalPanel";
 import { MetricsBar } from "../indicators/MetricsBar";
 import { AnalyticsCards } from "../indicators/AnalyticsCards";
+import { TrackRecord } from "../indicators/TrackRecord";
 import { SidebarTabs, type SidebarTab } from "./SidebarTabs";
 import { Header } from "./Header";
 
@@ -34,7 +35,8 @@ export function Dashboard() {
     numTrades: number | null;
   }>({ pf: null, winRate: null, numTrades: null });
   const [hindcast, setHindcast] = useState<HindcastPrediction[]>([]);
-  const [showHindcast, setShowHindcast] = useState(false);
+  const [rollingAccuracy, setRollingAccuracy] = useState<RollingAccuracy | null>(null);
+  const [showTracking, setShowTracking] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("signal");
   const [highlightedPaths, setHighlightedPaths] = useState<number[] | null>(null);
 
@@ -57,8 +59,9 @@ export function Dashboard() {
 
     const fetchHindcast = async () => {
       try {
-        const hc = await api.hindcast(6);
+        const hc = await api.hindcast(8);
         setHindcast(hc.predictions);
+        setRollingAccuracy(hc.rolling_accuracy ?? null);
       } catch {
         // Non-critical — silently ignore
       }
@@ -73,30 +76,63 @@ export function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // Compute range accuracy metrics from hindcast data
+  // Compute range accuracy from rolling accuracy (server-computed)
   const rangeMetrics = useMemo(() => {
-    if (!hindcast?.length) return null;
-    let inP2575 = 0, inP1090 = 0, total = 0;
-    for (const hc of hindcast) {
-      for (let hi = 0; hi < hc.horizons.length; hi++) {
-        const rp = hc.realized_prices[hi];
-        if (rp == null) continue;
-        total++;
-        if (rp >= hc.percentiles.p25[hi] && rp <= hc.percentiles.p75[hi]) {
-          inP2575++; inP1090++;
-        } else if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) {
-          inP1090++;
-        }
+    if (!rollingAccuracy) return null;
+    return {
+      innerPct: rollingAccuracy.coverage_p25_p75 ?? 0,
+      outerPct: rollingAccuracy.coverage_p10_p90 ?? 0,
+      totalPoints: rollingAccuracy.n_evaluated,
+      numPredictions: rollingAccuracy.n_evaluated,
+    };
+  }, [rollingAccuracy]);
+
+  // Compute tracking path from most recent scored hindcast
+  const trackingPath: TrackingPath | null = useMemo(() => {
+    if (!hindcast?.length || !prediction) return null;
+    // Find most recent prediction with scoring and best_paths
+    const scored = [...hindcast].reverse().find(
+      (h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 12,
+    );
+    if (!scored?.scoring?.best_paths?.length) return null;
+
+    const bestPath = scored.scoring.best_paths[0];
+    const rawCandles = prediction.context_candles ?? [];
+    if (!rawCandles.length) return null;
+
+    // Find anchor: context candle closest to prediction timestamp
+    const predTs = new Date(scored.timestamp).getTime() / 1000;
+    let anchorIndex = -1;
+    for (let ci = rawCandles.length - 1; ci >= 0; ci--) {
+      if (rawCandles[ci].time <= predTs) { anchorIndex = ci; break; }
+    }
+    if (anchorIndex < 0) return null;
+
+    // Split path_values into realized (context region) and projected (forecast region)
+    const ctxLen = rawCandles.length;
+    const realizedPrices: number[] = [];
+    const projectedPrices: number[] = [];
+
+    for (let i = 0; i < bestPath.path_values.length; i++) {
+      const chartIdx = anchorIndex + i;
+      if (chartIdx < ctxLen) {
+        realizedPrices.push(bestPath.path_values[i]);
+      } else {
+        projectedPrices.push(bestPath.path_values[i]);
       }
     }
-    if (total === 0) return null;
+
+    if (realizedPrices.length < 3) return null;
+
     return {
-      innerPct: inP2575 / total,
-      outerPct: inP1090 / total,
-      totalPoints: total,
-      numPredictions: hindcast.length,
+      realizedPrices,
+      projectedPrices,
+      anchorIndex,
+      rmse: bestPath.rmse_pts,
+      pathIndex: bestPath.path_index,
+      totalPaths: 30,
     };
-  }, [hindcast]);
+  }, [hindcast, prediction]);
 
   if (!prediction) {
     return (
@@ -174,24 +210,7 @@ export function Dashboard() {
               <TimeframeToggle value={timeframe} onChange={setTimeframe} />
               <ChartTypeToggle value={chartType} onChange={setChartType} />
               <ForecastStyleToggle value={forecastStyle} onChange={setForecastStyle} />
-              <HindcastToggle value={showHindcast} onChange={setShowHindcast} />
-              {forecastStyle !== "spaghetti" &&
-                hindcast.length > 0 &&
-                hindcast[hindcast.length - 1]?.bars_elapsed >= 3 && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      color: "#64748b",
-                      fontStyle: "italic",
-                      fontFamily: "Inter, sans-serif",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => setForecastStyle("spaghetti")}
-                    title="Switch to Paths view to see best-match trajectories"
-                  >
-                    Path match available
-                  </span>
-                )}
+              <TrackingToggle value={showTracking} onChange={setShowTracking} />
               <span
                 style={{
                   fontFamily: "JetBrains Mono, monospace",
@@ -209,10 +228,10 @@ export function Dashboard() {
               chartType={chartType}
               forecastStyle={forecastStyle}
               timeframe={timeframe}
-              hindcast={showHindcast ? hindcast : undefined}
-              showHindcast={showHindcast}
               invalidationLevel={prediction.invalidation?.price_level ?? null}
               highlightedPaths={highlightedPaths}
+              trackingPath={trackingPath}
+              showTracking={showTracking}
             />
           </div>
         </div>
@@ -271,6 +290,14 @@ export function Dashboard() {
               />
             </div>
           )}
+          {sidebarTab === "track-record" && (
+            <div className="fade-in" style={{ flex: 1, minHeight: 0 }}>
+              <TrackRecord
+                hindcast={hindcast}
+                rollingAccuracy={rollingAccuracy}
+              />
+            </div>
+          )}
         </div>
 
         {/* Sidebar: equity curve */}
@@ -312,14 +339,14 @@ function TimeframeToggle({ value, onChange }: { value: Timeframe; onChange: (tf:
   );
 }
 
-function HindcastToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function TrackingToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       className={`toggle-btn-solo ${value ? "active" : ""}`}
       onClick={() => onChange(!value)}
-      title="Show past prediction accuracy overlay"
+      title="Show best-match tracking path from prior prediction"
     >
-      Hindcast
+      Tracking
     </button>
   );
 }
