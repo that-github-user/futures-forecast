@@ -200,6 +200,18 @@ export function generateMockHindcast(n = 6): HindcastResponse {
       return null;
     });
 
+    // Scoring for predictions with enough realized data
+    const nRealized = realizedPrices.filter((v) => v != null).length;
+    const dirLabels = ["LONG", "SHORT", "NEUTRAL"] as const;
+    const sigDir = dirLabels[Math.floor(rand() * 3)];
+    const dirCorrect = rand() > 0.4;
+    const coverageOuter = +(0.5 + rand() * 0.4).toFixed(4);
+    const coverageInner = +(0.3 + rand() * 0.3).toFixed(4);
+    const bestRmse = +(0.5 + rand() * 3).toFixed(2);
+    const trackDur = Math.floor(3 + rand() * 10);
+    const verdict = coverageOuter >= 0.7 && dirCorrect ? "PASS" as const
+      : coverageOuter >= 0.5 || dirCorrect ? "PARTIAL" as const : "FAIL" as const;
+
     predictions.push({
       timestamp: new Date(predTime).toISOString(),
       last_close: round(price),
@@ -208,10 +220,39 @@ export function generateMockHindcast(n = 6): HindcastResponse {
       sample_paths: samplePaths,
       realized_prices: realizedPrices,
       bars_elapsed: barsElapsed,
+      scoring: nRealized >= 3 ? {
+        coverage_p10_p90: coverageOuter,
+        coverage_p25_p75: coverageInner,
+        direction_correct: dirCorrect,
+        median_rmse_pts: +(1 + rand() * 5).toFixed(2),
+        best_paths: [{
+          path_index: Math.floor(rand() * 30),
+          path_values: samplePaths[Math.floor(rand() * 30)],
+          rmse_pts: bestRmse,
+          tracking_duration_bars: trackDur,
+          tracking_threshold_pts: 2.0,
+          deviations: realizedPrices
+            .filter((v): v is number => v != null)
+            .map(() => +((rand() - 0.5) * 3).toFixed(2)),
+        }],
+        verdict,
+        signal_direction: sigDir,
+        expected_return_pts: +((rand() - 0.5) * 8).toFixed(2),
+        realized_return_pts: +((rand() - 0.5) * 10).toFixed(2),
+      } : null,
     });
   }
 
-  return { predictions };
+  return {
+    predictions,
+    rolling_accuracy: {
+      n_evaluated: predictions.length,
+      coverage_p10_p90: 0.78,
+      coverage_p25_p75: 0.46,
+      direction_hit_rate: 0.58,
+      mean_tracking_rmse_pts: 1.9,
+    },
+  };
 }
 
 export function generateMockHistory(): HistoryResponse {

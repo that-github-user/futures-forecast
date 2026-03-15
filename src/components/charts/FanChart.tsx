@@ -18,10 +18,9 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { formatHorizon } from "../../api/format";
-import type { HindcastPrediction, PredictionResponse } from "../../api/types";
+import type { PredictionResponse } from "../../api/types";
 import type { Timeframe } from "../../api/timeframe";
-import { getContextCandles, subsampleForecast, TIMEFRAME_FACTORS } from "../../api/timeframe";
-import { findBestMatchPaths } from "../../api/pathMatch";
+import { getContextCandles, subsampleForecast } from "../../api/timeframe";
 
 echarts.use([
   LineChart,
@@ -37,15 +36,24 @@ echarts.use([
 export type ChartType = "line" | "candlestick" | "ohlc";
 export type ForecastStyle = "bands" | "spaghetti";
 
+export interface TrackingPath {
+  realizedPrices: number[];   // price values at context candle indices
+  projectedPrices: number[];  // price values in forecast region
+  anchorIndex: number;        // x-axis index where the path starts
+  rmse: number;
+  pathIndex: number;
+  totalPaths: number;
+}
+
 interface Props {
   prediction: PredictionResponse;
   chartType?: ChartType;
   forecastStyle?: ForecastStyle;
   timeframe?: Timeframe;
-  hindcast?: HindcastPrediction[];
-  showHindcast?: boolean;
   invalidationLevel?: number | null;
   highlightedPaths?: number[] | null;
+  trackingPath?: TrackingPath | null;
+  showTracking?: boolean;
 }
 
 export function FanChart({
@@ -53,10 +61,10 @@ export function FanChart({
   chartType = "line",
   forecastStyle = "bands",
   timeframe = "5m",
-  hindcast,
-  showHindcast = false,
   invalidationLevel,
   highlightedPaths,
+  trackingPath,
+  showTracking = false,
 }: Props) {
   const { last_close, signal } = prediction;
 
@@ -136,48 +144,6 @@ export function FanChart({
   const yMin = Math.min(...allPrices);
   const yMax = Math.max(...allPrices);
   const yPad = (yMax - yMin) * 0.05 || 5;
-
-  // ── Hindcast analysis — pre-compute before building ECharts option ──
-  const hindcastInfo = (() => {
-    if (!showHindcast || !hindcast?.length) return null;
-    const factor = TIMEFRAME_FACTORS[timeframe];
-
-    // Per-prediction P10-P90 accuracy
-    const perPred = hindcast.map((hc) => {
-      let inBand = 0, total = 0;
-      for (let hi = 0; hi < hc.horizons.length; hi++) {
-        const rp = hc.realized_prices[hi];
-        if (rp == null) continue;
-        total++;
-        if (rp >= hc.percentiles.p10[hi] && rp <= hc.percentiles.p90[hi]) inBand++;
-      }
-      return { accuracy: total > 0 ? inBand / total : 0, total };
-    });
-
-    // Find the best candidate for single ghost band (most realized bars, overlaps context)
-    let bestIdx = -1, bestAnchor = -1, bestRealized = 0;
-    for (let i = 0; i < hindcast.length; i++) {
-      const predTs = new Date(hindcast[i].timestamp).getTime() / 1000;
-      let anchor = -1;
-      for (let ci = candles.length - 1; ci >= 0; ci--) {
-        if (candles[ci].time <= predTs) { anchor = ci; break; }
-      }
-      if (anchor < 0) continue;
-      const realized = hindcast[i].realized_prices.filter(v => v != null).length;
-      if (realized >= 3 && realized > bestRealized) {
-        bestIdx = i; bestAnchor = anchor; bestRealized = realized;
-      }
-    }
-
-    // Aggregate accuracy
-    let aggIn = 0, aggTotal = 0;
-    for (const p of perPred) {
-      aggIn += Math.round(p.accuracy * p.total);
-      aggTotal += p.total;
-    }
-
-    return { perPred, bestIdx, bestAnchor, factor, aggAccuracy: aggTotal > 0 ? aggIn / aggTotal : 0, aggTotal };
-  })();
 
   const option: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
@@ -564,125 +530,61 @@ export function FanChart({
             },
           ]
         : []),
-      // ── Hindcast: single ghost band from best past prediction ──
-      // Shows ONE clean overlay behind context candles — the candles themselves
-      // are the proof of accuracy. No multi-layer mess.
-      ...(hindcastInfo && hindcastInfo.bestIdx >= 0
+      // ── Tracking path: best-match ensemble member from most recent evaluated prediction ──
+      ...(showTracking && trackingPath
         ? (() => {
-            const hc = hindcast![hindcastInfo.bestIdx];
-            const anchor = hindcastInfo.bestAnchor;
-            const fac = hindcastInfo.factor;
+            const tp = trackingPath;
             const totalLen = allTimes.length;
-
-            type PctPt = { x: number; p10: number; p25: number; p75: number; p90: number };
-            const pts: PctPt[] = [];
-            for (let hi = 0; hi < hc.horizons.length; hi++) {
-              const fx = anchor + hc.horizons[hi] / fac;
-              if (fx >= ctxLen || fx >= totalLen) break; // clip to proven context area
-              pts.push({
-                x: fx,
-                p10: hc.percentiles.p10[hi], p25: hc.percentiles.p25[hi],
-                p75: hc.percentiles.p75[hi], p90: hc.percentiles.p90[hi],
-              });
-            }
-            if (pts.length < 2) return [];
-
-            const xS = Math.max(0, Math.ceil(pts[0].x));
-            const xE = Math.min(ctxLen - 1, Math.floor(pts[pts.length - 1].x));
-
-            const lerp = (x: number, key: keyof Omit<PctPt, "x">): number => {
-              let lo = 0;
-              for (let i = 0; i < pts.length - 1; i++) {
-                if (pts[i].x <= x && pts[i + 1].x >= x) { lo = i; break; }
+            // Realized portion: solid teal line through context candles
+            const realizedData: (number | null)[] = new Array(totalLen).fill(null);
+            for (let i = 0; i < tp.realizedPrices.length; i++) {
+              const idx = tp.anchorIndex + i;
+              if (idx >= 0 && idx < ctxLen) {
+                realizedData[idx] = tp.realizedPrices[i];
               }
-              const hi = Math.min(lo + 1, pts.length - 1);
-              if (pts[hi].x === pts[lo].x) return pts[lo][key];
-              const t = (x - pts[lo].x) / (pts[hi].x - pts[lo].x);
-              return pts[lo][key] + t * (pts[hi][key] - pts[lo][key]);
-            };
-
-            const acc = hindcastInfo.perPred[hindcastInfo.bestIdx].accuracy;
-            const rgb = acc >= 0.7 ? "16, 185, 129"
-              : acc >= 0.5 ? "245, 158, 11" : "239, 68, 68";
-
-            const gP10: (number | null)[] = new Array(totalLen).fill(null);
-            const gOSp: (number | null)[] = new Array(totalLen).fill(null);
-            const gP25: (number | null)[] = new Array(totalLen).fill(null);
-            const gISp: (number | null)[] = new Array(totalLen).fill(null);
-            for (let x = xS; x <= xE; x++) {
-              const p10v = lerp(x, "p10"), p25v = lerp(x, "p25");
-              const p75v = lerp(x, "p75"), p90v = lerp(x, "p90");
-              gP10[x] = p10v; gOSp[x] = p90v - p10v;
-              gP25[x] = p25v; gISp[x] = p75v - p25v;
             }
-
+            // Projected portion: dashed teal line through forecast region
+            const projectedData: (number | null)[] = new Array(totalLen).fill(null);
+            // Connect at the NOW boundary
+            const lastRealizedIdx = tp.anchorIndex + tp.realizedPrices.length - 1;
+            if (lastRealizedIdx >= 0 && lastRealizedIdx < totalLen) {
+              projectedData[lastRealizedIdx] = tp.realizedPrices[tp.realizedPrices.length - 1];
+            }
+            for (let i = 0; i < tp.projectedPrices.length; i++) {
+              const idx = ctxLen + i;
+              if (idx < totalLen) {
+                projectedData[idx] = tp.projectedPrices[i];
+              }
+            }
             return [
-              // Outer P10-P90 — very faint
-              { name: "", type: "line" as const, data: gP10,
-                lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: "ghost-o", areaStyle: { color: "transparent" },
-                z: 0, silent: true },
-              { name: "", type: "line" as const, data: gOSp,
-                lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: "ghost-o", areaStyle: { color: `rgba(${rgb}, 0.06)` },
-                z: 0, silent: true },
-              // Inner P25-P75
-              { name: "", type: "line" as const, data: gP25,
-                lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: "ghost-i", areaStyle: { color: "transparent" },
-                z: 0, silent: true },
-              { name: "", type: "line" as const, data: gISp,
-                lineStyle: { width: 0 }, symbol: "none" as const,
-                stack: "ghost-i", areaStyle: { color: `rgba(${rgb}, 0.15)` },
-                z: 0, silent: true },
+              {
+                name: "Tracking",
+                type: "line" as const,
+                data: realizedData,
+                lineStyle: { color: "#06b6d4", width: 2 },
+                symbol: "none" as const,
+                z: 8,
+                silent: true,
+              },
+              {
+                name: "",
+                type: "line" as const,
+                data: projectedData,
+                lineStyle: { color: "#06b6d4", width: 1.5, type: "dashed" as const, opacity: 0.4 },
+                symbol: "none" as const,
+                z: 7,
+                silent: true,
+              },
             ];
-          })()
-        : []),
-      // ── Best-match path highlighting in spaghetti mode ──
-      ...(forecastStyle === "spaghetti" && sample_paths?.length && hindcast?.length
-        ? (() => {
-            // Find the most recent hindcast for the current prediction
-            const currentHc = hindcast[hindcast.length - 1];
-            if (!currentHc) return [];
-            const realizedValues = currentHc.realized_prices.filter(
-              (v): v is number => v != null,
-            );
-            if (realizedValues.length < 3) return []; // Need at least 3 realized points
-
-            const matches = findBestMatchPaths(sample_paths, currentHc.realized_prices);
-            if (!matches.length) return [];
-
-            return matches.map((m, mi) => ({
-              name: mi === 0 ? `Top ${matches.length} matches` : "",
-              type: "line" as const,
-              data: [...ctxPad, ...sample_paths[m.index]],
-              lineStyle: { color: medianColor, width: 2, opacity: 0.7 },
-              symbol: "none" as const,
-              smooth: 0.3,
-              z: 4,
-              silent: true,
-            }));
           })()
         : []),
     ],
   };
 
-  // ── Calibration badge ──
-  const calBadge = (() => {
-    if (!hindcastInfo || hindcastInfo.aggTotal === 0) return null;
-    const aggPct = Math.round(hindcastInfo.aggAccuracy * 100);
-    const bestPct = hindcastInfo.bestIdx >= 0
-      ? Math.round(hindcastInfo.perPred[hindcastInfo.bestIdx].accuracy * 100)
-      : null;
-    let color = "#f59e0b";
-    if (aggPct >= 70 && aggPct <= 90) color = "#10b981";
-    else if (aggPct < 50 || aggPct > 95) color = "#ef4444";
-    return { bestPct, aggPct, n: hindcast!.length, color };
-  })();
-
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {calBadge && (
+      {/* Tracking path info badge */}
+      {showTracking && trackingPath && (
         <div
           style={{
             position: "absolute",
@@ -690,54 +592,15 @@ export function FanChart({
             right: 24,
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
-            color: calBadge.color,
+            color: "#06b6d4",
             background: "#0f172acc",
             padding: "2px 8px",
             borderRadius: 3,
             zIndex: 10,
           }}
-          title="P10-P90 coverage — how often realized prices fell within predicted bands"
+          title="Best-matching ensemble member tracking realized price"
         >
-          {calBadge.bestPct !== null && (
-            <span style={{ color: "#94a3b8" }}>Shown: {calBadge.bestPct}% | </span>
-          )}
-          {calBadge.aggPct}% in-band (n={calBadge.n})
-        </div>
-      )}
-      {/* Accuracy timeline — one colored block per past prediction */}
-      {hindcastInfo && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 6,
-            right: 24,
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-            zIndex: 10,
-            background: "#0f172acc",
-            padding: "2px 6px",
-            borderRadius: 3,
-          }}
-        >
-          <span style={{ fontSize: 9, color: "#64748b", marginRight: 2 }}>accuracy</span>
-          {hindcastInfo.perPred.map((p, i) => (
-            <div
-              key={i}
-              style={{
-                width: 10,
-                height: 5,
-                borderRadius: 1,
-                background: p.total === 0 ? "#334155"
-                  : p.accuracy >= 0.7 ? "#10b981"
-                  : p.accuracy >= 0.5 ? "#f59e0b"
-                  : "#ef4444",
-                opacity: p.total === 0 ? 0.4 : 0.9,
-                border: hindcastInfo.bestIdx === i ? "1px solid #e2e8f0" : "none",
-              }}
-              title={`Prediction ${i + 1}: ${p.total > 0 ? `${Math.round(p.accuracy * 100)}% in P10-P90 (${p.total} pts)` : "awaiting data"}`}
-            />
-          ))}
+          Path {trackingPath.pathIndex}/{trackingPath.totalPaths} | RMSE: {trackingPath.rmse.toFixed(1)} pts
         </div>
       )}
       <ReactEChartsCore

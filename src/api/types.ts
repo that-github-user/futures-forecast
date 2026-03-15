@@ -86,6 +86,35 @@ export interface HistoryResponse {
   live_num_trades: number | null;
 }
 
+export interface PathTrackingInfo {
+  path_index: number;
+  path_values: number[];
+  rmse_pts: number;
+  tracking_duration_bars: number;
+  tracking_threshold_pts: number;
+  deviations: number[];
+}
+
+export interface HindcastScored {
+  coverage_p10_p90: number | null;
+  coverage_p25_p75: number | null;
+  direction_correct: boolean | null;
+  median_rmse_pts: number | null;
+  best_paths: PathTrackingInfo[] | null;
+  verdict: "PASS" | "PARTIAL" | "FAIL" | null;
+  signal_direction: string | null;
+  expected_return_pts: number | null;
+  realized_return_pts: number | null;
+}
+
+export interface RollingAccuracy {
+  n_evaluated: number;
+  coverage_p10_p90: number | null;
+  coverage_p25_p75: number | null;
+  direction_hit_rate: number | null;
+  mean_tracking_rmse_pts: number | null;
+}
+
 export interface HindcastPrediction {
   timestamp: string;
   last_close: number;
@@ -100,10 +129,12 @@ export interface HindcastPrediction {
   sample_paths: number[][] | null;
   realized_prices: (number | null)[];
   bars_elapsed: number;
+  scoring?: HindcastScored | null;
 }
 
 export interface HindcastResponse {
   predictions: HindcastPrediction[];
+  rolling_accuracy?: RollingAccuracy | null;
 }
 
 export interface HealthResponse {
