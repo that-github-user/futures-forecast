@@ -321,7 +321,7 @@ export function generateMockHistory(): HistoryResponse {
       total_pnl_pts: +(cumPnl * BASE_PRICE).toFixed(2),
       best_trade_pts: +(grossProfit * BASE_PRICE / Math.max(wins, 1)).toFixed(2),
       worst_trade_pts: +(-grossLoss * BASE_PRICE / Math.max(total - wins, 1)).toFixed(2),
-      current_streak: wins > total - wins ? 2 : -1,
+      current_streak: wins > total - wins ? 2 : 1,
       streak_type: wins > total - wins ? "W" as const : "L" as const,
       regime_breakdown: {
         trending: { n: 5, wins: 3, pnl_pts: 8.5 },

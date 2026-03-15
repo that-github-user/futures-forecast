@@ -33,7 +33,7 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy 
       if (e.signal.direction === "FLAT") continue;
 
       const dirSign = e.signal.direction === "LONG" ? 1 : -1;
-      const pnlPts = Math.round(dirSign * e.realized_return * e.last_close * 4) / 4; // tick-round to 0.25
+      const pnlPts = Math.round(dirSign * e.realized_return * e.last_close * 100) / 100;
 
       const d = new Date(e.timestamp);
       const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -314,12 +314,12 @@ function PerformanceContext({ trades, pf }: { trades: Trade[]; pf: number | null
   return (
     <div style={{ padding: "6px 8px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 4 }}>
-        <PerfStat label="Avg Win" value={`+${avgWin.toFixed(1)}`} color="#10b981" />
+        <PerfStat label="Avg Win" value={avgWin > 0 ? `+${avgWin.toFixed(1)}` : "--"} color="#10b981" />
         <PerfStat label="Avg Loss" value={avgLoss.toFixed(1)} color="#ef4444" />
         <PerfStat label="Max DD" value={`-${maxDD.toFixed(1)}`} color="#f59e0b" />
-        <PerfStat label="PF" value={pf != null ? pf.toFixed(2) : "--"} color={pf != null && pf >= 1 ? "#10b981" : "#ef4444"} />
+        <PerfStat label="PF" value={pf != null ? pf.toFixed(2) : "--"} color={pf == null ? "#64748b" : pf >= 1 ? "#10b981" : "#ef4444"} />
       </div>
-      {equityPoints.length > 2 && <EquitySparkline data={equityPoints} />}
+      {equityPoints.length >= 2 && <EquitySparkline data={equityPoints} />}
     </div>
   );
 }
