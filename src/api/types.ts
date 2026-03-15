@@ -77,6 +77,20 @@ export interface HistoryEntry {
   realized_return: number | null;
   realized_direction: "UP" | "DOWN" | null;
   realized_returns: Record<string, number | null> | null;
+  regime?: string | null;
+}
+
+export interface SessionStats {
+  n_trades: number;
+  n_wins: number;
+  n_losses: number;
+  n_flat: number;
+  total_pnl_pts: number;
+  best_trade_pts: number;
+  worst_trade_pts: number;
+  current_streak: number;
+  streak_type: "W" | "L" | "none";
+  regime_breakdown?: Record<string, { n: number; wins: number; pnl_pts: number }> | null;
 }
 
 export interface HistoryResponse {
@@ -84,6 +98,7 @@ export interface HistoryResponse {
   live_pf: number | null;
   live_win_rate: number | null;
   live_num_trades: number | null;
+  session_stats?: SessionStats | null;
 }
 
 export interface PathTrackingInfo {

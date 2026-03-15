@@ -1,73 +1,128 @@
 /**
- * TrackRecord — hindcast accuracy panel with rolling stats,
- * per-prediction report cards, and path tracking detail.
+ * TrackRecord — session-focused trade log with points-denominated P&L.
+ *
+ * Section A: Session Scorecard (W/L, total P&L, streak, regime context)
+ * Section B: Trade Log (scrollable concrete trade events)
+ * Section C: Performance Context (avg winner/loser, drawdown, sparkline)
  */
 
-import { useMemo, useState } from "react";
-import type { HindcastPrediction, RollingAccuracy } from "../../api/types";
+import { useMemo } from "react";
+import type { HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
 
 interface Props {
-  hindcast: HindcastPrediction[];
+  history: HistoryEntry[];
+  liveStats: { pf: number | null; winRate: number | null; numTrades: number | null };
+  sessionStats: SessionStats | null;
   rollingAccuracy: RollingAccuracy | null;
 }
 
-export function TrackRecord({ hindcast, rollingAccuracy }: Props) {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+interface Trade {
+  time: string;
+  direction: string;
+  entryPrice: number;
+  pnlPts: number;
+  regime: string | null;
+}
 
-  const scored = useMemo(
-    () => hindcast.filter((h) => h.scoring != null),
-    [hindcast],
-  );
+export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy }: Props) {
+  // Compute trades from history (client-side fallback when session_stats not yet available)
+  const trades = useMemo(() => {
+    const result: Trade[] = [];
+    for (const e of history) {
+      if (e.realized_return == null) continue;
+      if (e.signal.direction === "FLAT") continue;
 
-  if (!scored.length) {
+      const dirSign = e.signal.direction === "LONG" ? 1 : -1;
+      const pnlPts = Math.round(dirSign * e.realized_return * e.last_close * 100) / 100;
+
+      const d = new Date(e.timestamp);
+      const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+      result.push({
+        time,
+        direction: e.signal.direction,
+        entryPrice: e.last_close,
+        pnlPts,
+        regime: e.regime ?? null,
+      });
+    }
+    return result;
+  }, [history]);
+
+  // Client-side session stats fallback
+  const stats = useMemo(() => {
+    if (sessionStats) return sessionStats;
+    // Compute from trades
+    if (!trades.length) return null;
+    const wins = trades.filter((t) => t.pnlPts > 0);
+    const losses = trades.filter((t) => t.pnlPts < 0);
+    const totalPnl = trades.reduce((s, t) => s + t.pnlPts, 0);
+    let streak = 0;
+    let streakType: "W" | "L" | "none" = "none";
+    for (let i = trades.length - 1; i >= 0; i--) {
+      if (i === trades.length - 1) {
+        streakType = trades[i].pnlPts > 0 ? "W" : trades[i].pnlPts < 0 ? "L" : "none";
+        streak = streakType !== "none" ? 1 : 0;
+      } else {
+        const t = trades[i].pnlPts > 0 ? "W" : trades[i].pnlPts < 0 ? "L" : "none";
+        if (t === streakType) streak++;
+        else break;
+      }
+    }
+    return {
+      n_trades: trades.length,
+      n_wins: wins.length,
+      n_losses: losses.length,
+      n_flat: 0,
+      total_pnl_pts: Math.round(totalPnl * 4) / 4,
+      best_trade_pts: wins.length ? Math.max(...wins.map((t) => t.pnlPts)) : 0,
+      worst_trade_pts: losses.length ? Math.min(...losses.map((t) => t.pnlPts)) : 0,
+      current_streak: streak,
+      streak_type: streakType,
+      regime_breakdown: null,
+    } satisfies SessionStats;
+  }, [sessionStats, trades]);
+
+  if (!trades.length && !stats) {
     return (
       <div style={{ padding: 16, color: "#64748b", fontSize: 11, textAlign: "center" }}>
-        Waiting for predictions to be evaluated...
+        Waiting for trade outcomes...
       </div>
     );
   }
 
-  const selected = scored[selectedIdx] ?? scored[0];
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 4, height: "100%", overflow: "hidden" }}>
-      <AccuracyStrip accuracy={rollingAccuracy} />
-      <PredictionTimeline
-        predictions={scored}
-        selectedIdx={selectedIdx}
-        onSelect={setSelectedIdx}
-      />
-      <PathTrackingDetail prediction={selected} />
+      {rollingAccuracy && <AccuracyStrip accuracy={rollingAccuracy} />}
+      {stats && <SessionScorecard stats={stats} />}
+      <TradeLog trades={trades} />
+      {trades.length > 0 && <PerformanceContext trades={trades} pf={liveStats.pf} />}
     </div>
   );
 }
 
-/* ── Accuracy Strip ── */
+/* ── Accuracy Strip (from hindcast scoring) ── */
 
-function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy | null }) {
-  if (!accuracy) return null;
-
+function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy }) {
   const covColor = accuracy.coverage_p10_p90 != null
     ? (accuracy.coverage_p10_p90 >= 0.70 && accuracy.coverage_p10_p90 <= 0.90 ? "#10b981"
-      : accuracy.coverage_p10_p90 < 0.50 || accuracy.coverage_p10_p90 > 0.95 ? "#ef4444" : "#f59e0b")
+      : accuracy.coverage_p10_p90 < 0.50 ? "#ef4444" : "#f59e0b")
     : "#64748b";
-
   const dirColor = accuracy.direction_hit_rate != null
     ? (accuracy.direction_hit_rate > 0.55 ? "#10b981"
       : accuracy.direction_hit_rate >= 0.50 ? "#f59e0b" : "#ef4444")
     : "#64748b";
-
   const trackColor = accuracy.mean_tracking_rmse_pts != null
     ? (accuracy.mean_tracking_rmse_pts < 2 ? "#10b981"
       : accuracy.mean_tracking_rmse_pts < 4 ? "#f59e0b" : "#ef4444")
     : "#64748b";
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-around", padding: "8px 4px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 4px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
       <MiniStat label="Coverage" value={accuracy.coverage_p10_p90 != null ? `${(accuracy.coverage_p10_p90 * 100).toFixed(0)}%` : "--"} color={covColor} sub="ideal ~80%" />
-      <MiniStat label="Direction" value={accuracy.direction_hit_rate != null ? `${(accuracy.direction_hit_rate * 100).toFixed(0)}%` : "--"} color={dirColor} sub="vs coin flip" />
-      <MiniStat label="Tracking" value={accuracy.mean_tracking_rmse_pts != null ? `${accuracy.mean_tracking_rmse_pts.toFixed(1)}` : "--"} color={trackColor} sub="best path RMSE" />
-      <MiniStat label="n" value={`${accuracy.n_evaluated}`} color="#e2e8f0" sub="evaluated" />
+      <MiniStat label="Direction" value={accuracy.direction_hit_rate != null ? `${(accuracy.direction_hit_rate * 100).toFixed(0)}%` : "--"} color={dirColor} sub="hit rate" />
+      <MiniStat label="Tracking" value={accuracy.mean_tracking_rmse_pts != null ? `${accuracy.mean_tracking_rmse_pts.toFixed(1)}` : "--"} color={trackColor} sub="RMSE pts" />
+      <MiniStat label="n" value={`${accuracy.n_evaluated}`} color="#e2e8f0" sub="scored" />
     </div>
   );
 }
@@ -75,175 +130,230 @@ function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy | null }) {
 function MiniStat({ label, value, color, sub }: { label: string; value: string; color: string; sub: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: 8, color: "#475569", marginTop: 1 }}>{sub}</div>
+      <div style={{ fontSize: 8, color: "#64748b", marginBottom: 1 }}>{label}</div>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 7, color: "#475569", marginTop: 1 }}>{sub}</div>
     </div>
   );
 }
 
-/* ── Prediction Timeline ── */
+/* ── Session Scorecard ── */
 
-function PredictionTimeline({
-  predictions,
-  selectedIdx,
-  onSelect,
-}: {
-  predictions: HindcastPrediction[];
-  selectedIdx: number;
-  onSelect: (i: number) => void;
-}) {
+function SessionScorecard({ stats }: { stats: SessionStats }) {
+  const pnlColor = stats.total_pnl_pts > 0 ? "#10b981" : stats.total_pnl_pts < 0 ? "#ef4444" : "#94a3b8";
+
+  // Build streak dots (last N results from streak info)
+  const streakDots = [];
+  if (stats.current_streak > 0) {
+    const count = Math.min(stats.current_streak, 8);
+    for (let i = 0; i < count; i++) {
+      streakDots.push(stats.streak_type);
+    }
+  }
+
+  // Regime context: find the current regime from breakdown
+  const regimeEntries = stats.regime_breakdown
+    ? Object.entries(stats.regime_breakdown).filter(([k]) => k !== "unknown")
+    : [];
+
   return (
-    <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, minHeight: 0 }}>
-      {predictions.map((pred, i) => {
-        const s = pred.scoring!;
-        const time = new Date(pred.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-        const dir = s.signal_direction ?? "?";
-        const verdictColor = s.verdict === "PASS" ? "#10b981" : s.verdict === "PARTIAL" ? "#f59e0b" : "#ef4444";
-        const verdictIcon = s.verdict === "PASS" ? "\u2713" : s.verdict === "PARTIAL" ? "~" : "\u2717";
-        const bestPath = s.best_paths?.[0];
-        const isSelected = i === selectedIdx;
+    <div style={{ padding: "8px 10px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        {/* W/L record */}
+        <div style={{ fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}>
+          <span style={{ color: "#10b981", fontWeight: 700 }}>{stats.n_wins}W</span>
+          <span style={{ color: "#64748b" }}> / </span>
+          <span style={{ color: "#ef4444", fontWeight: 700 }}>{stats.n_losses}L</span>
+          {stats.n_flat > 0 && (
+            <>
+              <span style={{ color: "#64748b" }}> / </span>
+              <span style={{ color: "#94a3b8" }}>{stats.n_flat}F</span>
+            </>
+          )}
+        </div>
+        {/* Total P&L */}
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 16, fontWeight: 700, color: pnlColor }}>
+          {stats.total_pnl_pts >= 0 ? "+" : ""}{stats.total_pnl_pts.toFixed(2)} pts
+        </div>
+      </div>
+
+      {/* Streak + regime row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        {/* Streak dots */}
+        <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+          <span style={{ fontSize: 9, color: "#64748b" }}>streak</span>
+          {streakDots.length > 0 ? streakDots.map((type, i) => (
+            <div
+              key={i}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: type === "W" ? "#10b981" : "#ef4444",
+              }}
+            />
+          )) : (
+            <span style={{ fontSize: 9, color: "#475569" }}>--</span>
+          )}
+        </div>
+
+        {/* Regime context */}
+        {regimeEntries.length > 0 && (
+          <div style={{ fontSize: 9, color: "#94a3b8" }}>
+            {regimeEntries.slice(0, 2).map(([regime, data]) => (
+              <span key={regime} style={{ marginLeft: 8 }}>
+                {regime}: {(data as { n: number; wins: number }).wins}/{(data as { n: number }).n}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Trade Log ── */
+
+function TradeLog({ trades }: { trades: Trade[] }) {
+  // Show newest first
+  const reversed = [...trades].reverse();
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+      {reversed.map((t, i) => {
+        const isWin = t.pnlPts > 0;
+        const isLoss = t.pnlPts < 0;
+        const dirColor = t.direction === "LONG" ? "#10b981" : "#ef4444";
+        const arrow = t.direction === "LONG" ? "\u2191" : "\u2193";
+        const bgTint = isWin ? "rgba(16, 185, 129, 0.04)" : isLoss ? "rgba(239, 68, 68, 0.04)" : "transparent";
 
         return (
           <div
-            key={pred.timestamp}
-            onClick={() => onSelect(i)}
+            key={`${t.time}-${i}`}
             style={{
-              padding: "6px 10px",
-              background: isSelected ? "#0f172a" : "#111827",
-              border: `1px solid ${isSelected ? "#334155" : "#1e293b"}`,
-              borderRadius: 6,
-              cursor: "pointer",
-              transition: "border-color 0.15s",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "5px 8px",
+              background: bgTint,
+              borderRadius: 4,
+              fontSize: 11,
             }}
           >
-            {/* Row 1: Time, direction, predicted vs realized */}
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
-              <span style={{ color: "#94a3b8" }}>{time}</span>
-              <span style={{ color: dir === "LONG" ? "#10b981" : dir === "SHORT" ? "#ef4444" : "#94a3b8", fontWeight: 600 }}>
-                {dir}
+            <span style={{ color: "#64748b", fontFamily: "JetBrains Mono, monospace", fontSize: 10, minWidth: 36 }}>
+              {t.time}
+            </span>
+            <span style={{ color: dirColor, fontWeight: 700, fontSize: 13, minWidth: 16, textAlign: "center" }}>
+              {arrow}
+            </span>
+            <span style={{ color: "#94a3b8", fontFamily: "JetBrains Mono, monospace", fontSize: 10, minWidth: 52 }}>
+              {t.entryPrice.toFixed(2)}
+            </span>
+            {t.regime && (
+              <span style={{
+                fontSize: 8,
+                color: "#475569",
+                background: "#1e293b",
+                padding: "1px 4px",
+                borderRadius: 3,
+                textTransform: "capitalize",
+              }}>
+                {t.regime.replace("_", "-")}
               </span>
-              <span style={{ fontFamily: "JetBrains Mono, monospace", color: "#94a3b8", fontSize: 10 }}>
-                {s.expected_return_pts != null ? `${s.expected_return_pts >= 0 ? "+" : ""}${s.expected_return_pts.toFixed(1)}` : "?"} pred
-                {" / "}
-                {s.realized_return_pts != null ? `${s.realized_return_pts >= 0 ? "+" : ""}${s.realized_return_pts.toFixed(1)}` : "?"} real
-              </span>
-            </div>
-
-            {/* Row 2: Coverage bar */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-              <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-                <div style={{
-                  width: `${(s.coverage_p10_p90 ?? 0) * 100}%`,
-                  height: "100%",
-                  background: verdictColor,
-                  borderRadius: 2,
-                  transition: "width 0.3s",
-                }} />
-              </div>
-              <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "JetBrains Mono, monospace", minWidth: 32 }}>
-                {s.coverage_p10_p90 != null ? `${(s.coverage_p10_p90 * 100).toFixed(0)}%` : "--"}
-              </span>
-            </div>
-
-            {/* Row 3: Best path + verdict */}
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9 }}>
-              <span style={{ color: "#64748b" }}>
-                {bestPath
-                  ? `Path #${bestPath.path_index} tracked ${bestPath.rmse_pts.toFixed(1)}pts for ${bestPath.tracking_duration_bars * 5}min`
-                  : "No path data"}
-              </span>
-              <span style={{ color: verdictColor, fontWeight: 700 }}>
-                {verdictIcon} {s.verdict ?? "?"}
-              </span>
-            </div>
+            )}
+            <span style={{ flex: 1 }} />
+            <span style={{
+              color: isWin ? "#10b981" : isLoss ? "#ef4444" : "#94a3b8",
+              fontFamily: "JetBrains Mono, monospace",
+              fontWeight: 600,
+              fontSize: 11,
+              minWidth: 52,
+              textAlign: "right",
+            }}>
+              {t.pnlPts >= 0 ? "+" : ""}{t.pnlPts.toFixed(2)}
+            </span>
           </div>
         );
       })}
+      {trades.length === 0 && (
+        <div style={{ padding: 12, color: "#64748b", fontSize: 11, textAlign: "center" }}>
+          No trades yet this session
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Path Tracking Detail ── */
+/* ── Performance Context ── */
 
-function PathTrackingDetail({ prediction }: { prediction: HindcastPrediction }) {
-  const scoring = prediction.scoring;
-  if (!scoring?.best_paths?.length) {
-    return (
-      <div style={{ padding: 8, color: "#64748b", fontSize: 10, textAlign: "center" }}>
-        Select a prediction to see path tracking detail
-      </div>
-    );
+function PerformanceContext({ trades, pf }: { trades: Trade[]; pf: number | null }) {
+  const wins = trades.filter((t) => t.pnlPts > 0);
+  const losses = trades.filter((t) => t.pnlPts < 0);
+  const avgWin = wins.length ? wins.reduce((s, t) => s + t.pnlPts, 0) / wins.length : 0;
+  const avgLoss = losses.length ? losses.reduce((s, t) => s + t.pnlPts, 0) / losses.length : 0;
+
+  // Max drawdown from cumulative P&L
+  let cumPnl = 0;
+  let peak = 0;
+  let maxDD = 0;
+  for (const t of trades) {
+    cumPnl += t.pnlPts;
+    if (cumPnl > peak) peak = cumPnl;
+    const dd = peak - cumPnl;
+    if (dd > maxDD) maxDD = dd;
   }
 
-  const bestPath = scoring.best_paths[0];
-  const realized = prediction.realized_prices.filter((v): v is number => v != null);
-
-  if (!realized.length || !bestPath.path_values.length) return null;
-
-  // Build data for the mini-chart: realized + best path values at matching indices
-  const realizedIndices = prediction.realized_prices
-    .map((v, i) => (v != null ? i : -1))
-    .filter((i) => i >= 0);
-
-  const pathAtRealized = realizedIndices
-    .map((i) => (i < bestPath.path_values.length ? bestPath.path_values[i] : null))
-    .filter((v): v is number => v != null);
-
-  // Compute bounds for zoomed y-axis
-  const allVals = [...realized, ...pathAtRealized];
-  if (!allVals.length) return null;
-  const yMin = Math.min(...allVals);
-  const yMax = Math.max(...allVals);
-  const yRange = yMax - yMin || 1;
-  const yPad = yRange * 0.15;
-
-  const w = 320;
-  const h = 80;
-  const padX = 4;
-  const padY = 4;
-
-  const toX = (i: number) => padX + (i / Math.max(realized.length - 1, 1)) * (w - 2 * padX);
-  const toY = (v: number) => h - padY - ((v - (yMin - yPad)) / (yRange + 2 * yPad)) * (h - 2 * padY);
-
-  const realizedPoints = realized.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
-  const pathPoints = pathAtRealized.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
-
-  // Second and third best paths (if available)
-  const path2 = scoring.best_paths.length > 1 ? scoring.best_paths[1] : null;
-  const path3 = scoring.best_paths.length > 2 ? scoring.best_paths[2] : null;
-  const getPathPoints = (pi: typeof path2) => {
-    if (!pi) return "";
-    return realizedIndices
-      .map((idx) => (idx < pi.path_values.length ? pi.path_values[idx] : null))
-      .filter((v): v is number => v != null)
-      .map((v, i) => `${toX(i)},${toY(v)}`)
-      .join(" ");
-  };
-
-  const refY = toY(prediction.last_close);
+  // Equity sparkline data
+  const equityPoints: number[] = [];
+  let running = 0;
+  for (const t of trades) {
+    running += t.pnlPts;
+    equityPoints.push(running);
+  }
 
   return (
-    <div style={{ padding: "4px 8px" }}>
-      <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.3 }}>
-        Path Tracking
+    <div style={{ padding: "6px 8px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+      <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 4 }}>
+        <PerfStat label="Avg Win" value={avgWin > 0 ? `+${avgWin.toFixed(1)}` : "--"} color="#10b981" />
+        <PerfStat label="Avg Loss" value={avgLoss.toFixed(1)} color="#ef4444" />
+        <PerfStat label="Max DD" value={`-${maxDD.toFixed(1)}`} color="#f59e0b" />
+        <PerfStat label="PF" value={pf != null ? pf.toFixed(2) : "--"} color={pf == null ? "#64748b" : pf >= 1 ? "#10b981" : "#ef4444"} />
       </div>
-      <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-        {/* Reference line at last_close */}
-        <line x1={padX} y1={refY} x2={w - padX} y2={refY} stroke="#334155" strokeWidth={0.5} strokeDasharray="2,2" />
-        {/* 3rd best path */}
-        {path3 && <polyline points={getPathPoints(path3)} fill="none" stroke="#06b6d4" strokeWidth={1} opacity={0.2} strokeLinejoin="round" />}
-        {/* 2nd best path */}
-        {path2 && <polyline points={getPathPoints(path2)} fill="none" stroke="#06b6d4" strokeWidth={1} opacity={0.35} strokeLinejoin="round" />}
-        {/* Best path */}
-        <polyline points={pathPoints} fill="none" stroke="#06b6d4" strokeWidth={1.5} opacity={0.8} strokeLinejoin="round" />
-        {/* Realized */}
-        <polyline points={realizedPoints} fill="none" stroke="#e2e8f0" strokeWidth={2} strokeLinejoin="round" />
-      </svg>
-      <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 4, fontFamily: "JetBrains Mono, monospace" }}>
-        Path #{bestPath.path_index}: within +/-{bestPath.tracking_threshold_pts}pts for {bestPath.tracking_duration_bars}/{realized.length} bars.
-        {" "}RMSE: {bestPath.rmse_pts.toFixed(1)} pts
-      </div>
+      {equityPoints.length >= 2 && <EquitySparkline data={equityPoints} />}
     </div>
+  );
+}
+
+function PerfStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 8, color: "#64748b" }}>{label}</div>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, fontWeight: 600, color }}>{value}</div>
+    </div>
+  );
+}
+
+function EquitySparkline({ data }: { data: number[] }) {
+  const w = 320;
+  const h = 30;
+  const pad = 2;
+  const allVals = [0, ...data];
+  const min = Math.min(...allVals);
+  const max = Math.max(...allVals);
+  const range = max - min || 1;
+
+  const toX = (i: number) => pad + (i / Math.max(data.length - 1, 1)) * (w - 2 * pad);
+  const toY = (v: number) => h - pad - ((v - min) / range) * (h - 2 * pad);
+
+  const points = data.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+  const zeroY = toY(0);
+  const lastVal = data[data.length - 1];
+  const lineColor = lastVal >= 0 ? "#10b981" : "#ef4444";
+
+  return (
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+      <line x1={pad} y1={zeroY} x2={w - pad} y2={zeroY} stroke="#334155" strokeWidth={0.5} strokeDasharray="2,2" />
+      <polyline points={points} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round" />
+    </svg>
   );
 }
