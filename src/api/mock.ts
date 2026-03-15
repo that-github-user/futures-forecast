@@ -304,6 +304,7 @@ export function generateMockHistory(): HistoryResponse {
       realized_return: i > 0 ? ret : null,
       realized_direction: i > 0 ? (ret > 0 ? "UP" as const : "DOWN" as const) : null,
       realized_returns: null,
+      regime: (["trending", "mean-reverting", "volatile", "quiet"] as const)[i % 4],
     });
   }
 
@@ -312,5 +313,22 @@ export function generateMockHistory(): HistoryResponse {
     live_pf: grossLoss > 0 ? +(grossProfit / grossLoss).toFixed(2) : null,
     live_win_rate: total > 0 ? +(wins / total).toFixed(4) : null,
     live_num_trades: total,
+    session_stats: {
+      n_trades: total,
+      n_wins: wins,
+      n_losses: total - wins,
+      n_flat: 31 - total,
+      total_pnl_pts: +(cumPnl * BASE_PRICE).toFixed(2),
+      best_trade_pts: +(grossProfit * BASE_PRICE / Math.max(wins, 1)).toFixed(2),
+      worst_trade_pts: +(-grossLoss * BASE_PRICE / Math.max(total - wins, 1)).toFixed(2),
+      current_streak: wins > total - wins ? 2 : -1,
+      streak_type: wins > total - wins ? "W" as const : "L" as const,
+      regime_breakdown: {
+        trending: { n: 5, wins: 3, pnl_pts: 8.5 },
+        "mean-reverting": { n: 4, wins: 2, pnl_pts: -2.0 },
+        volatile: { n: 3, wins: 1, pnl_pts: -4.5 },
+        quiet: { n: 2, wins: 2, pnl_pts: 6.0 },
+      },
+    },
   };
 }

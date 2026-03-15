@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { HindcastPrediction, HistoryEntry, RollingAccuracy } from "../../api/types";
+import type { HindcastPrediction, HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
 import { useHealth } from "../../hooks/useHealth";
 import type { Timeframe } from "../../api/timeframe";
@@ -36,6 +36,7 @@ export function Dashboard() {
   }>({ pf: null, winRate: null, numTrades: null });
   const [hindcast, setHindcast] = useState<HindcastPrediction[]>([]);
   const [rollingAccuracy, setRollingAccuracy] = useState<RollingAccuracy | null>(null);
+  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [showTracking, setShowTracking] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("signal");
   const [highlightedPaths, setHighlightedPaths] = useState<number[] | null>(null);
@@ -51,6 +52,7 @@ export function Dashboard() {
           winRate: h.live_win_rate,
           numTrades: h.live_num_trades,
         });
+        setSessionStats(h.session_stats ?? null);
         setHistoryError(false);
       } catch {
         setHistoryError(true);
@@ -293,7 +295,9 @@ export function Dashboard() {
           {sidebarTab === "track-record" && (
             <div className="fade-in" style={{ flex: 1, minHeight: 0 }}>
               <TrackRecord
-                hindcast={hindcast}
+                history={history}
+                liveStats={liveStats}
+                sessionStats={sessionStats}
                 rollingAccuracy={rollingAccuracy}
               />
             </div>
