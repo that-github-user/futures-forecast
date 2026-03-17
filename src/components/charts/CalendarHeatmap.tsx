@@ -13,6 +13,17 @@ interface Props {
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** Get the current date in US Eastern time as {year, month (0-indexed), day, dateStr}. */
+function getETNow() {
+  const etStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+  const et = new Date(etStr);
+  const year = et.getFullYear();
+  const month = et.getMonth();
+  const day = et.getDate();
+  const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { year, month, day, dateStr, date: et };
+}
+
 function getPnlColor(pnl: number): string {
   if (pnl > 20) return "#059669";      // strong green
   if (pnl > 10) return "#10b981";
@@ -24,13 +35,13 @@ function getPnlColor(pnl: number): string {
 }
 
 export function CalendarHeatmap({ summaries }: Props) {
-  const now = new Date();
+  const etNow = getETNow();
   const [monthOffset, setMonthOffset] = useState(0);
 
   const viewDate = useMemo(() => {
-    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    const d = new Date(etNow.year, etNow.month + monthOffset, 1);
     return d;
-  }, [monthOffset]);
+  }, [monthOffset, etNow.year, etNow.month]);
 
   // Build lookup: date string -> summary
   const lookup = useMemo(() => {
@@ -59,7 +70,7 @@ export function CalendarHeatmap({ summaries }: Props) {
       const dateObj = new Date(year, month, d);
       const dayOfWeek = dateObj.getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const isFuture = dateObj > now;
+      const isFuture = dateObj > etNow.date;
       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const summary = lookup[dateStr] ?? null;
 
@@ -74,7 +85,7 @@ export function CalendarHeatmap({ summaries }: Props) {
     }
 
     return cells;
-  }, [viewDate, lookup]);
+  }, [viewDate, lookup, etNow.dateStr]);
 
   // Month stats
   const monthSummaries = summaries.filter((s) => s.date.startsWith(`${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, "0")}`));
@@ -124,8 +135,7 @@ export function CalendarHeatmap({ summaries }: Props) {
             return <div key={`pad-${i}`} style={{ width: cellSize, height: cellSize }} />;
           }
 
-          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-          const isToday = cell.date === todayStr;
+          const isToday = cell.date === etNow.dateStr;
           const hasData = cell.pnl !== null;
           const bg = hasData
             ? getPnlColor(cell.pnl!)
