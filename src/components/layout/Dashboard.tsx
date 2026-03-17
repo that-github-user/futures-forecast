@@ -129,7 +129,9 @@ export function Dashboard() {
 
     // Split path_values into realized (context region) and projected (forecast region)
     // Each path_values[i] corresponds to horizons[i] bars ahead of anchor
+    // The forecast x-axis has slots [0..N-1] where slot j = prediction.horizons[j]
     const ctxLen = rawCandles.length;
+    const forecastHorizons = prediction.horizons; // current prediction's horizon slots
     const realizedPrices: number[] = [];
     const realizedOffsets: number[] = [];
     const projectedPrices: number[] = [];
@@ -142,9 +144,14 @@ export function Dashboard() {
         realizedPrices.push(bestPath.path_values[i]);
         realizedOffsets.push(barOffset);
       } else {
-        // Forecast region: offset relative to ctxLen
-        projectedPrices.push(bestPath.path_values[i]);
-        projectedOffsets.push(chartIdx - ctxLen);
+        // Forecast region: find the slot index in the forecast horizons array
+        // that best matches this bar offset from NOW
+        const barsFromNow = chartIdx - ctxLen + 1; // approximate bars from end of context
+        const slotIdx = forecastHorizons.findIndex((h) => h >= barsFromNow);
+        if (slotIdx >= 0) {
+          projectedPrices.push(bestPath.path_values[i]);
+          projectedOffsets.push(slotIdx);
+        }
       }
     }
 

@@ -539,26 +539,23 @@ export function FanChart({
             const totalLen = allTimes.length;
             // Realized portion: solid teal line through context candles at correct horizon offsets
             const realizedData: (number | null)[] = new Array(totalLen).fill(null);
-            for (let i = 0; i < tp.realizedPrices.length; i++) {
-              const offset = tp.realizedOffsets[i] ?? i;
-              const idx = tp.anchorIndex + offset;
+            for (let i = 0; i < Math.min(tp.realizedPrices.length, tp.realizedOffsets.length); i++) {
+              const idx = tp.anchorIndex + tp.realizedOffsets[i];
               if (idx >= 0 && idx < ctxLen) {
                 realizedData[idx] = tp.realizedPrices[i];
               }
             }
             // Projected portion: dashed teal line through forecast region
             const projectedData: (number | null)[] = new Array(totalLen).fill(null);
-            // Connect at the last realized point
-            if (tp.realizedPrices.length > 0) {
-              const lastOffset = tp.realizedOffsets[tp.realizedPrices.length - 1] ?? (tp.realizedPrices.length - 1);
-              const lastIdx = tp.anchorIndex + lastOffset;
+            // Connect at the last realized point (bridge to projected)
+            if (tp.realizedPrices.length > 0 && tp.realizedOffsets.length > 0) {
+              const lastIdx = tp.anchorIndex + tp.realizedOffsets[tp.realizedOffsets.length - 1];
               if (lastIdx >= 0 && lastIdx < totalLen) {
                 projectedData[lastIdx] = tp.realizedPrices[tp.realizedPrices.length - 1];
               }
             }
-            for (let i = 0; i < tp.projectedPrices.length; i++) {
-              const offset = tp.projectedOffsets[i] ?? i;
-              const idx = ctxLen + offset;
+            for (let i = 0; i < Math.min(tp.projectedPrices.length, tp.projectedOffsets.length); i++) {
+              const idx = ctxLen + tp.projectedOffsets[i];
               if (idx < totalLen) {
                 projectedData[idx] = tp.projectedPrices[i];
               }
