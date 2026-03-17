@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
-import type { HindcastPrediction, HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
+import type { DailySummary, HindcastPrediction, HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
 import { usePrediction } from "../../hooks/usePrediction";
 import { useHealth } from "../../hooks/useHealth";
 import type { Timeframe } from "../../api/timeframe";
@@ -39,6 +39,7 @@ export function Dashboard() {
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [showTracking, setShowTracking] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("signal");
+  const [dailySummaries, setDailySummaries] = useState<DailySummary[]>([]);
   const [highlightedPaths, setHighlightedPaths] = useState<number[] | null>(null);
 
   // Fetch history + hindcast periodically
@@ -69,13 +70,25 @@ export function Dashboard() {
       }
     };
 
+    const fetchDailySummaries = async () => {
+      try {
+        const ds = await api.dailySummaries();
+        setDailySummaries(ds);
+      } catch {
+        // Non-critical
+      }
+    };
+
     fetchHistory();
     fetchHindcast();
+    fetchDailySummaries();
     const id = setInterval(() => {
       fetchHistory();
       fetchHindcast();
     }, 60_000);
-    return () => clearInterval(id);
+    // Daily summaries refresh less often (every 5 min)
+    const dsId = setInterval(fetchDailySummaries, 300_000);
+    return () => { clearInterval(id); clearInterval(dsId); };
   }, []);
 
   // Compute range accuracy from rolling accuracy (server-computed)
@@ -176,6 +189,7 @@ export function Dashboard() {
         prediction={prediction}
         marketStatus={health?.market_status ?? null}
         timeframe={timeframe}
+        modelHealth={rollingAccuracy ? { coverage: rollingAccuracy.coverage_p10_p90, nScored: rollingAccuracy.n_evaluated } : null}
       />
 
       {demoMode && (
@@ -299,6 +313,7 @@ export function Dashboard() {
                 liveStats={liveStats}
                 sessionStats={sessionStats}
                 rollingAccuracy={rollingAccuracy}
+                dailySummaries={dailySummaries}
               />
             </div>
           )}

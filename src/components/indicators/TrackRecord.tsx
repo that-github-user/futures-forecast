@@ -1,19 +1,22 @@
 /**
- * TrackRecord — session-focused trade log with points-denominated P&L.
+ * TrackRecord — performance view with time-range toggle.
  *
- * Section A: Session Scorecard (W/L, total P&L, streak, regime context)
- * Section B: Trade Log (scrollable concrete trade events)
- * Section C: Performance Context (avg winner/loser, drawdown, sparkline)
+ * Today: Session scorecard + trade log + performance context
+ * Month: Calendar heatmap + monthly stats
  */
 
-import { useMemo } from "react";
-import type { HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
+import { useMemo, useState } from "react";
+import type { DailySummary, HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
+import { CalendarHeatmap } from "../charts/CalendarHeatmap";
+
+type TimeRange = "today" | "month";
 
 interface Props {
   history: HistoryEntry[];
   liveStats: { pf: number | null; winRate: number | null; numTrades: number | null };
   sessionStats: SessionStats | null;
   rollingAccuracy: RollingAccuracy | null;
+  dailySummaries: DailySummary[];
 }
 
 interface Trade {
@@ -24,7 +27,8 @@ interface Trade {
   regime: string | null;
 }
 
-export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy }: Props) {
+export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy, dailySummaries }: Props) {
+  const [timeRange, setTimeRange] = useState<TimeRange>("today");
   // Compute trades from history (client-side fallback when session_stats not yet available)
   const trades = useMemo(() => {
     const result: Trade[] = [];
@@ -83,20 +87,54 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy 
     } satisfies SessionStats;
   }, [sessionStats, trades]);
 
-  if (!trades.length && !stats) {
-    return (
-      <div style={{ padding: 16, color: "#64748b", fontSize: 11, textAlign: "center" }}>
-        Waiting for trade outcomes...
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 4, height: "100%", overflow: "hidden" }}>
-      {rollingAccuracy && <AccuracyStrip accuracy={rollingAccuracy} />}
-      {stats && <SessionScorecard stats={stats} />}
-      <TradeLog trades={trades} />
-      {trades.length > 0 && <PerformanceContext trades={trades} pf={liveStats.pf} />}
+      {/* Time range toggle */}
+      <div style={{ display: "flex", gap: 0, background: "#0f172a", borderRadius: 4, border: "1px solid #1e293b", overflow: "hidden", flexShrink: 0 }}>
+        {(["today", "month"] as const).map((r) => (
+          <button
+            key={r}
+            onClick={() => setTimeRange(r)}
+            style={{
+              flex: 1,
+              background: timeRange === r ? "#1e293b" : "transparent",
+              color: timeRange === r ? "#e2e8f0" : "#475569",
+              border: "none",
+              padding: "4px 8px",
+              fontSize: 10,
+              fontFamily: "Inter, sans-serif",
+              fontWeight: 500,
+              cursor: "pointer",
+              textTransform: "capitalize",
+            }}
+          >
+            {r === "today" ? "Today" : "Calendar"}
+          </button>
+        ))}
+      </div>
+
+      {timeRange === "today" && (
+        <>
+          {rollingAccuracy && <AccuracyStrip accuracy={rollingAccuracy} />}
+          {stats && <SessionScorecard stats={stats} />}
+          {trades.length > 0 ? (
+            <>
+              <TradeLog trades={trades} />
+              <PerformanceContext trades={trades} pf={liveStats.pf} />
+            </>
+          ) : (
+            <div style={{ padding: 16, color: "#64748b", fontSize: 11, textAlign: "center" }}>
+              Waiting for trade outcomes...
+            </div>
+          )}
+        </>
+      )}
+
+      {timeRange === "month" && (
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <CalendarHeatmap summaries={dailySummaries} />
+        </div>
+      )}
     </div>
   );
 }

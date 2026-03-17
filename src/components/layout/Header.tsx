@@ -14,9 +14,10 @@ interface Props {
   prediction: PredictionResponse;
   marketStatus: "RTH" | "ETH" | "CLOSED" | null;
   timeframe?: Timeframe;
+  modelHealth?: { coverage: number | null; nScored: number } | null;
 }
 
-export function Header({ instrument, connected, lastPredictionTime, prediction, marketStatus, timeframe = "5m" }: Props) {
+export function Header({ instrument, connected, lastPredictionTime, prediction, marketStatus, timeframe = "5m", modelHealth }: Props) {
   // Compute change from prior RTH close (16:00 ET settlement).
   // Scan context candles backwards to find the last bar at or before 16:00 ET.
   const ctxCandles = prediction.context_candles ?? [];
@@ -126,6 +127,37 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
         >
           {getTimeframeLabel(timeframe)}
         </span>
+
+        {/* Model Health badge */}
+        {modelHealth && (() => {
+          const cov = modelHealth.coverage;
+          const n = modelHealth.nScored;
+          let label: string;
+          let color: string;
+          if (n < 10) { label = "Initializing"; color = "#64748b"; }
+          else if (cov == null) { label = "No Data"; color = "#64748b"; }
+          else if (cov >= 0.70 && cov <= 0.90) { label = "Calibrated"; color = "#10b981"; }
+          else if (cov > 0.90) { label = "Bands Wide"; color = "#f59e0b"; }
+          else { label = "Check Model"; color = "#ef4444"; }
+          return (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color,
+                fontFamily: "Inter, sans-serif",
+                background: color + "18",
+                border: `1px solid ${color}40`,
+                padding: "2px 8px",
+                borderRadius: 10,
+                letterSpacing: 0.3,
+              }}
+              title={`P10-P90 coverage: ${cov != null ? (cov * 100).toFixed(0) + "%" : "N/A"} (n=${n})`}
+            >
+              {label}
+            </span>
+          );
+        })()}
       </div>
 
       <div className="header-right">

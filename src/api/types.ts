@@ -152,6 +152,21 @@ export interface HindcastResponse {
   rolling_accuracy?: RollingAccuracy | null;
 }
 
+export interface DailySummary {
+  date: string;
+  n_trades: number;
+  n_wins: number;
+  n_losses: number;
+  total_pnl_pts: number;
+  profit_factor: number | null;
+  win_rate: number | null;
+  best_trade_pts: number;
+  worst_trade_pts: number;
+  coverage_p10_p90: number | null;
+  direction_hit_rate: number | null;
+  regime_breakdown: Record<string, { n: number; wins: number; pnl_pts: number }> | null;
+}
+
 export interface HealthResponse {
   status: string;
   uptime_seconds: number;
