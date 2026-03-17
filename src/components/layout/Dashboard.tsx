@@ -94,7 +94,7 @@ export function Dashboard() {
     if (!hindcast?.length || !prediction) return null;
     // Find most recent prediction with scoring and best_paths
     const scored = [...hindcast].reverse().find(
-      (h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 12,
+      (h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 3,
     );
     if (!scored?.scoring?.best_paths?.length) return null;
 
