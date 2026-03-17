@@ -115,6 +115,10 @@ export function Dashboard() {
     const rawCandles = prediction.context_candles ?? [];
     if (!rawCandles.length) return null;
 
+    // Horizons from the hindcast prediction (sparse: [1, 4, 7, 10, ...])
+    const horizons = scored.horizons;
+    if (!horizons.length) return null;
+
     // Find anchor: context candle closest to prediction timestamp
     const predTs = new Date(scored.timestamp).getTime() / 1000;
     let anchorIndex = -1;
@@ -124,24 +128,40 @@ export function Dashboard() {
     if (anchorIndex < 0) return null;
 
     // Split path_values into realized (context region) and projected (forecast region)
+    // Each path_values[i] corresponds to horizons[i] bars ahead of anchor
+    // The forecast x-axis has slots [0..N-1] where slot j = prediction.horizons[j]
     const ctxLen = rawCandles.length;
+    const forecastHorizons = prediction.horizons; // current prediction's horizon slots
     const realizedPrices: number[] = [];
+    const realizedOffsets: number[] = [];
     const projectedPrices: number[] = [];
+    const projectedOffsets: number[] = [];
 
-    for (let i = 0; i < bestPath.path_values.length; i++) {
-      const chartIdx = anchorIndex + i;
+    for (let i = 0; i < bestPath.path_values.length && i < horizons.length; i++) {
+      const barOffset = horizons[i]; // bars ahead of anchor
+      const chartIdx = anchorIndex + barOffset;
       if (chartIdx < ctxLen) {
         realizedPrices.push(bestPath.path_values[i]);
+        realizedOffsets.push(barOffset);
       } else {
-        projectedPrices.push(bestPath.path_values[i]);
+        // Forecast region: find the slot index in the forecast horizons array
+        // that best matches this bar offset from NOW
+        const barsFromNow = chartIdx - ctxLen + 1; // approximate bars from end of context
+        const slotIdx = forecastHorizons.findIndex((h) => h >= barsFromNow);
+        if (slotIdx >= 0) {
+          projectedPrices.push(bestPath.path_values[i]);
+          projectedOffsets.push(slotIdx);
+        }
       }
     }
 
-    if (realizedPrices.length < 3) return null;
+    if (realizedPrices.length < 2) return null;
 
     return {
       realizedPrices,
+      realizedOffsets,
       projectedPrices,
+      projectedOffsets,
       anchorIndex,
       rmse: bestPath.rmse_pts,
       pathIndex: bestPath.path_index,

@@ -37,9 +37,11 @@ export type ChartType = "line" | "candlestick" | "ohlc";
 export type ForecastStyle = "bands" | "spaghetti";
 
 export interface TrackingPath {
-  realizedPrices: number[];   // price values at context candle indices
+  realizedPrices: number[];   // price values at realized horizon points
+  realizedOffsets: number[];  // bar offsets from anchor for each realized price
   projectedPrices: number[];  // price values in forecast region
-  anchorIndex: number;        // x-axis index where the path starts
+  projectedOffsets: number[]; // horizon offsets for projected prices (relative to forecast start)
+  anchorIndex: number;        // x-axis index in context candles where prediction was made
   rmse: number;
   pathIndex: number;
   totalPaths: number;
@@ -535,23 +537,25 @@ export function FanChart({
         ? (() => {
             const tp = trackingPath;
             const totalLen = allTimes.length;
-            // Realized portion: solid teal line through context candles
+            // Realized portion: solid teal line through context candles at correct horizon offsets
             const realizedData: (number | null)[] = new Array(totalLen).fill(null);
-            for (let i = 0; i < tp.realizedPrices.length; i++) {
-              const idx = tp.anchorIndex + i;
+            for (let i = 0; i < Math.min(tp.realizedPrices.length, tp.realizedOffsets.length); i++) {
+              const idx = tp.anchorIndex + tp.realizedOffsets[i];
               if (idx >= 0 && idx < ctxLen) {
                 realizedData[idx] = tp.realizedPrices[i];
               }
             }
             // Projected portion: dashed teal line through forecast region
             const projectedData: (number | null)[] = new Array(totalLen).fill(null);
-            // Connect at the NOW boundary
-            const lastRealizedIdx = tp.anchorIndex + tp.realizedPrices.length - 1;
-            if (lastRealizedIdx >= 0 && lastRealizedIdx < totalLen) {
-              projectedData[lastRealizedIdx] = tp.realizedPrices[tp.realizedPrices.length - 1];
+            // Connect at the last realized point (bridge to projected)
+            if (tp.realizedPrices.length > 0 && tp.realizedOffsets.length > 0) {
+              const lastIdx = tp.anchorIndex + tp.realizedOffsets[tp.realizedOffsets.length - 1];
+              if (lastIdx >= 0 && lastIdx < totalLen) {
+                projectedData[lastIdx] = tp.realizedPrices[tp.realizedPrices.length - 1];
+              }
             }
-            for (let i = 0; i < tp.projectedPrices.length; i++) {
-              const idx = ctxLen + i;
+            for (let i = 0; i < Math.min(tp.projectedPrices.length, tp.projectedOffsets.length); i++) {
+              const idx = ctxLen + tp.projectedOffsets[i];
               if (idx < totalLen) {
                 projectedData[idx] = tp.projectedPrices[i];
               }
