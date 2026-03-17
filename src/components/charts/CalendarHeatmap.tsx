@@ -124,7 +124,8 @@ export function CalendarHeatmap({ summaries }: Props) {
             return <div key={`pad-${i}`} style={{ width: cellSize, height: cellSize }} />;
           }
 
-          const isToday = cell.date === now.toISOString().slice(0, 10);
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          const isToday = cell.date === todayStr;
           const hasData = cell.pnl !== null;
           const bg = hasData
             ? getPnlColor(cell.pnl!)
