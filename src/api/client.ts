@@ -4,13 +4,14 @@
  */
 
 import type {
+  DailySummary,
   HealthResponse,
   HindcastResponse,
   HistoryResponse,
   PredictionResponse,
   SignalResponse,
 } from "./types";
-import { generateMockHindcast, generateMockHistory, generateMockPrediction } from "./mock";
+import { generateMockDailySummaries, generateMockHindcast, generateMockHistory, generateMockPrediction } from "./mock";
 
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 // In dev with vite proxy, use relative paths; in prod, use the full API URL
@@ -66,6 +67,11 @@ export const api = {
   hindcast: (n = 6): Promise<HindcastResponse> => {
     if (IS_DEMO) return Promise.resolve(generateMockHindcast(n));
     return get<HindcastResponse>(`/api/v1/prediction/hindcast?n=${n}`);
+  },
+
+  dailySummaries: (): Promise<DailySummary[]> => {
+    if (IS_DEMO) return Promise.resolve(generateMockDailySummaries());
+    return get<DailySummary[]>("/api/v1/performance/daily");
   },
 };
 

@@ -4,7 +4,7 @@
  * Generates realistic-looking data that updates every 5 minutes.
  */
 
-import type { HindcastResponse, HistoryResponse, PredictionResponse } from "./types";
+import type { DailySummary, HindcastResponse, HistoryResponse, PredictionResponse } from "./types";
 
 const BASE_PRICE = 5850;
 const TICK = 0.25;
@@ -331,4 +331,44 @@ export function generateMockHistory(): HistoryResponse {
       },
     },
   };
+}
+
+export function generateMockDailySummaries(): DailySummary[] {
+  const rand = seededRandom(99);
+  const summaries: DailySummary[] = [];
+  const now = new Date();
+
+  // Generate 20 trading days of mock history
+  for (let daysAgo = 20; daysAgo >= 1; daysAgo--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysAgo);
+    // Skip weekends
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+
+    const nTrades = Math.floor(8 + rand() * 15);
+    const winRate = 0.4 + rand() * 0.25;
+    const nWins = Math.round(nTrades * winRate);
+    const nLosses = nTrades - nWins;
+    const totalPnl = +((rand() - 0.4) * 30).toFixed(2);
+
+    summaries.push({
+      date: d.toISOString().slice(0, 10),
+      n_trades: nTrades,
+      n_wins: nWins,
+      n_losses: nLosses,
+      total_pnl_pts: totalPnl,
+      profit_factor: nLosses > 0 ? +(nWins / nLosses).toFixed(2) : null,
+      win_rate: +(nWins / nTrades).toFixed(4),
+      best_trade_pts: +(2 + rand() * 8).toFixed(2),
+      worst_trade_pts: +(-2 - rand() * 6).toFixed(2),
+      coverage_p10_p90: +(0.65 + rand() * 0.2).toFixed(4),
+      direction_hit_rate: +(0.45 + rand() * 0.2).toFixed(4),
+      regime_breakdown: {
+        trending: { n: Math.floor(nTrades * 0.3), wins: Math.floor(nWins * 0.35), pnl_pts: +(totalPnl * 0.4).toFixed(2) },
+        "mean-reverting": { n: Math.floor(nTrades * 0.3), wins: Math.floor(nWins * 0.25), pnl_pts: +(totalPnl * 0.1).toFixed(2) },
+      },
+    });
+  }
+
+  return summaries;
 }
