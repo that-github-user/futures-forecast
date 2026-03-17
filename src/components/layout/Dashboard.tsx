@@ -115,6 +115,10 @@ export function Dashboard() {
     const rawCandles = prediction.context_candles ?? [];
     if (!rawCandles.length) return null;
 
+    // Horizons from the hindcast prediction (sparse: [1, 4, 7, 10, ...])
+    const horizons = scored.horizons;
+    if (!horizons.length) return null;
+
     // Find anchor: context candle closest to prediction timestamp
     const predTs = new Date(scored.timestamp).getTime() / 1000;
     let anchorIndex = -1;
@@ -124,24 +128,33 @@ export function Dashboard() {
     if (anchorIndex < 0) return null;
 
     // Split path_values into realized (context region) and projected (forecast region)
+    // Each path_values[i] corresponds to horizons[i] bars ahead of anchor
     const ctxLen = rawCandles.length;
     const realizedPrices: number[] = [];
+    const realizedOffsets: number[] = [];
     const projectedPrices: number[] = [];
+    const projectedOffsets: number[] = [];
 
-    for (let i = 0; i < bestPath.path_values.length; i++) {
-      const chartIdx = anchorIndex + i;
+    for (let i = 0; i < bestPath.path_values.length && i < horizons.length; i++) {
+      const barOffset = horizons[i]; // bars ahead of anchor
+      const chartIdx = anchorIndex + barOffset;
       if (chartIdx < ctxLen) {
         realizedPrices.push(bestPath.path_values[i]);
+        realizedOffsets.push(barOffset);
       } else {
+        // Forecast region: offset relative to ctxLen
         projectedPrices.push(bestPath.path_values[i]);
+        projectedOffsets.push(chartIdx - ctxLen);
       }
     }
 
-    if (realizedPrices.length < 3) return null;
+    if (realizedPrices.length < 2) return null;
 
     return {
       realizedPrices,
+      realizedOffsets,
       projectedPrices,
+      projectedOffsets,
       anchorIndex,
       rmse: bestPath.rmse_pts,
       pathIndex: bestPath.path_index,
