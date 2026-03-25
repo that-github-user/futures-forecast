@@ -174,10 +174,6 @@ html, body, #root {
   padding: 0 4px;
 }
 
-.table-scroll .summary-table {
-  min-width: 600px;
-}
-
 /* ── Value flash animation ── */
 .value-transition {
   transition: color 0.3s ease, transform 0.2s ease;

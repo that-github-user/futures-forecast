@@ -120,6 +120,23 @@ export function generateMockPrediction(): PredictionResponse {
       p10_return: +((drift - 0.08) * 0.01).toFixed(6),
       p90_return: +((drift + 0.08) * 0.01).toFixed(6),
       long_frac: +(0.5 + drift * 2).toFixed(4),
+      // Analytics engine fields (nested in signal to match server)
+      regime: regimeLabels[Math.floor(rand() * 4)],
+      exhaustion_score: +(0.3 + rand() * 2.2).toFixed(2),
+      ensemble_agreement: +(0.3 + rand() * 0.7).toFixed(2),
+      signal_strength_percentile: Math.floor(rand() * 100),
+      invalidation: {
+        price_level: round(
+          isLong ? lastClose - (4 + rand() * 8) : lastClose + (4 + rand() * 8),
+        ),
+        price_direction: isLong ? "below" : isShort ? "above" : "either",
+        description: isLong
+          ? "Close below support invalidates bullish thesis"
+          : isShort
+            ? "Close above resistance invalidates bearish thesis"
+            : "Breakout from range invalidates neutral stance",
+        ensemble_contradiction: +(rand() * 0.4).toFixed(4),
+      },
     },
     context_candles: contextCandles,
     // Analytics engine fields
