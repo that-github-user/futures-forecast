@@ -502,55 +502,6 @@ html, body, #root {
   text-align: center;
 }
 
-/* ── Backtest page ── */
-.backtest-container {
-  min-height: 100vh;
-  background: var(--bg-base);
-  color: var(--text-primary);
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.backtest-inner {
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-/* ── Summary table ── */
-.summary-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.summary-table th {
-  text-align: left;
-  padding: 8px 12px;
-  color: var(--text-muted);
-  font-weight: 500;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-dim);
-  white-space: nowrap;
-}
-
-.summary-table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--bg-elevated);
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.summary-table tr:hover td {
-  background: rgba(59, 130, 246, 0.05);
-}
-
-.pf-good { color: var(--accent-green); }
-.pf-ok { color: var(--accent-amber); }
-.pf-bad { color: var(--accent-red); }
-
 /* ── Responsive: sidebar shrink ── */
 @media (max-width: 1200px) {
   .dashboard-grid {
@@ -597,31 +548,53 @@ html, body, #root {
 
   .fan-chart-cell {
     grid-area: auto;
-    min-height: 350px;
+    min-height: 300px;
     height: 50vh;
+    overflow: hidden;
   }
 
-  .sidebar-cards { grid-area: auto; }
-  .sidebar-middle { grid-area: auto; overflow: visible; }
-  .sidebar-equity { grid-area: auto; }
-
-  .panel-header {
-    flex-wrap: wrap;
-    gap: 6px;
+  .sidebar-cards {
+    grid-area: auto;
   }
 
-  .panel-controls {
-    flex-wrap: wrap;
-    gap: 4px;
+  .sidebar-cards .analytics-cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+  }
+
+  .sidebar-cards .analytics-card {
+    padding: 6px 8px;
+  }
+
+  .sidebar-cards .analytics-card .card-value {
+    font-size: 13px;
   }
 
   .sidebar-middle {
+    grid-area: auto;
     overflow: visible;
     min-height: auto;
   }
 
   .sidebar-equity {
-    min-height: 200px;
+    grid-area: auto;
+    min-height: 180px;
+  }
+
+  .panel-header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .panel-controls {
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .panel-controls .toggle-group,
+  .panel-controls .toggle-btn-solo {
+    font-size: 9px;
+    padding: 2px 6px;
   }
 
   .tab-bar {
@@ -660,15 +633,6 @@ html, body, #root {
     grid-template-columns: 1fr;
   }
 
-  /* Backtest page */
-  .backtest-container {
-    padding: 12px;
-  }
-
-  .backtest-inner {
-    max-width: 100%;
-  }
-
   .stat-card .stat-value {
     font-size: 18px;
   }
@@ -685,29 +649,42 @@ html, body, #root {
   }
 
   .fan-chart-cell {
-    min-height: 280px;
-    height: 45vh;
+    min-height: 250px;
+    height: 40vh;
+    overflow: hidden;
+  }
+
+  .sidebar-cards .analytics-cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+  }
+
+  .sidebar-cards .analytics-card {
+    padding: 4px 6px;
+  }
+
+  .sidebar-cards .analytics-card .card-value {
+    font-size: 12px;
+  }
+
+  .sidebar-cards .analytics-card .card-label {
+    font-size: 8px;
+  }
+
+  .sidebar-cards .analytics-card .card-sub {
+    display: none;
   }
 
   .sidebar-equity {
-    min-height: 180px;
+    min-height: 150px;
   }
 
-  .backtest-container {
-    padding: 8px;
+  .scenario-card .scenario-label {
+    min-width: 70px;
+    font-size: 10px;
   }
 
-  /* Stat grid: single column on phones */
-  .stat-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .stat-card {
-    padding: 10px;
-  }
-
-  .stat-card .stat-value {
-    font-size: 16px;
+  .scenario-card .scenario-sparkline {
+    display: none;
   }
 }
