@@ -16,6 +16,12 @@ export interface SignalResponse {
   p90_return: number;
   long_frac: number;
   horizon_signals?: Record<string, HorizonSignal> | null;
+  // Analytics engine fields (nested in signal response from server)
+  regime?: string | null;
+  exhaustion_score?: number | null;
+  ensemble_agreement?: number | null;
+  signal_strength_percentile?: number | null;
+  invalidation?: InvalidationInfo | null;
 }
 
 export interface CandleData {

@@ -264,7 +264,7 @@ export function Dashboard() {
               chartType={chartType}
               forecastStyle={forecastStyle}
               timeframe={timeframe}
-              invalidationLevel={prediction.invalidation?.price_level ?? null}
+              invalidationLevel={prediction.signal.invalidation?.price_level ?? prediction.invalidation?.price_level ?? null}
               highlightedPaths={highlightedPaths}
               trackingPath={trackingPath}
               showTracking={showTracking}
@@ -275,11 +275,11 @@ export function Dashboard() {
         {/* Sidebar: analytics cards */}
         <div className="sidebar-cards fade-in">
           <AnalyticsCards
-            regime={prediction.regime ?? null}
-            exhaustionScore={prediction.exhaustion_score ?? null}
-            ensembleAgreement={prediction.ensemble_agreement ?? null}
-            signalPercentile={prediction.signal_percentile ?? null}
-            invalidation={prediction.invalidation ?? null}
+            regime={prediction.signal.regime ? { label: prediction.signal.regime as "trending" | "mean-reverting" | "volatile" | "quiet", confidence: 0 } : prediction.regime ?? null}
+            exhaustionScore={prediction.signal.exhaustion_score ?? prediction.exhaustion_score ?? null}
+            ensembleAgreement={prediction.signal.ensemble_agreement ?? prediction.ensemble_agreement ?? null}
+            signalPercentile={prediction.signal.signal_strength_percentile ?? prediction.signal_percentile ?? null}
+            invalidation={prediction.signal.invalidation ?? prediction.invalidation ?? null}
             regimePerformance={prediction.regime_performance ?? null}
             lastClose={prediction.last_close}
             direction={prediction.signal.direction}
@@ -295,7 +295,7 @@ export function Dashboard() {
                 <SignalPanel
                   signal={prediction.signal}
                   lastClose={prediction.last_close}
-                  regime={prediction.regime}
+                  regime={prediction.signal.regime ? { label: prediction.signal.regime as "trending" | "mean-reverting" | "volatile" | "quiet", confidence: 0 } : prediction.regime ?? null}
                 />
               </div>
               <div className="fade-in">
@@ -305,7 +305,7 @@ export function Dashboard() {
                   numTrades={liveStats.numTrades}
                   historyError={historyError}
                   rangeAccuracy={rangeMetrics}
-                  regimeLabel={prediction.regime?.label}
+                  regimeLabel={prediction.signal.regime ?? prediction.regime?.label ?? null}
                 />
               </div>
             </>
