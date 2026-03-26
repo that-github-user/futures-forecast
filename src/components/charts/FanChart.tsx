@@ -549,7 +549,7 @@ export function FanChart({
             name: "Density",
             type: "custom" as const,
             renderItem: (
-              params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } },
+              _params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } },
               api: {
                 value: (i: number) => number;
                 coord: (v: [number, number]) => [number, number];
