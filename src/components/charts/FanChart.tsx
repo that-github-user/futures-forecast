@@ -212,8 +212,10 @@ export function FanChart({
   candles.forEach((c) => { allPrices.push(c.high, c.low); });
   percentiles.p10.forEach((v) => allPrices.push(v));
   percentiles.p90.forEach((v) => allPrices.push(v));
-  // Include sample paths in bounds for styles that use them
-  if ((forecastStyle === "spaghetti" || forecastStyle === "gradient" || forecastStyle === "density" || forecastStyle === "ribbon") && sample_paths?.length) {
+  // Include sample paths in bounds only for spaghetti (all paths visible).
+  // Gradient/density/ribbon derive visuals from path distribution — p10/p90
+  // already covers the meaningful range; outlier paths just bloat the y-axis.
+  if (forecastStyle === "spaghetti" && sample_paths?.length) {
     for (const path of sample_paths) {
       for (const v of path) {
         allPrices.push(v);
