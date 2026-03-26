@@ -10,7 +10,7 @@ import { usePrediction } from "../../hooks/usePrediction";
 import { useHealth } from "../../hooks/useHealth";
 import type { Timeframe } from "../../api/timeframe";
 import { TIMEFRAME_OPTIONS } from "../../api/timeframe";
-import { FanChart, type ChartType, type ForecastStyle, type TrackingPath } from "../charts/FanChart";
+import { FanChart, type ChartType, type ForecastStyle } from "../charts/FanChart";
 import { ProbabilityDist } from "../charts/ProbabilityDist";
 import { EquityCurve } from "../charts/EquityCurve";
 import { ScenarioCluster } from "../charts/ScenarioCluster";
@@ -102,72 +102,14 @@ export function Dashboard() {
     };
   }, [rollingAccuracy]);
 
-  // Compute tracking path from most recent scored hindcast
-  const trackingPath: TrackingPath | null = useMemo(() => {
-    if (!hindcast?.length || !prediction) return null;
-    // Find most recent prediction with scoring and best_paths
-    const scored = [...hindcast].reverse().find(
-      (h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 3,
-    );
-    if (!scored?.scoring?.best_paths?.length) return null;
-
-    const bestPath = scored.scoring.best_paths[0];
-    const rawCandles = prediction.context_candles ?? [];
-    if (!rawCandles.length) return null;
-
-    // Horizons from the hindcast prediction (sparse: [1, 4, 7, 10, ...])
-    const horizons = scored.horizons;
-    if (!horizons.length) return null;
-
-    // Find anchor: context candle closest to prediction timestamp
-    const predTs = new Date(scored.timestamp).getTime() / 1000;
-    let anchorIndex = -1;
-    for (let ci = rawCandles.length - 1; ci >= 0; ci--) {
-      if (rawCandles[ci].time <= predTs) { anchorIndex = ci; break; }
-    }
-    if (anchorIndex < 0) return null;
-
-    // Split path_values into realized (context region) and projected (forecast region)
-    // Each path_values[i] corresponds to horizons[i] bars ahead of anchor
-    // The forecast x-axis has slots [0..N-1] where slot j = prediction.horizons[j]
-    const ctxLen = rawCandles.length;
-    const forecastHorizons = prediction.horizons; // current prediction's horizon slots
-    const realizedPrices: number[] = [];
-    const realizedOffsets: number[] = [];
-    const projectedPrices: number[] = [];
-    const projectedOffsets: number[] = [];
-
-    for (let i = 0; i < bestPath.path_values.length && i < horizons.length; i++) {
-      const barOffset = horizons[i]; // bars ahead of anchor
-      const chartIdx = anchorIndex + barOffset;
-      if (chartIdx < ctxLen) {
-        realizedPrices.push(bestPath.path_values[i]);
-        realizedOffsets.push(barOffset);
-      } else {
-        // Forecast region: find the slot index in the forecast horizons array
-        // that best matches this bar offset from NOW
-        const barsFromNow = chartIdx - ctxLen + 1; // approximate bars from end of context
-        const slotIdx = forecastHorizons.findIndex((h) => h >= barsFromNow);
-        if (slotIdx >= 0) {
-          projectedPrices.push(bestPath.path_values[i]);
-          projectedOffsets.push(slotIdx);
-        }
-      }
-    }
-
-    if (realizedPrices.length < 2) return null;
-
-    return {
-      realizedPrices,
-      realizedOffsets,
-      projectedPrices,
-      projectedOffsets,
-      anchorIndex,
-      rmse: bestPath.rmse_pts,
-      pathIndex: bestPath.path_index,
-      totalPaths: 30,
-    };
-  }, [hindcast, prediction]);
+  // All scored hindcasts sorted oldest-first. FanChart will try each one
+  // and use the oldest whose anchor fits within the visible (aggregated) candles.
+  const scoredHindcasts = useMemo(() => {
+    if (!hindcast?.length) return [];
+    return hindcast
+      .filter((h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 3)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [hindcast]);
 
   if (!prediction) {
     return (
@@ -266,7 +208,7 @@ export function Dashboard() {
               timeframe={timeframe}
               invalidationLevel={prediction.signal.invalidation?.price_level ?? prediction.invalidation?.price_level ?? null}
               highlightedPaths={highlightedPaths}
-              trackingPath={trackingPath}
+              hindcastCandidates={scoredHindcasts}
               showTracking={showTracking}
             />
           </div>

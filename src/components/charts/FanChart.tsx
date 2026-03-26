@@ -113,17 +113,6 @@ function computeDensityGrid(
   return result;
 }
 
-export interface TrackingPath {
-  realizedPrices: number[];   // price values at realized horizon points
-  realizedOffsets: number[];  // bar offsets from anchor for each realized price
-  projectedPrices: number[];  // price values in forecast region
-  projectedOffsets: number[]; // horizon offsets for projected prices (relative to forecast start)
-  anchorIndex: number;        // x-axis index in context candles where prediction was made
-  rmse: number;
-  pathIndex: number;
-  totalPaths: number;
-}
-
 interface Props {
   prediction: PredictionResponse;
   chartType?: ChartType;
@@ -131,7 +120,7 @@ interface Props {
   timeframe?: Timeframe;
   invalidationLevel?: number | null;
   highlightedPaths?: number[] | null;
-  trackingPath?: TrackingPath | null;
+  hindcastCandidates?: import("../../api/types").HindcastPrediction[];
   showTracking?: boolean;
 }
 
@@ -142,7 +131,7 @@ export function FanChart({
   timeframe = "5m",
   invalidationLevel,
   highlightedPaths,
-  trackingPath,
+  hindcastCandidates = [],
   showTracking = false,
 }: Props) {
   const { last_close, signal } = prediction;
@@ -193,6 +182,115 @@ export function FanChart({
 
   const allTimes = [...contextTimes, ...forecastTimes];
   const ctxLen = contextTimes.length;
+  const totalLen = allTimes.length;
+
+  // ── Best Track with Uncertainty Cone (computed from hindcast inside FanChart) ──
+  // Tries each candidate oldest-first, picks the first whose anchor fits the visible candles.
+  const bestTrack = (() => {
+    if (!showTracking || !hindcastCandidates.length) return null;
+    for (const hc of hindcastCandidates) {
+    const bestPaths = hc.scoring?.best_paths;
+    if (!bestPaths?.length || !hc.percentiles || !hc.horizons?.length) continue;
+
+    // Find anchor in aggregated candles
+    const predTs = new Date(hc.timestamp).getTime() / 1000;
+    let anchorIdx = -1;
+    for (let ci = candles.length - 1; ci >= 0; ci--) {
+      if (candles[ci].time <= predTs) { anchorIdx = ci; break; }
+    }
+    if (anchorIdx < 0) continue;
+
+    // Timeframe scaling: hindcast horizons are in 5m bars
+    const tfFactor = timeframe === "5m" ? 1 : timeframe === "15m" ? 3 : timeframe === "30m" ? 6 : 12;
+    const best = bestPaths[0];
+    const hcHorizons = hc.horizons;
+
+    // Map hindcast horizon indices to chart x-indices
+    const realizedData: (number | null)[] = new Array(totalLen).fill(null);
+    const projectedCenter: (number | null)[] = new Array(totalLen).fill(null);
+    const K = Math.min(bestPaths.length, 7);
+    const coneUpper: (number | null)[] = new Array(totalLen).fill(null);
+    const coneLower: (number | null)[] = new Array(totalLen).fill(null);
+    let lastRealizedIdx = -1;
+
+    for (let i = 0; i < hcHorizons.length && i < best.path_values.length; i++) {
+      const aggOffset = Math.round(hcHorizons[i] / tfFactor);
+      const chartIdx = anchorIdx + aggOffset;
+      if (chartIdx < 0 || chartIdx >= totalLen) continue;
+
+      if (chartIdx < ctxLen) {
+        // Realized portion — solid best track line
+        realizedData[chartIdx] = best.path_values[i];
+        lastRealizedIdx = chartIdx;
+      } else {
+        // Projected portion — center line + cone from top-K
+        projectedCenter[chartIdx] = best.path_values[i];
+        const vals = bestPaths.slice(0, K)
+          .map((p) => p.path_values[i])
+          .filter((v): v is number => v != null)
+          .sort((a, b) => a - b);
+        if (vals.length >= 2) {
+          coneLower[chartIdx] = vals[0];
+          coneUpper[chartIdx] = vals[vals.length - 1];
+        } else if (vals.length === 1) {
+          coneLower[chartIdx] = vals[0];
+          coneUpper[chartIdx] = vals[0];
+        }
+      }
+    }
+
+    // Bridge: connect last realized point to first projected point
+    if (lastRealizedIdx >= 0 && realizedData[lastRealizedIdx] != null) {
+      projectedCenter[lastRealizedIdx] = realizedData[lastRealizedIdx];
+      coneLower[lastRealizedIdx] = realizedData[lastRealizedIdx];
+      coneUpper[lastRealizedIdx] = realizedData[lastRealizedIdx];
+    }
+
+    const realizedCount = realizedData.filter((v) => v !== null).length;
+    if (realizedCount < 2) continue;
+
+    // Interpolate sparse data to fill every bar — ECharts stacking needs contiguous values
+    const interpolateSparse = (arr: (number | null)[]): (number | null)[] => {
+      const result = [...arr];
+      // Find first and last non-null
+      let first = -1, last = -1;
+      for (let j = 0; j < result.length; j++) { if (result[j] !== null) { if (first < 0) first = j; last = j; } }
+      if (first < 0 || first === last) return result;
+      // Linear interpolate between known points
+      let prevIdx = first;
+      for (let j = first + 1; j <= last; j++) {
+        if (result[j] !== null) {
+          // Fill gap between prevIdx and j
+          for (let k = prevIdx + 1; k < j; k++) {
+            const t = (k - prevIdx) / (j - prevIdx);
+            result[k] = (result[prevIdx] as number) + t * ((result[j] as number) - (result[prevIdx] as number));
+          }
+          prevIdx = j;
+        }
+      }
+      return result;
+    };
+
+    const realizedInterp = interpolateSparse(realizedData);
+    const projInterp = interpolateSparse(projectedCenter);
+    const coneUpperInterp = interpolateSparse(coneUpper);
+    const coneLowerInterp = interpolateSparse(coneLower);
+
+    const trackMinutes = best.tracking_duration_bars * 5;
+    return {
+      realizedData: realizedInterp,
+      projectedCenter: projInterp,
+      coneUpper: coneUpperInterp,
+      coneLower: coneLowerInterp,
+      rmse: best.rmse_pts,
+      pathIndex: best.path_index,
+      totalPaths: bestPaths.length,
+      trackedH: Math.floor(trackMinutes / 60),
+      trackedM: trackMinutes % 60,
+    };
+    } // end for loop over candidates
+    return null;
+  })();
 
   // Context price data (all OHLC for candlestick/ohlc modes)
   const contextCloses: (number | null)[] = candles.map((c) => c.close);
@@ -221,6 +319,11 @@ export function FanChart({
         allPrices.push(v);
       }
     }
+  }
+  // Include best track cone in bounds
+  if (bestTrack) {
+    for (const v of bestTrack.coneUpper) { if (v != null) allPrices.push(v); }
+    for (const v of bestTrack.coneLower) { if (v != null) allPrices.push(v); }
   }
   const yMin = Math.min(...allPrices);
   const yMax = Math.max(...allPrices);
@@ -856,63 +959,74 @@ export function FanChart({
             },
           ]
         : []),
-      // ── Tracking path: best-match ensemble member from most recent evaluated prediction ──
-      ...(showTracking && trackingPath
-        ? (() => {
-            const tp = trackingPath;
-            const totalLen = allTimes.length;
-            // Realized portion: solid teal line through context candles at correct horizon offsets
-            const realizedData: (number | null)[] = new Array(totalLen).fill(null);
-            for (let i = 0; i < Math.min(tp.realizedPrices.length, tp.realizedOffsets.length); i++) {
-              const idx = tp.anchorIndex + tp.realizedOffsets[i];
-              if (idx >= 0 && idx < ctxLen) {
-                realizedData[idx] = tp.realizedPrices[i];
-              }
-            }
-            // Projected portion: dashed teal line through forecast region
-            const projectedData: (number | null)[] = new Array(totalLen).fill(null);
-            // Connect at the last realized point (bridge to projected)
-            if (tp.realizedPrices.length > 0 && tp.realizedOffsets.length > 0) {
-              const lastIdx = tp.anchorIndex + tp.realizedOffsets[tp.realizedOffsets.length - 1];
-              if (lastIdx >= 0 && lastIdx < totalLen) {
-                projectedData[lastIdx] = tp.realizedPrices[tp.realizedPrices.length - 1];
-              }
-            }
-            for (let i = 0; i < Math.min(tp.projectedPrices.length, tp.projectedOffsets.length); i++) {
-              const idx = ctxLen + tp.projectedOffsets[i];
-              if (idx < totalLen) {
-                projectedData[idx] = tp.projectedPrices[i];
-              }
-            }
-            return [
-              {
-                name: "Tracking",
-                type: "line" as const,
-                data: realizedData,
-                lineStyle: { color: "#06b6d4", width: 2 },
-                symbol: "none" as const,
-                z: 8,
-                silent: true,
+      // ── Best Track with Uncertainty Cone ──
+      ...(bestTrack
+        ? [
+            // Cone lower bound (invisible baseline for stacking)
+            {
+              name: "",
+              type: "line" as const,
+              data: bestTrack.coneLower,
+              lineStyle: { color: "rgba(6, 182, 212, 0.25)", width: 0.7, type: "dashed" as const },
+              symbol: "none" as const,
+              stack: "best-track-cone",
+              areaStyle: { color: "transparent" },
+              smooth: 0.3,
+              z: 6,
+              silent: true,
+            },
+            // Cone fill (upper - lower delta)
+            {
+              name: "",
+              type: "line" as const,
+              data: bestTrack.coneLower.map((lo, i) => {
+                const hi = bestTrack.coneUpper[i];
+                if (lo == null || hi == null) return null;
+                return hi - lo;
+              }),
+              lineStyle: { color: "rgba(6, 182, 212, 0.25)", width: 0.7, type: "dashed" as const },
+              symbol: "none" as const,
+              stack: "best-track-cone",
+              areaStyle: { color: "rgba(6, 182, 212, 0.12)" },
+              smooth: 0.3,
+              z: 6,
+              silent: true,
+            },
+            // Projected center line (best path's forecast)
+            {
+              name: "Track Projection",
+              type: "line" as const,
+              data: bestTrack.projectedCenter,
+              lineStyle: { color: "#06b6d4", width: 1.5, opacity: 0.7 },
+              symbol: "none" as const,
+              smooth: 0.3,
+              z: 7,
+              silent: true,
+            },
+            // Realized best track (solid glowing line)
+            {
+              name: "Best Track",
+              type: "line" as const,
+              data: bestTrack.realizedData,
+              lineStyle: {
+                color: "#06b6d4",
+                width: 2.5,
+                shadowColor: "rgba(6, 182, 212, 0.4)",
+                shadowBlur: 6,
               },
-              {
-                name: "",
-                type: "line" as const,
-                data: projectedData,
-                lineStyle: { color: "#06b6d4", width: 1.5, type: "dashed" as const, opacity: 0.4 },
-                symbol: "none" as const,
-                z: 7,
-                silent: true,
-              },
-            ];
-          })()
+              symbol: "none" as const,
+              z: 8,
+              silent: true,
+            },
+          ]
         : []),
     ],
   };
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {/* Tracking path info badge */}
-      {showTracking && trackingPath && (
+      {/* Best track info badge */}
+      {bestTrack && (
         <div
           style={{
             position: "absolute",
@@ -926,9 +1040,9 @@ export function FanChart({
             borderRadius: 3,
             zIndex: 10,
           }}
-          title="Best-matching ensemble member tracking realized price"
+          title={`Best-tracking ensemble member (${bestTrack.totalPaths} candidates) with uncertainty cone`}
         >
-          Path {trackingPath.pathIndex}/{trackingPath.totalPaths} | RMSE: {trackingPath.rmse.toFixed(1)} pts
+          Best track: {bestTrack.rmse.toFixed(1)} pts RMSE | {bestTrack.trackedH}h {bestTrack.trackedM}m tracked
         </div>
       )}
       <ReactEChartsCore
