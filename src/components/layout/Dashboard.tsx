@@ -25,7 +25,7 @@ export function Dashboard() {
   const { prediction, connected, demoMode, error, retryConnection } = usePrediction();
   const health = useHealth();
   const [chartType, setChartType] = useState<ChartType>("candlestick");
-  const [forecastStyle, setForecastStyle] = useState<ForecastStyle>("bands");
+  const [forecastStyle, setForecastStyle] = useState<ForecastStyle>("gradient");
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyError, setHistoryError] = useState(false);
@@ -392,6 +392,9 @@ function TrackingToggle({ value, onChange }: { value: boolean; onChange: (v: boo
 
 const forecastStyleOptions: { value: ForecastStyle; label: string }[] = [
   { value: "bands", label: "Bands" },
+  { value: "gradient", label: "Gradient" },
+  { value: "density", label: "Density" },
+  { value: "ribbon", label: "Ribbon" },
   { value: "spaghetti", label: "Paths" },
 ];
 

@@ -34,7 +34,84 @@ echarts.use([
 ]);
 
 export type ChartType = "line" | "candlestick" | "ohlc";
-export type ForecastStyle = "bands" | "spaghetti";
+export type ForecastStyle = "bands" | "spaghetti" | "gradient" | "density" | "ribbon";
+
+// ── Helpers for advanced forecast styles ──
+
+/** Compute a percentile value from a sorted array at a given fraction (0–1) */
+function percentileFromSorted(sorted: number[], p: number): number {
+  const idx = p * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+/**
+ * From sample_paths, compute N symmetric percentile layers.
+ * Returns array of { lower, upper } arrays (one value per horizon).
+ * Layers go from outermost (widest) to innermost (narrowest).
+ */
+function computeGradientLayers(
+  samplePaths: number[][],
+  numLayers: number,
+): { lower: number[]; upper: number[] }[] {
+  const numHorizons = samplePaths[0]?.length ?? 0;
+  // Percentile pairs: e.g. 10 layers → P5/P95, P10/P90, ..., P45/P55
+  const layers: { lower: number[]; upper: number[] }[] = [];
+  for (let i = 0; i < numLayers; i++) {
+    const pLow = (5 + i * (45 / numLayers)) / 100;
+    const pHigh = 1 - pLow;
+    const lower: number[] = [];
+    const upper: number[] = [];
+    for (let h = 0; h < numHorizons; h++) {
+      const vals = samplePaths.map((p) => p[h]).sort((a, b) => a - b);
+      lower.push(percentileFromSorted(vals, pLow));
+      upper.push(percentileFromSorted(vals, pHigh));
+    }
+    layers.push({ lower, upper });
+  }
+  return layers;
+}
+
+/**
+ * Compute kernel density at each horizon for the density heatmap.
+ * Returns: for each horizon, an array of { price, density } sorted by price.
+ */
+function computeDensityGrid(
+  samplePaths: number[][],
+  yMin: number,
+  yMax: number,
+  gridRes: number = 60,
+): { price: number; density: number }[][] {
+  const numHorizons = samplePaths[0]?.length ?? 0;
+  const result: { price: number; density: number }[][] = [];
+  const step = (yMax - yMin) / gridRes;
+
+  for (let h = 0; h < numHorizons; h++) {
+    const vals = samplePaths.map((p) => p[h]);
+    const std = Math.sqrt(
+      vals.reduce((s, v) => s + (v - vals.reduce((a, b) => a + b, 0) / vals.length) ** 2, 0) /
+        vals.length,
+    );
+    const bandwidth = 1.06 * std * Math.pow(vals.length, -0.2); // Silverman's rule
+    const column: { price: number; density: number }[] = [];
+    for (let i = 0; i <= gridRes; i++) {
+      const price = yMin + i * step;
+      let density = 0;
+      for (const v of vals) {
+        const u = (price - v) / bandwidth;
+        density += Math.exp(-0.5 * u * u); // Gaussian kernel (unnormalized)
+      }
+      column.push({ price, density });
+    }
+    // Normalize to [0, 1]
+    const maxD = Math.max(...column.map((c) => c.density));
+    if (maxD > 0) column.forEach((c) => (c.density /= maxD));
+    result.push(column);
+  }
+  return result;
+}
 
 export interface TrackingPath {
   realizedPrices: number[];   // price values at realized horizon points
@@ -135,8 +212,8 @@ export function FanChart({
   candles.forEach((c) => { allPrices.push(c.high, c.low); });
   percentiles.p10.forEach((v) => allPrices.push(v));
   percentiles.p90.forEach((v) => allPrices.push(v));
-  // Include sample paths in bounds to prevent axis jumps when toggling spaghetti
-  if (forecastStyle === "spaghetti" && sample_paths?.length) {
+  // Include sample paths in bounds for styles that use them
+  if ((forecastStyle === "spaghetti" || forecastStyle === "gradient" || forecastStyle === "density" || forecastStyle === "ribbon") && sample_paths?.length) {
     for (const path of sample_paths) {
       for (const v of path) {
         allPrices.push(v);
@@ -367,10 +444,11 @@ export function FanChart({
         symbol: "none",
         z: 10,
       },
-      // Forecast visualization — bands or spaghetti
-      ...(forecastStyle === "spaghetti" && sample_paths?.length
-        ? [
-            // Individual sample trajectories
+      // Forecast visualization — style-dependent rendering
+      ...(() => {
+        // ── SPAGHETTI: individual sample trajectories ──
+        if (forecastStyle === "spaghetti" && sample_paths?.length) {
+          return [
             ...(sample_paths).map((path, si) => {
               const isHighlighted = highlightedPaths?.includes(si);
               const hasSomeHighlighted = highlightedPaths != null && highlightedPaths.length > 0;
@@ -389,7 +467,6 @@ export function FanChart({
                 silent: true,
               };
             }),
-            // P50 median line on top of spaghetti
             {
               name: "Median",
               type: "line" as const,
@@ -399,70 +476,315 @@ export function FanChart({
               smooth: 0.3,
               z: 5,
             },
-          ]
-        : [
-            // P10 (lower bound for outer band)
-            {
-              name: "P10",
+          ];
+        }
+
+        // ── GRADIENT: smooth multi-layer fan from sample paths ──
+        if (forecastStyle === "gradient" && sample_paths?.length) {
+          const numLayers = 12;
+          const layers = computeGradientLayers(sample_paths, numLayers);
+          const seriesList: Record<string, unknown>[] = [];
+
+          for (let i = 0; i < layers.length; i++) {
+            const layer = layers[i];
+            // Opacity ramps from ~0.04 (outermost) to ~0.35 (innermost)
+            const t = i / (numLayers - 1); // 0 = outermost, 1 = innermost
+            const opacity = 0.04 + t * 0.31;
+            const stackId = `grad-${i}`;
+
+            // Lower bound (invisible baseline)
+            seriesList.push({
+              name: "",
               type: "line" as const,
-              data: makeForcastSeries("p10"),
+              data: [...ctxPad, ...layer.lower],
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              stack: "outer",
+              stack: stackId,
               areaStyle: { color: "transparent" },
+              smooth: 0.35,
               z: 1,
-            },
-            // P90 - P10 fill (outer band)
-            {
-              name: "P90",
+              silent: true,
+            });
+            // Upper - lower delta (filled band)
+            seriesList.push({
+              name: "",
               type: "line" as const,
-              data: makeForcastSeries("p90").map((v, i) => {
-                const p10 = makeForcastSeries("p10")[i];
-                if (v === null || p10 === null) return null;
-                return v - p10;
-              }),
+              data: [...ctxPad, ...layer.upper.map((v, j) => v - layer.lower[j])],
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              stack: "outer",
-              areaStyle: { color: bandColor + "0.12)" },
+              stack: stackId,
+              areaStyle: { color: bandColor + `${opacity})` },
+              smooth: 0.35,
               z: 1,
+              silent: true,
+            });
+          }
+
+          // P50 median — glowing effect via shadow
+          seriesList.push({
+            name: "Median",
+            type: "line" as const,
+            data: makeForcastSeries("p50"),
+            lineStyle: {
+              color: medianColor,
+              width: 3,
+              shadowColor: medianColor,
+              shadowBlur: 8,
             },
-            // P25 (lower bound for inner band)
-            {
-              name: "P25",
+            symbol: "none" as const,
+            smooth: 0.35,
+            z: 5,
+          });
+
+          return seriesList;
+        }
+
+        // ── DENSITY: heatmap-style probability density ──
+        if (forecastStyle === "density" && sample_paths?.length) {
+          const densityGrid = computeDensityGrid(sample_paths, yMin, yMax, 80);
+          const seriesList: Record<string, unknown>[] = [];
+
+          // Render density as custom series — vertical rect strips per horizon
+          seriesList.push({
+            name: "Density",
+            type: "custom" as const,
+            renderItem: (
+              params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } },
+              api: {
+                value: (i: number) => number;
+                coord: (v: [number, number]) => [number, number];
+                size: (v: [number, number]) => [number, number];
+              },
+            ) => {
+              const dataIdx = api.value(0); // horizon index
+              const hIdx = Math.round(dataIdx);
+              if (hIdx < 0 || hIdx >= densityGrid.length) return;
+              const column = densityGrid[hIdx];
+              const xIdx = ctxLen + hIdx;
+              const cellSize = api.size([1, 0]);
+              const cellW = Math.max(cellSize[0], 2);
+
+              const children: Record<string, unknown>[] = [];
+              for (let ci = 0; ci < column.length - 1; ci++) {
+                const d = column[ci].density;
+                if (d < 0.02) continue; // skip near-zero density
+                const priceLo = column[ci].price;
+                const priceHi = column[ci + 1].price;
+                const topLeft = api.coord([xIdx, priceHi]);
+                const bottomRight = api.coord([xIdx, priceLo]);
+                const h = Math.abs(bottomRight[1] - topLeft[1]);
+
+                children.push({
+                  type: "rect" as const,
+                  shape: {
+                    x: topLeft[0] - cellW / 2,
+                    y: topLeft[1],
+                    width: cellW,
+                    height: Math.max(h, 1),
+                  },
+                  style: {
+                    fill: bandColor + `${(d * 0.55).toFixed(3)})`,
+                  },
+                });
+              }
+              return { type: "group" as const, children };
+            },
+            data: densityGrid.map((_, i) => [i]),
+            encode: { x: -1 },
+            z: 1,
+            silent: true,
+          });
+
+          // Thin percentile edge lines for reference
+          for (const { key, opacity: lineOpacity } of [
+            { key: "p10" as const, opacity: 0.25 },
+            { key: "p90" as const, opacity: 0.25 },
+            { key: "p25" as const, opacity: 0.4 },
+            { key: "p75" as const, opacity: 0.4 },
+          ]) {
+            seriesList.push({
+              name: "",
               type: "line" as const,
-              data: makeForcastSeries("p25"),
-              lineStyle: { width: 0 },
+              data: makeForcastSeries(key),
+              lineStyle: { color: bandColor + `${lineOpacity})`, width: 0.8, type: "dotted" as const },
               symbol: "none" as const,
-              stack: "inner",
-              areaStyle: { color: "transparent" },
-              z: 2,
+              smooth: 0.3,
+              z: 3,
+              silent: true,
+            });
+          }
+
+          // P50 median — bold glow
+          seriesList.push({
+            name: "Median",
+            type: "line" as const,
+            data: makeForcastSeries("p50"),
+            lineStyle: {
+              color: medianColor,
+              width: 2.5,
+              shadowColor: medianColor,
+              shadowBlur: 10,
             },
-            // P75 - P25 fill (inner band)
-            {
-              name: "P75",
-              type: "line" as const,
-              data: makeForcastSeries("p75").map((v, i) => {
-                const p25 = makeForcastSeries("p25")[i];
-                if (v === null || p25 === null) return null;
-                return v - p25;
-              }),
-              lineStyle: { width: 0 },
-              symbol: "none" as const,
-              stack: "inner",
-              areaStyle: { color: bandColor + "0.25)" },
-              z: 2,
+            symbol: "none" as const,
+            smooth: 0.3,
+            z: 5,
+          });
+
+          return seriesList;
+        }
+
+        // ── RIBBON: refined bands with edge lines + glow ──
+        if (forecastStyle === "ribbon") {
+          const seriesList: Record<string, unknown>[] = [];
+
+          // Outer band P10-P90
+          seriesList.push({
+            name: "P10",
+            type: "line" as const,
+            data: makeForcastSeries("p10"),
+            lineStyle: { color: bandColor + "0.3)", width: 0.7 },
+            symbol: "none" as const,
+            stack: "outer",
+            areaStyle: { color: "transparent" },
+            smooth: 0.35,
+            z: 1,
+          });
+          seriesList.push({
+            name: "P90",
+            type: "line" as const,
+            data: makeForcastSeries("p90").map((v, i) => {
+              const p10 = makeForcastSeries("p10")[i];
+              if (v === null || p10 === null) return null;
+              return v - p10;
+            }),
+            lineStyle: { color: bandColor + "0.3)", width: 0.7 },
+            symbol: "none" as const,
+            stack: "outer",
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: bandColor + "0.15)" },
+                { offset: 0.5, color: bandColor + "0.04)" },
+                { offset: 1, color: bandColor + "0.15)" },
+              ]),
             },
-            // P50 median line (bold)
-            {
-              name: "Median",
-              type: "line" as const,
-              data: makeForcastSeries("p50"),
-              lineStyle: { color: medianColor, width: 2.5 },
-              symbol: "none" as const,
-              z: 5,
+            smooth: 0.35,
+            z: 1,
+          });
+
+          // Inner band P25-P75
+          seriesList.push({
+            name: "P25",
+            type: "line" as const,
+            data: makeForcastSeries("p25"),
+            lineStyle: { color: bandColor + "0.5)", width: 0.8 },
+            symbol: "none" as const,
+            stack: "inner",
+            areaStyle: { color: "transparent" },
+            smooth: 0.35,
+            z: 2,
+          });
+          seriesList.push({
+            name: "P75",
+            type: "line" as const,
+            data: makeForcastSeries("p75").map((v, i) => {
+              const p25 = makeForcastSeries("p25")[i];
+              if (v === null || p25 === null) return null;
+              return v - p25;
+            }),
+            lineStyle: { color: bandColor + "0.5)", width: 0.8 },
+            symbol: "none" as const,
+            stack: "inner",
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: bandColor + "0.25)" },
+                { offset: 0.5, color: bandColor + "0.08)" },
+                { offset: 1, color: bandColor + "0.25)" },
+              ]),
             },
-          ]),
+            smooth: 0.35,
+            z: 2,
+          });
+
+          // P50 median — thick glowing line
+          seriesList.push({
+            name: "Median",
+            type: "line" as const,
+            data: makeForcastSeries("p50"),
+            lineStyle: {
+              color: medianColor,
+              width: 3,
+              shadowColor: bandColor + "0.6)",
+              shadowBlur: 12,
+              shadowOffsetY: 0,
+            },
+            symbol: "none" as const,
+            smooth: 0.35,
+            z: 5,
+          });
+
+          return seriesList;
+        }
+
+        // ── BANDS: original 2-layer approach (default fallback) ──
+        return [
+          {
+            name: "P10",
+            type: "line" as const,
+            data: makeForcastSeries("p10"),
+            lineStyle: { width: 0 },
+            symbol: "none" as const,
+            stack: "outer",
+            areaStyle: { color: "transparent" },
+            z: 1,
+          },
+          {
+            name: "P90",
+            type: "line" as const,
+            data: makeForcastSeries("p90").map((v, i) => {
+              const p10 = makeForcastSeries("p10")[i];
+              if (v === null || p10 === null) return null;
+              return v - p10;
+            }),
+            lineStyle: { width: 0 },
+            symbol: "none" as const,
+            stack: "outer",
+            areaStyle: { color: bandColor + "0.12)" },
+            z: 1,
+          },
+          {
+            name: "P25",
+            type: "line" as const,
+            data: makeForcastSeries("p25"),
+            lineStyle: { width: 0 },
+            symbol: "none" as const,
+            stack: "inner",
+            areaStyle: { color: "transparent" },
+            z: 2,
+          },
+          {
+            name: "P75",
+            type: "line" as const,
+            data: makeForcastSeries("p75").map((v, i) => {
+              const p25 = makeForcastSeries("p25")[i];
+              if (v === null || p25 === null) return null;
+              return v - p25;
+            }),
+            lineStyle: { width: 0 },
+            symbol: "none" as const,
+            stack: "inner",
+            areaStyle: { color: bandColor + "0.25)" },
+            z: 2,
+          },
+          {
+            name: "Median",
+            type: "line" as const,
+            data: makeForcastSeries("p50"),
+            lineStyle: { color: medianColor, width: 2.5 },
+            symbol: "none" as const,
+            z: 5,
+          },
+        ];
+      })(),
       // Vertical "now" line with delay indicator
       (() => {
         // Use raw 5m bar time for delay — aggregated bars have older start-of-period timestamps
