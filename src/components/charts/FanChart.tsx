@@ -851,11 +851,11 @@ export function FanChart({
           const innerDense = 0.30;
           const innerSparse = 0.12;
           // Top of band = P90 (offset=0), bottom = P10 (offset=1)
-          // gradCenter < 0.5 → top (upside) is denser → top brighter
-          const outerTop = medianPos < 0.5 ? outerDense : outerSparse;
-          const outerBot = medianPos < 0.5 ? outerSparse : outerDense;
-          const innerTop = medianPos < 0.5 ? innerDense : innerSparse;
-          const innerBot = medianPos < 0.5 ? innerSparse : innerDense;
+          // medianPos < 0.5 → median closer to P10 → P10 side is denser → bottom brighter
+          const outerTop = medianPos < 0.5 ? outerSparse : outerDense;
+          const outerBot = medianPos < 0.5 ? outerDense : outerSparse;
+          const innerTop = medianPos < 0.5 ? innerSparse : innerDense;
+          const innerBot = medianPos < 0.5 ? innerDense : innerSparse;
 
           // Outer band P10-P90
           seriesList.push({
