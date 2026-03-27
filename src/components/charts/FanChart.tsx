@@ -104,11 +104,15 @@ function computeGradientLayers(
 /**
  * Compute kernel density at each horizon for the density heatmap.
  *
- * Uses 0.6x Silverman bandwidth to preserve multimodal/skewed structure
- * that the standard rule oversmooths. Normalization is global across all
- * horizons so the density spreading with horizon is visible. A power-law
- * (sqrt) mapping compresses the dynamic range so low-density tails are
- * visible while peaks aren't saturated.
+ * Uses 0.6x Silverman bandwidth to preserve multimodal/skewed structure.
+ * Per-column CDF normalization: each cell's density is mapped to its rank
+ * within the column (like a topographic contour map). This guarantees
+ * strong contrast — the peak is always 1.0, the tails always fade to 0,
+ * and the shape of the density (skew, bimodality) is visible through
+ * where the contour boundaries fall, not through subtle opacity differences.
+ *
+ * A global dimming factor scales each column by its peak density relative
+ * to the global max, so uncertainty growth with horizon is still visible.
  */
 function computeDensityGrid(
   samplePaths: number[][],
@@ -117,10 +121,11 @@ function computeDensityGrid(
   gridRes: number = 60,
 ): { price: number; density: number }[][] {
   const numHorizons = samplePaths[0]?.length ?? 0;
-  const result: { price: number; density: number }[][] = [];
+  const rawColumns: { price: number; density: number }[][] = [];
   const step = (yMax - yMin) / gridRes;
 
   let globalMax = 0;
+  const colMaxes: number[] = [];
 
   for (let h = 0; h < numHorizons; h++) {
     const vals = samplePaths.map((p) => p[h]);
@@ -128,9 +133,9 @@ function computeDensityGrid(
     const std = Math.sqrt(
       vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length,
     );
-    // 0.6x Silverman: narrower kernel preserves skew, bimodality, heavy tails
     const bandwidth = 0.6 * 1.06 * std * Math.pow(vals.length, -0.2);
     const column: { price: number; density: number }[] = [];
+    let colMax = 0;
     for (let i = 0; i <= gridRes; i++) {
       const price = yMin + i * step;
       let density = 0;
@@ -139,20 +144,42 @@ function computeDensityGrid(
         density += Math.exp(-0.5 * u * u);
       }
       column.push({ price, density });
-      if (density > globalMax) globalMax = density;
+      if (density > colMax) colMax = density;
     }
-    result.push(column);
+    rawColumns.push(column);
+    colMaxes.push(colMax);
+    if (colMax > globalMax) globalMax = colMax;
   }
 
-  // Global normalization + power-law compression (sqrt)
-  // Global: density spreading with horizon is visible (near-term is brighter)
-  // Sqrt: compresses dynamic range so tails are visible, peaks aren't saturated
-  if (globalMax > 0) {
-    for (const column of result) {
-      for (const cell of column) {
-        cell.density = Math.sqrt(cell.density / globalMax);
+  // Per-column CDF normalization: rank each cell within its column.
+  // Then scale by column's peak relative to global max (horizon dimming).
+  const result: { price: number; density: number }[][] = [];
+  for (let h = 0; h < rawColumns.length; h++) {
+    const column = rawColumns[h];
+    const colMax = colMaxes[h];
+
+    // Collect non-zero densities, sort ascending for CDF lookup
+    const nonZero = column.map((c) => c.density).filter((d) => d > 0).sort((a, b) => a - b);
+
+    // Horizon dimming: columns with less peaked density (far horizons) get dimmer
+    const horizonScale = globalMax > 0 ? Math.pow(colMax / globalMax, 0.4) : 1;
+
+    const normalized: { price: number; density: number }[] = [];
+    for (const cell of column) {
+      if (cell.density <= 0 || nonZero.length === 0) {
+        normalized.push({ price: cell.price, density: 0 });
+        continue;
       }
+      // CDF rank: fraction of non-zero cells with density <= this cell
+      let rank = 0;
+      for (let k = 0; k < nonZero.length; k++) {
+        if (nonZero[k] <= cell.density) rank = (k + 1) / nonZero.length;
+        else break;
+      }
+      // Apply horizon dimming
+      normalized.push({ price: cell.price, density: rank * horizonScale });
     }
+    result.push(normalized);
   }
 
   return result;
@@ -754,13 +781,18 @@ export function FanChart({
               const children: Record<string, unknown>[] = [];
               for (let ci = 0; ci < column.length - 1; ci++) {
                 const d = column[ci].density;
-                if (d < 0.02) continue; // skip near-zero density
+                if (d < 0.05) continue; // skip low-rank cells for cleaner edges
                 const priceLo = column[ci].price;
                 const priceHi = column[ci + 1].price;
                 const topLeft = api.coord([xIdx, priceHi]);
                 const bottomRight = api.coord([xIdx, priceLo]);
                 const h = Math.abs(bottomRight[1] - topLeft[1]);
 
+                // Steep ramp: d^2 maps CDF rank to opacity.
+                // Rank 0.5 (median density) → 0.25 * 0.7 = 0.175 opacity
+                // Rank 1.0 (peak) → 1.0 * 0.7 = 0.70 opacity
+                // Gives sharp contrast between core and tails.
+                const opacity = d * d * 0.7;
                 children.push({
                   type: "rect" as const,
                   shape: {
@@ -770,7 +802,7 @@ export function FanChart({
                     height: Math.max(h, 1),
                   },
                   style: {
-                    fill: bandColor + `${(d * 0.55).toFixed(3)})`,
+                    fill: bandColor + `${opacity.toFixed(3)})`,
                   },
                 });
               }
