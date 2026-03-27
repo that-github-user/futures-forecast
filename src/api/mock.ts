@@ -22,19 +22,22 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-export function generateMockPrediction(): PredictionResponse {
-  // Use minute-of-day as seed so it changes every 5 minutes but is stable within
+/** Shared candle seed — ensures hindcast and prediction use the same price walk. */
+function getCandleSeed(): number {
   const now = new Date();
-  const minuteSlot = Math.floor(
-    (now.getHours() * 60 + now.getMinutes()) / 5,
-  );
-  const rand = seededRandom(minuteSlot * 1337 + now.getDate() * 7);
+  const minuteSlot = Math.floor((now.getHours() * 60 + now.getMinutes()) / 5);
+  return minuteSlot * 1337 + now.getDate() * 7;
+}
 
-  // Random walk for context candles (24 hours = 288 five-min bars)
-  const contextCandles = [];
-  let price = BASE_PRICE + (rand() - 0.5) * 80;
+interface MockCandle { time: number; open: number; high: number; low: number; close: number; volume: number; }
+
+/** Generate 288 five-minute candles using the shared seed. */
+function generateCandles(): MockCandle[] {
+  const rand = seededRandom(getCandleSeed());
+  const now = new Date();
   const baseTime = Math.floor(now.getTime() / 1000) - 288 * 300;
-
+  const candles: MockCandle[] = [];
+  let price = BASE_PRICE + (rand() - 0.5) * 80;
   for (let i = 0; i < 288; i++) {
     const ret = (rand() - 0.5) * 4;
     const open = round(price);
@@ -42,18 +45,21 @@ export function generateMockPrediction(): PredictionResponse {
     const high = round(Math.max(open, close) + rand() * 3);
     const low = round(Math.min(open, close) - rand() * 3);
     const volume = Math.floor(5000 + rand() * 30000);
-    contextCandles.push({
-      time: baseTime + i * 300,
-      open,
-      high,
-      low,
-      close,
-      volume,
-    });
+    candles.push({ time: baseTime + i * 300, open, high, low, close, volume });
     price = close;
   }
+  return candles;
+}
 
-  const lastClose = price;
+export function generateMockPrediction(): PredictionResponse {
+  const now = new Date();
+  const contextCandles = generateCandles();
+  const lastClose = contextCandles[contextCandles.length - 1].close;
+
+  // Use same seed for forecast portion (advanced past the candle generation)
+  const rand = seededRandom(getCandleSeed());
+  // Advance rand past the candle generation (1 for initial price + 4 per candle: ret, high, low, volume)
+  for (let i = 0; i < 288 * 4 + 1; i++) rand();
 
   // Forecast: slight drift + expanding uncertainty
   const drift = (rand() - 0.45) * 0.15; // slight long bias
@@ -168,14 +174,24 @@ export function generateMockPrediction(): PredictionResponse {
 }
 
 export function generateMockHindcast(n = 6): HindcastResponse {
-  const now = Date.now();
+  const now = new Date();
   const rand = seededRandom(77);
   const predictions = [];
 
+  // Use the SAME candle series as the prediction so prices align
+  const candles = generateCandles();
+
   for (let i = n; i >= 1; i--) {
-    const predTime = now - i * 300_000; // Each prediction 5 min apart
-    const barsElapsed = i;
-    let price = BASE_PRICE + (rand() - 0.5) * 40;
+    const predTime = now.getTime() - i * 1_800_000; // 30 min apart
+    const barsElapsed = i * 6;
+
+    // Anchor to actual candle close at prediction time
+    const predTs = predTime / 1000;
+    let anchorBar = 0;
+    for (let ci = candles.length - 1; ci >= 0; ci--) {
+      if (candles[ci].time <= predTs) { anchorBar = ci; break; }
+    }
+    const price = candles[anchorBar].close;
     const drift = (rand() - 0.45) * 0.12;
 
     const horizons = [...Array.from({ length: 26 }, (_, j) => 1 + j * 3), 78]
@@ -207,12 +223,15 @@ export function generateMockHindcast(n = 6): HindcastResponse {
       samplePaths.push(path);
     }
 
-    // Realized prices: fill in for elapsed bars, null for future
+    // Realized prices: use actual candle closes from the shared price walk
     const realizedPrices: (number | null)[] = horizons.map((h) => {
       if (h <= barsElapsed) {
-        // Simulate realized price near median with some noise
-        const mid = price + drift * h * 0.3;
-        return round(mid + (rand() - 0.5) * 4);
+        const realBar = anchorBar + h;
+        if (realBar >= 0 && realBar < candles.length) {
+          return candles[realBar].close;
+        }
+        // Fallback if beyond candle range
+        return round(price + drift * h * 0.3 + (rand() - 0.5) * 4);
       }
       return null;
     });
@@ -224,10 +243,34 @@ export function generateMockHindcast(n = 6): HindcastResponse {
     const dirCorrect = rand() > 0.4;
     const coverageOuter = +(0.5 + rand() * 0.4).toFixed(4);
     const coverageInner = +(0.3 + rand() * 0.3).toFixed(4);
-    const bestRmse = +(0.5 + rand() * 3).toFixed(2);
     const trackDur = Math.floor(3 + rand() * 10);
     const verdict = coverageOuter >= 0.7 && dirCorrect ? "PASS" as const
       : coverageOuter >= 0.5 || dirCorrect ? "PARTIAL" as const : "FAIL" as const;
+
+    // Compute top-10 best paths by RMSE against realized prices
+    const pathScores = samplePaths.map((path, idx) => {
+      let sumSq = 0;
+      let count = 0;
+      for (let hi = 0; hi < horizons.length; hi++) {
+        const rp = realizedPrices[hi];
+        if (rp != null) {
+          sumSq += (path[hi] - (rp as number)) ** 2;
+          count++;
+        }
+      }
+      return { idx, rmse: count > 0 ? Math.sqrt(sumSq / count) : Infinity };
+    }).sort((a, b) => a.rmse - b.rmse).slice(0, 10);
+
+    const bestPathsList = pathScores.map(({ idx, rmse }) => ({
+      path_index: idx,
+      path_values: samplePaths[idx],
+      rmse_pts: +rmse.toFixed(2),
+      tracking_duration_bars: trackDur,
+      tracking_threshold_pts: 2.0,
+      deviations: realizedPrices
+        .filter((v): v is number => v != null)
+        .map(() => +((rand() - 0.5) * 3).toFixed(2)),
+    }));
 
     predictions.push({
       timestamp: new Date(predTime).toISOString(),
@@ -242,16 +285,7 @@ export function generateMockHindcast(n = 6): HindcastResponse {
         coverage_p25_p75: coverageInner,
         direction_correct: dirCorrect,
         median_rmse_pts: +(1 + rand() * 5).toFixed(2),
-        best_paths: [{
-          path_index: Math.floor(rand() * 30),
-          path_values: samplePaths[Math.floor(rand() * 30)],
-          rmse_pts: bestRmse,
-          tracking_duration_bars: trackDur,
-          tracking_threshold_pts: 2.0,
-          deviations: realizedPrices
-            .filter((v): v is number => v != null)
-            .map(() => +((rand() - 0.5) * 3).toFixed(2)),
-        }],
+        best_paths: bestPathsList,
         verdict,
         signal_direction: sigDir,
         expected_return_pts: +((rand() - 0.5) * 8).toFixed(2),
