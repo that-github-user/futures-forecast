@@ -24,14 +24,31 @@ function getETNow() {
   return { year, month, day, dateStr, date: et };
 }
 
-function getPnlColor(pnl: number): string {
-  if (pnl > 20) return "#059669";      // strong green
-  if (pnl > 10) return "#10b981";
-  if (pnl > 0) return "#34d399";       // light green
-  if (pnl === 0) return "#475569";     // gray
-  if (pnl > -10) return "#f87171";     // light red
-  if (pnl > -20) return "#ef4444";
-  return "#dc2626";                     // strong red
+/**
+ * Adaptive P&L color: intensity scales to the month's min/max range.
+ * A +5pt day looks muted in a ±50pt month but vivid in a ±8pt month.
+ * Uses a continuous HSL interpolation for smooth gradients.
+ */
+function getPnlColor(pnl: number, monthMin: number, monthMax: number): string {
+  if (pnl === 0) return "#475569";
+
+  // Compute intensity as fraction of the month's range on each side
+  // Use at least ±2 pts as floor so very quiet months still show some range
+  const posMax = Math.max(monthMax, 2);
+  const negMax = Math.max(-monthMin, 2);
+  const t = pnl > 0
+    ? Math.min(pnl / posMax, 1)
+    : Math.min(-pnl / negMax, 1);
+
+  if (pnl > 0) {
+    // Green ramp: HSL(160, 72%, L) where L goes from 62% (faint) to 36% (vivid)
+    const lightness = 62 - t * 26;
+    return `hsl(160, 72%, ${lightness}%)`;
+  } else {
+    // Red ramp: HSL(0, 75%, L) where L goes from 70% (faint) to 44% (vivid)
+    const lightness = 70 - t * 26;
+    return `hsl(0, 75%, ${lightness}%)`;
+  }
 }
 
 export function CalendarHeatmap({ summaries }: Props) {
@@ -92,6 +109,9 @@ export function CalendarHeatmap({ summaries }: Props) {
   const monthPnl = monthSummaries.reduce((s, d) => s + d.total_pnl_pts, 0);
   const greenDays = monthSummaries.filter((d) => d.total_pnl_pts > 0).length;
   const redDays = monthSummaries.filter((d) => d.total_pnl_pts < 0).length;
+  const monthPnls = monthSummaries.map((d) => d.total_pnl_pts);
+  const monthMin = monthPnls.length ? Math.min(...monthPnls) : -10;
+  const monthMax = monthPnls.length ? Math.max(...monthPnls) : 10;
 
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const hoveredSummary = hoveredDate ? lookup[hoveredDate] : null;
@@ -138,7 +158,7 @@ export function CalendarHeatmap({ summaries }: Props) {
           const isToday = cell.date === etNow.dateStr;
           const hasData = cell.pnl !== null;
           const bg = hasData
-            ? getPnlColor(cell.pnl!)
+            ? getPnlColor(cell.pnl!, monthMin, monthMax)
             : cell.isWeekend
               ? "#0f172a"
               : cell.isFuture
