@@ -62,7 +62,7 @@ export function Dashboard() {
 
     const fetchHindcast = async () => {
       try {
-        const hc = await api.hindcast(8);
+        const hc = await api.hindcast(24);
         setHindcast(hc.predictions);
         setRollingAccuracy(hc.rolling_accuracy ?? null);
       } catch {
@@ -102,13 +102,21 @@ export function Dashboard() {
     };
   }, [rollingAccuracy]);
 
-  // All scored hindcasts sorted oldest-first. FanChart will try each one
-  // and use the oldest whose anchor fits within the visible (aggregated) candles.
+  // Scored hindcasts for tracking, sorted by best-validated first.
+  // Prefer predictions with more realized bars (longer confirmed track)
+  // and lower RMSE. FanChart picks the first whose anchor fits the visible candles.
   const scoredHindcasts = useMemo(() => {
     if (!hindcast?.length) return [];
     return hindcast
-      .filter((h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 3)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      .filter((h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 6)
+      .filter((h) => h.realized_prices.filter((p) => p != null).length >= 6)
+      .sort((a, b) => {
+        const aRealized = a.realized_prices.filter((p) => p != null).length;
+        const bRealized = b.realized_prices.filter((p) => p != null).length;
+        const aRmse = a.scoring!.best_paths![0].rmse_pts;
+        const bRmse = b.scoring!.best_paths![0].rmse_pts;
+        return bRealized - aRealized || aRmse - bRmse;
+      });
   }, [hindcast]);
 
   if (!prediction) {
