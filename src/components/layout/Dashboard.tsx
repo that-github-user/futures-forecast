@@ -62,7 +62,7 @@ export function Dashboard() {
 
     const fetchHindcast = async () => {
       try {
-        const hc = await api.hindcast(8);
+        const hc = await api.hindcast(24);
         setHindcast(hc.predictions);
         setRollingAccuracy(hc.rolling_accuracy ?? null);
       } catch {
@@ -102,16 +102,31 @@ export function Dashboard() {
     };
   }, [rollingAccuracy]);
 
-  // Compute tracking path from most recent scored hindcast
+  // Compute tracking path from best-validated hindcast prediction.
+  // Prefer predictions with more realized bars (longer confirmed track)
+  // and lower RMSE (better-fitting path). This typically selects a prediction
+  // from 1-2 hours ago rather than the most recent one.
   const trackingPath: TrackingPath | null = useMemo(() => {
     if (!hindcast?.length || !prediction) return null;
-    // Find most recent prediction with scoring and best_paths
-    const scored = [...hindcast].reverse().find(
-      (h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 3,
-    );
-    if (!scored?.scoring?.best_paths?.length) return null;
 
-    const bestPath = scored.scoring.best_paths[0];
+    // Score each candidate: more realized bars and lower RMSE = better
+    const candidates = hindcast
+      .filter((h) => h.scoring?.best_paths?.length && h.bars_elapsed >= 6)
+      .map((h) => {
+        const bp = h.scoring!.best_paths![0];
+        // Realized count: non-null realized prices
+        const nRealized = h.realized_prices.filter((p) => p != null).length;
+        // Rank by realized coverage (more = better), break ties by RMSE (lower = better)
+        return { h, bp, nRealized, rmse: bp.rmse_pts };
+      })
+      .filter((c) => c.nRealized >= 6);
+
+    if (!candidates.length) return null;
+
+    // Pick candidate with most realized bars; break ties by lowest RMSE
+    candidates.sort((a, b) => b.nRealized - a.nRealized || a.rmse - b.rmse);
+    const scored = candidates[0].h;
+    const bestPath = candidates[0].bp;
     const rawCandles = prediction.context_candles ?? [];
     if (!rawCandles.length) return null;
 
@@ -165,7 +180,7 @@ export function Dashboard() {
       anchorIndex,
       rmse: bestPath.rmse_pts,
       pathIndex: bestPath.path_index,
-      totalPaths: 30,
+      totalPaths: prediction.sample_paths?.length ?? 200,
     };
   }, [hindcast, prediction]);
 
