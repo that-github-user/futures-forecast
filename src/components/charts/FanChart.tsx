@@ -48,35 +48,67 @@ function percentileFromSorted(sorted: number[], p: number): number {
 }
 
 /**
- * From sample_paths, compute N symmetric percentile layers.
- * Returns array of { lower, upper } arrays (one value per horizon).
- * Layers go from outermost (widest) to innermost (narrowest).
+ * From sample_paths, compute N percentile layers with density-weighted opacity.
+ * Each layer gets an opacity proportional to how much probability mass it contains,
+ * computed separately above and below the median. When the distribution is skewed,
+ * the denser side gets higher opacity — making asymmetry visible through color.
  */
 function computeGradientLayers(
   samplePaths: number[][],
   numLayers: number,
-): { lower: number[]; upper: number[] }[] {
+): { lower: number[]; upper: number[]; opacityBelow: number; opacityAbove: number }[] {
   const numHorizons = samplePaths[0]?.length ?? 0;
-  // Percentile pairs: e.g. 10 layers → P5/P95, P10/P90, ..., P45/P55
-  const layers: { lower: number[]; upper: number[] }[] = [];
+  const layers: { lower: number[]; upper: number[]; opacityBelow: number; opacityAbove: number }[] = [];
+
+  // Precompute sorted values and median per horizon
+  const sortedByH: number[][] = [];
+  const medianByH: number[] = [];
+  for (let h = 0; h < numHorizons; h++) {
+    const vals = samplePaths.map((p) => p[h]).sort((a, b) => a - b);
+    sortedByH.push(vals);
+    medianByH.push(percentileFromSorted(vals, 0.5));
+  }
+
   for (let i = 0; i < numLayers; i++) {
     const pLow = (5 + i * (45 / numLayers)) / 100;
     const pHigh = 1 - pLow;
     const lower: number[] = [];
     const upper: number[] = [];
+    // Track how concentrated each half-band is (narrower = denser = more opaque)
+    let totalWidthBelow = 0;
+    let totalWidthAbove = 0;
+
     for (let h = 0; h < numHorizons; h++) {
-      const vals = samplePaths.map((p) => p[h]).sort((a, b) => a - b);
-      lower.push(percentileFromSorted(vals, pLow));
-      upper.push(percentileFromSorted(vals, pHigh));
+      const lo = percentileFromSorted(sortedByH[h], pLow);
+      const hi = percentileFromSorted(sortedByH[h], pHigh);
+      lower.push(lo);
+      upper.push(hi);
+      totalWidthBelow += Math.abs(medianByH[h] - lo) || 1e-6;
+      totalWidthAbove += Math.abs(hi - medianByH[h]) || 1e-6;
     }
-    layers.push({ lower, upper });
+
+    // Inverse width → density: narrower band = higher concentration = more opaque
+    const densBelow = 1 / (totalWidthBelow / numHorizons);
+    const densAbove = 1 / (totalWidthAbove / numHorizons);
+    // Normalize so the denser side gets full opacity allocation
+    const maxDens = Math.max(densBelow, densAbove);
+    layers.push({
+      lower, upper,
+      opacityBelow: densBelow / maxDens,
+      opacityAbove: densAbove / maxDens,
+    });
   }
   return layers;
 }
 
 /**
  * Compute kernel density at each horizon for the density heatmap.
- * Returns: for each horizon, an array of { price, density } sorted by price.
+ *
+ * Uses 0.6x Silverman bandwidth to preserve multimodal/skewed structure
+ * that the standard rule oversmooths. Normalization is global across all
+ * horizons so the density spreading with horizon is visible. A power-law
+ * (sqrt) mapping compresses the dynamic range so low-density tails are
+ * visible while peaks aren't saturated.
  */
 function computeDensityGrid(
   samplePaths: number[][],
@@ -88,28 +120,41 @@ function computeDensityGrid(
   const result: { price: number; density: number }[][] = [];
   const step = (yMax - yMin) / gridRes;
 
+  let globalMax = 0;
+
   for (let h = 0; h < numHorizons; h++) {
     const vals = samplePaths.map((p) => p[h]);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
     const std = Math.sqrt(
-      vals.reduce((s, v) => s + (v - vals.reduce((a, b) => a + b, 0) / vals.length) ** 2, 0) /
-        vals.length,
+      vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length,
     );
-    const bandwidth = 1.06 * std * Math.pow(vals.length, -0.2); // Silverman's rule
+    // 0.6x Silverman: narrower kernel preserves skew, bimodality, heavy tails
+    const bandwidth = 0.6 * 1.06 * std * Math.pow(vals.length, -0.2);
     const column: { price: number; density: number }[] = [];
     for (let i = 0; i <= gridRes; i++) {
       const price = yMin + i * step;
       let density = 0;
       for (const v of vals) {
         const u = (price - v) / bandwidth;
-        density += Math.exp(-0.5 * u * u); // Gaussian kernel (unnormalized)
+        density += Math.exp(-0.5 * u * u);
       }
       column.push({ price, density });
+      if (density > globalMax) globalMax = density;
     }
-    // Normalize to [0, 1]
-    const maxD = Math.max(...column.map((c) => c.density));
-    if (maxD > 0) column.forEach((c) => (c.density /= maxD));
     result.push(column);
   }
+
+  // Global normalization + power-law compression (sqrt)
+  // Global: density spreading with horizon is visible (near-term is brighter)
+  // Sqrt: compresses dynamic range so tails are visible, peaks aren't saturated
+  if (globalMax > 0) {
+    for (const column of result) {
+      for (const cell of column) {
+        cell.density = Math.sqrt(cell.density / globalMax);
+      }
+    }
+  }
+
   return result;
 }
 
@@ -584,41 +629,78 @@ export function FanChart({
           ];
         }
 
-        // ── GRADIENT: smooth multi-layer fan from sample paths ──
+        // ── GRADIENT: asymmetry-aware multi-layer fan ──
+        // Each layer is split at the median into below/above halves with
+        // independent opacity weighted by density. The denser (narrower) side
+        // gets higher opacity, making skew visible through color intensity.
         if (forecastStyle === "gradient" && sample_paths?.length) {
           const numLayers = 12;
           const layers = computeGradientLayers(sample_paths, numLayers);
+          const p50 = makeForcastSeries("p50");
           const seriesList: Record<string, unknown>[] = [];
 
           for (let i = 0; i < layers.length; i++) {
             const layer = layers[i];
-            // Opacity ramps from ~0.04 (outermost) to ~0.35 (innermost)
             const t = i / (numLayers - 1); // 0 = outermost, 1 = innermost
-            const opacity = 0.04 + t * 0.31;
-            const stackId = `grad-${i}`;
+            const baseOpacity = 0.04 + t * 0.31;
 
-            // Lower bound (invisible baseline)
+            // Below-median half: lower → p50
+            const belowOpacity = baseOpacity * (0.5 + 0.5 * layer.opacityBelow);
             seriesList.push({
               name: "",
               type: "line" as const,
               data: [...ctxPad, ...layer.lower],
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              stack: stackId,
+              stack: `grad-lo-${i}`,
               areaStyle: { color: "transparent" },
               smooth: 0.35,
               z: 1,
               silent: true,
             });
-            // Upper - lower delta (filled band)
             seriesList.push({
               name: "",
               type: "line" as const,
-              data: [...ctxPad, ...layer.upper.map((v, j) => v - layer.lower[j])],
+              data: p50.map((v, j) => {
+                if (v === null) return null;
+                const lo = j < ctxLen ? null : layer.lower[j - ctxLen];
+                return lo !== null && lo !== undefined ? v - lo : null;
+              }),
               lineStyle: { width: 0 },
               symbol: "none" as const,
-              stack: stackId,
-              areaStyle: { color: bandColor + `${opacity})` },
+              stack: `grad-lo-${i}`,
+              areaStyle: { color: bandColor + `${belowOpacity.toFixed(3)})` },
+              smooth: 0.35,
+              z: 1,
+              silent: true,
+            });
+
+            // Above-median half: p50 → upper
+            const aboveOpacity = baseOpacity * (0.5 + 0.5 * layer.opacityAbove);
+            seriesList.push({
+              name: "",
+              type: "line" as const,
+              data: p50,
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: `grad-hi-${i}`,
+              areaStyle: { color: "transparent" },
+              smooth: 0.35,
+              z: 1,
+              silent: true,
+            });
+            seriesList.push({
+              name: "",
+              type: "line" as const,
+              data: p50.map((v, j) => {
+                if (v === null) return null;
+                const hi = j < ctxLen ? null : layer.upper[j - ctxLen];
+                return hi !== null && hi !== undefined ? hi - v : null;
+              }),
+              lineStyle: { width: 0 },
+              symbol: "none" as const,
+              stack: `grad-hi-${i}`,
+              areaStyle: { color: bandColor + `${aboveOpacity.toFixed(3)})` },
               smooth: 0.35,
               z: 1,
               silent: true,
@@ -629,7 +711,7 @@ export function FanChart({
           seriesList.push({
             name: "Median",
             type: "line" as const,
-            data: makeForcastSeries("p50"),
+            data: p50,
             lineStyle: {
               color: medianColor,
               width: 3,
@@ -738,9 +820,42 @@ export function FanChart({
           return seriesList;
         }
 
-        // ── RIBBON: refined bands with edge lines + glow ──
+        // ── RIBBON: skew-aware bands with edge lines + glow ──
+        // Gradient center shifts toward the denser side of the distribution.
+        // Symmetric distribution → center at 0.5 (equal brightness top/bottom).
+        // Skewed → center shifts so the concentrated side is brighter.
         if (forecastStyle === "ribbon") {
           const seriesList: Record<string, unknown>[] = [];
+
+          // Compute average skew from percentiles (where does P50 sit within P10-P90?)
+          const p10s = percentiles.p10;
+          const p50s = percentiles.p50;
+          const p90s = percentiles.p90;
+          let skewSum = 0;
+          let skewCount = 0;
+          for (let i = 0; i < p50s.length; i++) {
+            const range = p90s[i] - p10s[i];
+            if (range > 0) {
+              // 0 = median at P10 (heavy right tail), 1 = median at P90 (heavy left tail)
+              skewSum += (p50s[i] - p10s[i]) / range;
+              skewCount++;
+            }
+          }
+          // gradCenter: where in the band (0=top, 1=bottom) the dim trough sits
+          // When median is closer to P10 (positive skew/right tail), shift dim zone upward
+          const medianPos = skewCount > 0 ? skewSum / skewCount : 0.5;
+          const gradCenter = Math.max(0.15, Math.min(0.85, medianPos));
+          // Opacity: brighter on the denser side
+          const outerDense = 0.18;
+          const outerSparse = 0.08;
+          const innerDense = 0.30;
+          const innerSparse = 0.12;
+          // Top of band = P90 (offset=0), bottom = P10 (offset=1)
+          // medianPos < 0.5 → median closer to P10 → P10 side is denser → bottom brighter
+          const outerTop = medianPos < 0.5 ? outerSparse : outerDense;
+          const outerBot = medianPos < 0.5 ? outerDense : outerSparse;
+          const innerTop = medianPos < 0.5 ? innerSparse : innerDense;
+          const innerBot = medianPos < 0.5 ? innerDense : innerSparse;
 
           // Outer band P10-P90
           seriesList.push({
@@ -767,9 +882,9 @@ export function FanChart({
             stack: "outer",
             areaStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: bandColor + "0.15)" },
-                { offset: 0.5, color: bandColor + "0.04)" },
-                { offset: 1, color: bandColor + "0.15)" },
+                { offset: 0, color: bandColor + `${outerTop})` },
+                { offset: gradCenter, color: bandColor + "0.03)" },
+                { offset: 1, color: bandColor + `${outerBot})` },
               ]),
             },
             smooth: 0.35,
@@ -801,9 +916,9 @@ export function FanChart({
             stack: "inner",
             areaStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: bandColor + "0.25)" },
-                { offset: 0.5, color: bandColor + "0.08)" },
-                { offset: 1, color: bandColor + "0.25)" },
+                { offset: 0, color: bandColor + `${innerTop})` },
+                { offset: gradCenter, color: bandColor + "0.05)" },
+                { offset: 1, color: bandColor + `${innerBot})` },
               ]),
             },
             smooth: 0.35,
