@@ -44,6 +44,7 @@ export const api = {
         model_loaded: true,
         gpu_available: false,
         market_status: null,
+        next_market_open: null,
       });
     }
     return get<HealthResponse>("/api/v1/health");

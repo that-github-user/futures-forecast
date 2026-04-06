@@ -182,4 +182,5 @@ export interface HealthResponse {
   model_loaded: boolean;
   gpu_available: boolean;
   market_status: "RTH" | "ETH" | "CLOSED" | null;
+  next_market_open: string | null;
 }
