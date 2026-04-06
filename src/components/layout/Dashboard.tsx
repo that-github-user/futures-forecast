@@ -309,6 +309,7 @@ function formatNextOpen(isoStr: string | null): string {
   if (!isoStr) return "next session";
   try {
     const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "next session";
     return d.toLocaleString("en-US", {
       timeZone: "America/New_York",
       weekday: "short",
