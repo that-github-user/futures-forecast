@@ -185,6 +185,13 @@ export function Dashboard() {
         </div>
       )}
 
+      {health?.market_status === "CLOSED" && !demoMode && (
+        <MarketClosedBanner
+          lastPredictionTime={prediction.timestamp}
+          nextMarketOpen={health.next_market_open ?? null}
+        />
+      )}
+
       <div className="dashboard-grid">
         {/* Main fan chart */}
         <div
@@ -294,6 +301,66 @@ export function Dashboard() {
           <EquityCurve history={history} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function formatNextOpen(isoStr: string | null): string {
+  if (!isoStr) return "next session";
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "next session";
+    return d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  } catch {
+    return "next session";
+  }
+}
+
+function MarketClosedBanner({
+  lastPredictionTime,
+  nextMarketOpen,
+}: {
+  lastPredictionTime: string | null;
+  nextMarketOpen: string | null;
+}) {
+  const staleMinutes = lastPredictionTime
+    ? Math.round((Date.now() - new Date(lastPredictionTime).getTime()) / 60000)
+    : null;
+
+  return (
+    <div
+      style={{
+        background: "rgba(239, 68, 68, 0.08)",
+        border: "1px solid rgba(239, 68, 68, 0.25)",
+        borderRadius: 6,
+        padding: "8px 16px",
+        margin: "0 12px 8px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        fontFamily: "Inter, sans-serif",
+        fontSize: 12,
+      }}
+    >
+      <span style={{ color: "#ef4444", fontWeight: 600, fontSize: 13 }}>
+        Market Closed
+      </span>
+      <span style={{ color: "#94a3b8" }}>
+        ES futures are offline. Predictions resume {formatNextOpen(nextMarketOpen)}.
+      </span>
+      {staleMinutes != null && staleMinutes > 10 && (
+        <span style={{ color: "#64748b", fontSize: 11 }}>
+          Last prediction: {staleMinutes >= 60
+            ? `${Math.floor(staleMinutes / 60)}h ${staleMinutes % 60}m ago`
+            : `${staleMinutes}m ago`}
+        </span>
+      )}
     </div>
   );
 }
