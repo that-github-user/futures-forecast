@@ -31,6 +31,9 @@ jobs:
           VITE_API_URL: ${{ vars.API_URL }}
           VITE_API_KEY: ${{ secrets.API_KEY }}
           VITE_DEMO_MODE: ${{ vars.DEMO_MODE || 'true' }}
+          VITE_DC_API_URL: ${{ vars.DC_API_URL }}
+          VITE_DC_API_KEY: ${{ secrets.DC_API_KEY }}
+          VITE_DC_PASSWORD_HASH: ${{ vars.DC_PASSWORD_HASH }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
