@@ -1,4 +1,5 @@
 import type { DCTrade } from "../../api/dcTypes";
+import { SignalBadge } from "./SignalBadge";
 
 interface Props {
   trades: DCTrade[];
@@ -15,7 +16,7 @@ export function DCHistoryTab({ trades }: Props) {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Summary row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
         <StatCard label="Total Trades" value={`${trades.length}`} />
         <StatCard label="Win Rate" value={trades.length > 0 ? `${((wins / trades.length) * 100).toFixed(1)}%` : "—"} />
         <StatCard label="Wins / Losses" value={`${wins}W / ${losses}L`} />
@@ -57,15 +58,7 @@ export function DCHistoryTab({ trades }: Props) {
                   <tr key={t.id}>
                     <td style={tdStyle}>{t.close_date?.slice(0, 10) ?? t.entry_date ?? "—"}</td>
                     <td style={tdStyle}>{t.strategy_name}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 8,
-                        color: t.signal === "GO_PLUS" ? "#10b981" : t.signal === "GO" ? "#3b82f6" : "#94a3b8",
-                        background: (t.signal === "GO_PLUS" ? "#10b981" : t.signal === "GO" ? "#3b82f6" : "#94a3b8") + "18",
-                      }}>
-                        {t.signal?.replace("_", "+") ?? "—"}
-                      </span>
-                    </td>
+                    <td style={tdStyle}><SignalBadge signal={t.signal} /></td>
                     <td style={tdMono}>${t.entry_debit?.toFixed(2) ?? "—"}</td>
                     <td style={{
                       ...tdMono,

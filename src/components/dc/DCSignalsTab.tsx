@@ -1,4 +1,5 @@
 import type { DCSignalsResponse } from "../../api/dcTypes";
+import { SignalBadge } from "./SignalBadge";
 
 interface Props {
   signals: DCSignalsResponse | null;
@@ -102,22 +103,6 @@ function FeatureCard({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
-  );
-}
-
-function SignalBadge({ signal }: { signal: string }) {
-  const colors: Record<string, string> = {
-    GO_PLUS: "#10b981", GO: "#3b82f6", READY: "#f59e0b", SKIP: "#ef4444",
-  };
-  const c = colors[signal] ?? "#64748b";
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 600, color: c, background: c + "18",
-      border: `1px solid ${c}40`, padding: "2px 8px", borderRadius: 8,
-      fontFamily: "Inter, sans-serif", letterSpacing: 0.3,
-    }}>
-      {signal.replace("_", "+")}
-    </span>
   );
 }
 

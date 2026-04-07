@@ -1,7 +1,15 @@
 /**
  * Password gate for the DC Trading Dashboard.
  *
- * Compares user input against a bcrypt hash baked into the build via VITE_DC_PASSWORD_HASH.
+ * SECURITY NOTE: This is UX obfuscation, NOT a real security boundary.
+ * - The bcrypt hash and any API key are baked into the JS bundle (visible
+ *   to anyone who views source).
+ * - sessionStorage state can be set manually via devtools to bypass.
+ * - The REAL security boundary is the DC API server's X-DC-Key header
+ *   validation. Ensure DC_API_KEYS is set in production (server-side).
+ * - The gate prevents casual visitors from seeing the dashboard, nothing more.
+ *
+ * Compares user input against a bcrypt hash via VITE_DC_PASSWORD_HASH.
  * Stores unlock state in sessionStorage so refreshing doesn't re-prompt.
  */
 

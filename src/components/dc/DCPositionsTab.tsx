@@ -1,4 +1,5 @@
 import type { DCPosition, DCRiskStatus } from "../../api/dcTypes";
+import { SignalBadge } from "./SignalBadge";
 
 interface Props {
   positions: DCPosition[];
@@ -10,7 +11,7 @@ export function DCPositionsTab({ positions, risk }: Props) {
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Risk status cards */}
       {risk && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
           <RiskCard
             label="Daily P&L"
             value={`$${risk.daily_pnl >= 0 ? "+" : ""}${risk.daily_pnl.toFixed(0)}`}
@@ -93,22 +94,6 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
         {value}
       </div>
     </div>
-  );
-}
-
-function SignalBadge({ signal }: { signal: string }) {
-  const colors: Record<string, string> = {
-    GO_PLUS: "#10b981", GO: "#3b82f6", READY: "#94a3b8", SKIP: "#ef4444",
-  };
-  const c = colors[signal] ?? "#64748b";
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 600, color: c, background: c + "18",
-      border: `1px solid ${c}40`, padding: "1px 6px", borderRadius: 8,
-      fontFamily: "Inter, sans-serif",
-    }}>
-      {signal.replace("_", "+")}
-    </span>
   );
 }
 
