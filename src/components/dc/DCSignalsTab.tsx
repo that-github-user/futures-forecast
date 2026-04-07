@@ -1,118 +1,290 @@
-import type { DCSignalsResponse } from "../../api/dcTypes";
-import { SignalBadge } from "./SignalBadge";
+/**
+ * DCSignalsTab — live monitor for subscribed DC strategies.
+ *
+ * Renders a StrategyMonitorCard for each subscribed strategy with
+ * lifecycle-aware visuals (faded → primed → imminent → firing → recently
+ * fired → passed → closed). Drives a 1s tick to keep countdowns live, and
+ * fires browser notifications when subscribed strategies transition into
+ * the imminent or firing windows.
+ *
+ * Below the monitor grid, the existing market features grid is preserved
+ * as helpful context (ATR, BB, RSI, VIX regime, etc.).
+ */
+
+import { useEffect, useMemo, useRef } from "react";
+import type { DCSignalsResponse, DCStrategySpec } from "../../api/dcTypes";
+import { useStrategySpecs } from "../../hooks/useStrategySpecs";
+import { useSubscriptions } from "../../hooks/useSubscriptions";
+import { useNotifications } from "../../hooks/useNotifications";
+import { useTick } from "../../hooks/useTick";
+import { deriveLifecycle, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
+import { StrategyMonitorCard } from "./StrategyMonitorCard";
 
 interface Props {
   signals: DCSignalsResponse | null;
 }
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+// Sort key — lower is more important / shown first.
+const STATE_PRIORITY: Record<LifecycleState, number> = {
+  firing: 0,
+  imminent: 1,
+  recently_fired: 2,
+  primed: 3,
+  not_fired_yet: 4,
+  pre_features: 5,
+  passed_will_fire: 6,
+  passed_skipped: 7,
+  inactive: 8,
+  closed: 9,
+};
 
 export function DCSignalsTab({ signals }: Props) {
-  if (!signals) {
+  const { specs, loading: specsLoading } = useStrategySpecs();
+  const subs = useSubscriptions();
+  const notifications = useNotifications();
+  const nowMs = useTick(1000);
+  const now = useMemo(() => new Date(nowMs), [nowMs]);
+
+  const signalByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of signals?.signals ?? []) m.set(s.strategy_name, s.signal);
+    return m;
+  }, [signals]);
+
+  const featuresStale = signals?.features_stale ?? true;
+
+  // Build the list of {spec, signal, info} for subscribed strategies only.
+  const monitors = useMemo(() => {
+    if (!specs) return [];
+    const list: Array<{ spec: DCStrategySpec; signal: string | null; info: LifecycleInfo }> = [];
+    for (const spec of specs) {
+      if (!subs.isSubscribed(spec.name)) continue;
+      const signal = signalByName.get(spec.name) ?? null;
+      const info = deriveLifecycle(spec, signal, featuresStale, now);
+      list.push({ spec, signal, info });
+    }
+    list.sort((a, b) => {
+      const pa = STATE_PRIORITY[a.info.state];
+      const pb = STATE_PRIORITY[b.info.state];
+      if (pa !== pb) return pa - pb;
+      return a.spec.name.localeCompare(b.spec.name);
+    });
+    return list;
+  }, [specs, subs, signalByName, featuresStale, now]);
+
+  // Detect lifecycle transitions to fire notifications.
+  const lastStatesRef = useRef<Map<string, LifecycleState>>(new Map());
+  useEffect(() => {
+    const last = lastStatesRef.current;
+    for (const { spec, info } of monitors) {
+      const prev = last.get(spec.name);
+      const next = info.state;
+      if (prev !== next) {
+        if (next === "imminent") {
+          const key = `${spec.name}|${info.nextEntryHHMM ?? ""}|imminent`;
+          notifications.notify(
+            key,
+            `${spec.name} is imminent`,
+            `Fires at ${info.nextEntryHHMM ?? "—"} ET`,
+          );
+        } else if (next === "firing") {
+          const key = `${spec.name}|${info.nextEntryHHMM ?? info.lastEntryHHMM ?? ""}|firing`;
+          notifications.notify(key, `${spec.name} is firing now`);
+        }
+        last.set(spec.name, next);
+      }
+    }
+  }, [monitors, notifications]);
+
+  if (specsLoading) {
     return (
       <div className="fade-in" style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
-        Signal data unavailable
+        Loading strategy catalog…
       </div>
     );
   }
 
-  const { features, features_stale, signals: signalList } = signals;
-
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Features grid */}
-      <div className="panel" style={{ padding: 12 }}>
-        <div className="panel-header" style={{ marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-          <span className="panel-title">Market Features</span>
-          {features?.feature_date && (
-            <span style={{
-              fontSize: 11, fontFamily: "JetBrains Mono, monospace",
-              color: features_stale ? "#f59e0b" : "#64748b",
-            }}>
-              {features_stale ? "STALE " : ""}{features.feature_date}
-            </span>
-          )}
-        </div>
-        {features ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
-            <FeatureCard label="ATR %" value={features.atr_pct != null ? `${(features.atr_pct * 100).toFixed(2)}%` : "—"} />
-            <FeatureCard label="Gap %" value={features.gap_pct != null ? `${(features.gap_pct * 100).toFixed(2)}%` : "—"} />
-            <FeatureCard label="BB Position" value={features.bb_position != null ? features.bb_position.toFixed(3) : "—"} />
-            <FeatureCard label="RSI 14" value={features.rsi_14 != null ? features.rsi_14.toFixed(1) : "—"} />
-            <FeatureCard label="Return 5D" value={features.return_5d != null ? `${(features.return_5d * 100).toFixed(2)}%` : "—"} />
-            <FeatureCard label="VIX" value={features.vix_close != null ? features.vix_close.toFixed(2) : "—"} />
-            <FeatureCard label="VIX %ile" value={features.vix_pctile != null ? `${(features.vix_pctile * 100).toFixed(0)}%` : "—"} />
-            <FeatureCard label="Vol Regime" value={features.vol_regime != null ? `R${features.vol_regime}` : "—"} />
-          </div>
-        ) : (
-          <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 16 }}>
-            No features available — daemon may be offline
-          </div>
-        )}
+      {/* Header: subscription count + notification permission */}
+      <div
+        style={{
+          background: "#0f172a",
+          border: "1px solid #1e293b",
+          borderRadius: 6,
+          padding: "8px 12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          Monitoring{" "}
+          <span style={{ color: "#3b82f6", fontWeight: 600 }}>{monitors.length}</span> strategies
+        </span>
+        <NotificationControl
+          permission={notifications.permission}
+          onRequest={notifications.requestPermission}
+        />
       </div>
 
-      {/* Signal status table */}
-      <div className="panel" style={{ padding: 12 }}>
-        <div className="panel-header" style={{ marginBottom: 8 }}>
-          <span className="panel-title">Strategy Signals ({signalList.length})</span>
+      {/* Monitor cards */}
+      {monitors.length === 0 ? (
+        <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6 }}>
+          No strategies subscribed yet.
+          <br />
+          <span style={{ color: "#64748b", fontSize: 12 }}>
+            Visit the Strategies tab and check the strategies you want to monitor.
+          </span>
         </div>
-        {signalList.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 16 }}>
-            No signals computed
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 10,
+          }}
+        >
+          {monitors.map(({ spec, signal, info }) => (
+            <StrategyMonitorCard key={spec.name} spec={spec} signal={signal} info={info} />
+          ))}
+        </div>
+      )}
+
+      {/* Market features context */}
+      {signals?.features && (
+        <div className="panel" style={{ padding: 12, marginTop: 8 }}>
+          <div className="panel-header" style={{ marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+            <span className="panel-title">Market Features</span>
+            {signals.features.feature_date && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontFamily: "JetBrains Mono, monospace",
+                  color: featuresStale ? "#f59e0b" : "#64748b",
+                }}
+              >
+                {featuresStale ? "STALE " : ""}
+                {signals.features.feature_date}
+              </span>
+            )}
           </div>
-        ) : (
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Strategy</th>
-                <th style={thStyle}>Signal</th>
-                <th style={thStyle}>Entry Days</th>
-                <th style={thStyle}>Entry Times (ET)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {signalList.map((s) => (
-                <tr key={s.strategy_name}>
-                  <td style={tdStyle}>{s.strategy_name}</td>
-                  <td style={tdStyle}><SignalBadge signal={s.signal} /></td>
-                  <td style={tdStyle}>
-                    {s.entry_days.map((d) => DAY_NAMES[d] ?? d).join(", ")}
-                  </td>
-                  <td style={{ ...tdStyle, fontFamily: "JetBrains Mono, monospace" }}>
-                    {s.next_entry_times.join(", ")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
+            <FeatureCard
+              label="ATR %"
+              value={signals.features.atr_pct != null ? `${(signals.features.atr_pct * 100).toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="Gap %"
+              value={signals.features.gap_pct != null ? `${(signals.features.gap_pct * 100).toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="BB Position"
+              value={signals.features.bb_position != null ? signals.features.bb_position.toFixed(3) : "—"}
+            />
+            <FeatureCard
+              label="RSI 14"
+              value={signals.features.rsi_14 != null ? signals.features.rsi_14.toFixed(1) : "—"}
+            />
+            <FeatureCard
+              label="Return 5D"
+              value={signals.features.return_5d != null ? `${(signals.features.return_5d * 100).toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="VIX"
+              value={signals.features.vix_close != null ? signals.features.vix_close.toFixed(2) : "—"}
+            />
+            <FeatureCard
+              label="VIX %ile"
+              value={signals.features.vix_pctile != null ? `${(signals.features.vix_pctile * 100).toFixed(0)}%` : "—"}
+            />
+            <FeatureCard
+              label="Vol Regime"
+              value={signals.features.vol_regime != null ? `R${signals.features.vol_regime}` : "—"}
+            />
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function NotificationControl({
+  permission,
+  onRequest,
+}: {
+  permission: ReturnType<typeof useNotifications>["permission"];
+  onRequest: () => Promise<unknown>;
+}) {
+  if (permission === "unsupported") {
+    return (
+      <span style={{ fontSize: 11, color: "#64748b" }}>
+        Browser notifications not supported
+      </span>
+    );
+  }
+  if (permission === "granted") {
+    return (
+      <span style={{ fontSize: 11, color: "#10b981" }}>
+        Desktop alerts enabled
+      </span>
+    );
+  }
+  if (permission === "denied") {
+    return (
+      <span style={{ fontSize: 11, color: "#ef4444" }}>
+        Desktop alerts blocked (enable in browser settings)
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={onRequest}
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: "#3b82f6",
+        background: "#3b82f618",
+        border: "1px solid #3b82f640",
+        borderRadius: 6,
+        padding: "4px 10px",
+        cursor: "pointer",
+        fontFamily: "Inter, sans-serif",
+      }}
+    >
+      Enable desktop alerts
+    </button>
   );
 }
 
 function FeatureCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "8px 10px",
-    }}>
-      <div style={{ fontSize: 9, color: "#64748b", fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5 }}>
+    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "8px 10px" }}>
+      <div
+        style={{
+          fontSize: 9,
+          color: "#64748b",
+          fontFamily: "Inter, sans-serif",
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "JetBrains Mono, monospace", color: "#e2e8f0", marginTop: 2 }}>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          fontFamily: "JetBrains Mono, monospace",
+          color: "#e2e8f0",
+          marginTop: 2,
+        }}
+      >
         {value}
       </div>
     </div>
   );
 }
-
-const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 12 };
-const thStyle: React.CSSProperties = {
-  textAlign: "left", padding: "6px 8px", color: "#64748b", fontSize: 10,
-  fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5,
-  borderBottom: "1px solid #1e293b",
-};
-const tdStyle: React.CSSProperties = {
-  padding: "6px 8px", color: "#e2e8f0", fontSize: 12,
-  fontFamily: "Inter, sans-serif", borderBottom: "1px solid #111827",
-};

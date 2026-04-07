@@ -8,6 +8,7 @@ import type {
   DCPosition,
   DCRiskStatus,
   DCSignalsResponse,
+  DCStrategySpec,
   DCStrategyStats,
   DCSummary,
   DCTrade,
@@ -35,6 +36,7 @@ export const dcApi = {
   trades: (limit = 50, offset = 0) =>
     dcGet<DCTrade[]>(`/dc-api/v1/trades?limit=${limit}&offset=${offset}`),
   strategies: () => dcGet<DCStrategyStats[]>("/dc-api/v1/strategies"),
+  strategySpecs: () => dcGet<DCStrategySpec[]>("/dc-api/v1/strategies/specs"),
   signals: () => dcGet<DCSignalsResponse>("/dc-api/v1/signals"),
   risk: () => dcGet<DCRiskStatus>("/dc-api/v1/risk"),
   summary: () => dcGet<DCSummary>("/dc-api/v1/summary"),

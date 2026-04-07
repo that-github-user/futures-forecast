@@ -105,3 +105,42 @@ export interface DCSummary {
   daemon_online: boolean;
   active_strategies: number;
 }
+
+export interface DCDeltaExitRule {
+  leg: string;          // 'put' | 'call'
+  entry_delta: number;
+  direction: string;    // 'above' | 'below'
+  threshold: number;
+}
+
+export interface DCTestedExitRule {
+  leg: string;
+  breach_pct: number;
+}
+
+export interface DCPartialClose {
+  pct_of_position: number;
+  at_pt_pct: number;
+}
+
+export interface DCStrategySpec {
+  name: string;
+  family: string;       // 'long_dte' | 'short_dte' | 'hybrid_fm'
+  front_dte: number;
+  back_dte: number;
+  put_delta: number;
+  call_delta: number;
+  is_asymmetric: boolean;
+  entry_days: number[]; // 0=Mon..4=Fri
+  entry_times: string[]; // 'HH:MM' ET
+  sl_ratio_min: number | null;
+  vix_min: number | null;
+  profit_target_pct: number;
+  exit_time: string;    // 'HH:MM' ET
+  sl_ratio_exit: number | null;
+  max_dit: number | null;
+  delta_exits: DCDeltaExitRule[];
+  tested_exits: DCTestedExitRule[];
+  partial_close: DCPartialClose | null;
+  entry_window_end: string | null; // 'HH:MM' ET, only set when the strategy has an entry window range
+}
