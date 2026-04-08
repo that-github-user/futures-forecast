@@ -183,13 +183,18 @@ export function DCSignalsTab({ signals }: Props) {
             )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
+            {/*
+              Daemon already emits atr_pct / gap_pct / return_5d / vix_pctile in
+              percentage points (0..100 scale, computed as `value / base * 100`
+              in core/features.py). Display them as-is — do NOT multiply again.
+            */}
             <FeatureCard
               label="ATR %"
-              value={signals.features.atr_pct != null ? `${(signals.features.atr_pct * 100).toFixed(2)}%` : "—"}
+              value={signals.features.atr_pct != null ? `${signals.features.atr_pct.toFixed(2)}%` : "—"}
             />
             <FeatureCard
               label="Gap %"
-              value={signals.features.gap_pct != null ? `${(signals.features.gap_pct * 100).toFixed(2)}%` : "—"}
+              value={signals.features.gap_pct != null ? `${signals.features.gap_pct.toFixed(2)}%` : "—"}
             />
             <FeatureCard
               label="BB Position"
@@ -201,7 +206,7 @@ export function DCSignalsTab({ signals }: Props) {
             />
             <FeatureCard
               label="Return 5D"
-              value={signals.features.return_5d != null ? `${(signals.features.return_5d * 100).toFixed(2)}%` : "—"}
+              value={signals.features.return_5d != null ? `${signals.features.return_5d.toFixed(2)}%` : "—"}
             />
             <FeatureCard
               label="VIX"
@@ -209,7 +214,7 @@ export function DCSignalsTab({ signals }: Props) {
             />
             <FeatureCard
               label="VIX %ile"
-              value={signals.features.vix_pctile != null ? `${(signals.features.vix_pctile * 100).toFixed(0)}%` : "—"}
+              value={signals.features.vix_pctile != null ? `${signals.features.vix_pctile.toFixed(0)}%` : "—"}
             />
             <FeatureCard
               label="Vol Regime"
