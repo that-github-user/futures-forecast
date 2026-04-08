@@ -50,8 +50,8 @@ export interface LifecycleInfo {
   secondsUntilNext: number | null;
   /** Seconds since the most recent passed entry time today, or null. */
   secondsSinceLast: number | null;
-  /** Whether the strategy is "ripe" right now (in primed/imminent/firing). */
-  isRipe: boolean;
+  /** Whether the strategy is "armed" right now (in primed/imminent/firing). */
+  isArmed: boolean;
   /** Whether the strategy fires today at all (entry day && ≥1 GO/GO+ window). */
   firesToday: boolean;
 }
@@ -142,7 +142,7 @@ export function deriveLifecycle(
     return baseInfo({
       state: "inactive",
       windowKind,
-      isRipe: false,
+      isArmed: false,
       firesToday: false,
     });
   }
@@ -152,7 +152,7 @@ export function deriveLifecycle(
     return baseInfo({
       state: "closed",
       windowKind,
-      isRipe: false,
+      isArmed: false,
       firesToday: false,
     });
   }
@@ -161,12 +161,12 @@ export function deriveLifecycle(
     return baseInfo({
       state: "pre_features",
       windowKind,
-      isRipe: false,
+      isArmed: false,
       firesToday: false,
     });
   }
 
-  const ripeSignal = isGoSignal(signal);
+  const armedSignal = isGoSignal(signal);
 
   // Range window (continuous entry period): treat the whole window as one
   // "imminent" period when GO/GO+ — the daemon could fire at any minute.
@@ -179,57 +179,57 @@ export function deriveLifecycle(
       const nextHHMM = spec.entry_times[0];
       if (delta <= IMMINENT_WINDOW_SECONDS) {
         return baseInfo({
-          state: ripeSignal ? "imminent" : "not_fired_yet",
+          state: armedSignal ? "imminent" : "not_fired_yet",
           windowKind,
           nextEntryHHMM: nextHHMM,
           secondsUntilNext: delta,
-          isRipe: ripeSignal,
-          firesToday: ripeSignal,
+          isArmed: armedSignal,
+          firesToday: armedSignal,
         });
       }
       return baseInfo({
-        state: ripeSignal ? "primed" : "not_fired_yet",
+        state: armedSignal ? "primed" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
         secondsUntilNext: delta,
-        isRipe: ripeSignal,
-        firesToday: ripeSignal,
+        isArmed: armedSignal,
+        firesToday: armedSignal,
       });
     }
 
     if (secondsOfDay <= winEnd) {
       // Inside the window
       return baseInfo({
-        state: ripeSignal ? "imminent" : "not_fired_yet",
+        state: armedSignal ? "imminent" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: spec.entry_window_end,
         secondsUntilNext: winEnd - secondsOfDay,
         lastEntryHHMM: spec.entry_times[0],
         secondsSinceLast: secondsOfDay - winStart,
-        isRipe: ripeSignal,
-        firesToday: ripeSignal,
+        isArmed: armedSignal,
+        firesToday: armedSignal,
       });
     }
 
     // Past the window end
     const sinceWindow = secondsOfDay - winEnd;
-    if (sinceWindow <= IMMINENT_WINDOW_SECONDS && ripeSignal) {
+    if (sinceWindow <= IMMINENT_WINDOW_SECONDS && armedSignal) {
       return baseInfo({
         state: "recently_fired",
         windowKind,
         lastEntryHHMM: spec.entry_window_end,
         secondsSinceLast: sinceWindow,
-        isRipe: false,
-        firesToday: ripeSignal,
+        isArmed: false,
+        firesToday: armedSignal,
       });
     }
     return baseInfo({
-      state: ripeSignal ? "passed_will_fire" : "passed_skipped",
+      state: armedSignal ? "passed_will_fire" : "passed_skipped",
       windowKind,
       lastEntryHHMM: spec.entry_window_end,
       secondsSinceLast: sinceWindow,
-      isRipe: false,
-      firesToday: ripeSignal,
+      isArmed: false,
+      firesToday: armedSignal,
     });
   }
 
@@ -258,8 +258,8 @@ export function deriveLifecycle(
         secondsSinceLast: secondsSince,
         nextEntryHHMM: nextHHMM,
         secondsUntilNext: nextSec != null ? nextSec - secondsOfDay : null,
-        isRipe: ripeSignal,
-        firesToday: ripeSignal,
+        isArmed: armedSignal,
+        firesToday: armedSignal,
       });
     }
     if (secondsSince <= IMMINENT_WINDOW_SECONDS) {
@@ -270,8 +270,8 @@ export function deriveLifecycle(
         secondsSinceLast: secondsSince,
         nextEntryHHMM: nextHHMM,
         secondsUntilNext: nextSec != null ? nextSec - secondsOfDay : null,
-        isRipe: false,
-        firesToday: ripeSignal,
+        isArmed: false,
+        firesToday: armedSignal,
       });
     }
   }
@@ -287,43 +287,43 @@ export function deriveLifecycle(
         secondsUntilNext: delta,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
-        isRipe: ripeSignal,
-        firesToday: ripeSignal,
+        isArmed: armedSignal,
+        firesToday: armedSignal,
       });
     }
     if (delta <= IMMINENT_WINDOW_SECONDS) {
       return baseInfo({
-        state: ripeSignal ? "imminent" : "not_fired_yet",
+        state: armedSignal ? "imminent" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
         secondsUntilNext: delta,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
-        isRipe: ripeSignal,
-        firesToday: ripeSignal,
+        isArmed: armedSignal,
+        firesToday: armedSignal,
       });
     }
     return baseInfo({
-      state: ripeSignal ? "primed" : "not_fired_yet",
+      state: armedSignal ? "primed" : "not_fired_yet",
       windowKind,
       nextEntryHHMM: nextHHMM,
       secondsUntilNext: delta,
       lastEntryHHMM: lastHHMM,
       secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
-      isRipe: ripeSignal,
-      firesToday: ripeSignal,
+      isArmed: armedSignal,
+      firesToday: armedSignal,
     });
   }
 
   // All discrete entries have passed and we're more than 10min past the
   // last one (otherwise the recently_fired branch above would have caught it).
   return baseInfo({
-    state: ripeSignal ? "passed_will_fire" : "passed_skipped",
+    state: armedSignal ? "passed_will_fire" : "passed_skipped",
     windowKind,
     lastEntryHHMM: lastHHMM,
     secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
-    isRipe: false,
-    firesToday: ripeSignal,
+    isArmed: false,
+    firesToday: armedSignal,
   });
 }
 
@@ -333,7 +333,7 @@ function baseInfo(partial: Partial<LifecycleInfo> & { state: LifecycleState; win
     lastEntryHHMM: null,
     secondsUntilNext: null,
     secondsSinceLast: null,
-    isRipe: false,
+    isArmed: false,
     firesToday: false,
     ...partial,
   };

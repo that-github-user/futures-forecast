@@ -5,8 +5,8 @@
  * can show only the strategies they care about in the Signals tab. No
  * accounts, no server-side sync — each device tracks its own selection.
  *
- * Only strategy *names* (e.g., "2/3 DC") are stored, not specs or any
- * other strategy data.
+ * Only strategy names (string identifiers returned by the API) are stored,
+ * never specs or any other strategy data.
  */
 
 import { useCallback, useEffect, useState } from "react";

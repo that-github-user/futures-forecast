@@ -72,10 +72,20 @@ export function DCSignalsTab({ signals }: Props) {
     return list;
   }, [specs, subs, signalByName, featuresStale, now]);
 
-  // Detect lifecycle transitions to fire notifications.
+  // Detect lifecycle transitions to fire notifications. The first effect run
+  // after mount is treated as a "seed pass" — we record the current state of
+  // every subscribed strategy without firing notifications, so a tab remount
+  // during an imminent window doesn't spam alerts for strategies that were
+  // already imminent before we started watching.
   const lastStatesRef = useRef<Map<string, LifecycleState>>(new Map());
+  const seededRef = useRef(false);
   useEffect(() => {
     const last = lastStatesRef.current;
+    if (!seededRef.current) {
+      for (const { spec, info } of monitors) last.set(spec.name, info.state);
+      seededRef.current = true;
+      return;
+    }
     for (const { spec, info } of monitors) {
       const prev = last.get(spec.name);
       const next = info.state;

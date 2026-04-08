@@ -1,5 +1,5 @@
 /**
- * DCRipeBanner — sticky banner that appears when subscribed strategies
+ * DCArmedBanner — sticky banner that appears when subscribed strategies
  * are imminent or firing. Click to jump to the Signals tab.
  *
  * Hidden when no subscribed strategies are in the imminent/firing window.
@@ -19,12 +19,12 @@ interface Props {
   onClickJumpToSignals: () => void;
 }
 
-export function DCRipeBanner({ signals, onClickJumpToSignals }: Props) {
+export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
   const { specs } = useStrategySpecs();
   const subs = useSubscriptions();
   const nowMs = useTick(1000);
 
-  const ripe = useMemo(() => {
+  const armed = useMemo(() => {
     if (!specs) return [];
     const now = new Date(nowMs);
     const featuresStale = signals?.features_stale ?? true;
@@ -49,11 +49,13 @@ export function DCRipeBanner({ signals, onClickJumpToSignals }: Props) {
     return out;
   }, [specs, subs, signals, nowMs]);
 
-  if (ripe.length === 0) return null;
+  if (armed.length === 0) return null;
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClickJumpToSignals}
+      aria-label={`${armed.length} subscribed strategies are armed — jump to Signals tab`}
       style={{
         background: "linear-gradient(90deg, #f59e0b18 0%, #f59e0b08 100%)",
         border: "1px solid #f59e0b66",
@@ -67,6 +69,10 @@ export function DCRipeBanner({ signals, onClickJumpToSignals }: Props) {
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
         boxShadow: "0 0 12px #f59e0b22",
+        textAlign: "left",
+        font: "inherit",
+        color: "inherit",
+        width: "calc(100% - 24px)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -82,10 +88,10 @@ export function DCRipeBanner({ signals, onClickJumpToSignals }: Props) {
             letterSpacing: 0.8,
           }}
         >
-          RIPE
+          ARMED
         </span>
         <span style={{ fontSize: 12, color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace" }}>
-          {ripe
+          {armed
             .map((r) => {
               const tail =
                 r.state === "firing"
@@ -99,6 +105,6 @@ export function DCRipeBanner({ signals, onClickJumpToSignals }: Props) {
         </span>
       </div>
       <span style={{ fontSize: 11, color: "#94a3b8" }}>View Signals →</span>
-    </div>
+    </button>
   );
 }

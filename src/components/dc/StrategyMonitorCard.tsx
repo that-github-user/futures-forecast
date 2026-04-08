@@ -201,7 +201,7 @@ function BodyContent({ spec, signal, info }: Props) {
     case "primed":
       return (
         <Body
-          headline={`Fires at ${info.nextEntryHHMM} ET`}
+          headline={info.nextEntryHHMM ? `Fires at ${info.nextEntryHHMM} ET` : "Fires today"}
           subline={
             info.secondsUntilNext != null ? `in ${formatCountdown(info.secondsUntilNext)}` : ""
           }
@@ -211,7 +211,7 @@ function BodyContent({ spec, signal, info }: Props) {
     case "imminent":
       return (
         <Body
-          headline={`FIRES AT ${info.nextEntryHHMM} ET`}
+          headline={info.nextEntryHHMM ? `FIRES AT ${info.nextEntryHHMM} ET` : "FIRES IMMINENTLY"}
           subline={
             info.secondsUntilNext != null ? formatCountdown(info.secondsUntilNext) : ""
           }
@@ -224,7 +224,9 @@ function BodyContent({ spec, signal, info }: Props) {
     case "recently_fired":
       return (
         <Body
-          headline={`Just fired at ${info.lastEntryHHMM} ET`}
+          headline={
+            info.lastEntryHHMM ? `Just fired at ${info.lastEntryHHMM} ET` : "Just fired"
+          }
           subline={
             info.secondsSinceLast != null
               ? `${formatCountdown(info.secondsSinceLast)} ago — signal was ${formatSignal(signal)}`

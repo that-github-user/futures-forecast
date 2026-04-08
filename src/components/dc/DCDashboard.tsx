@@ -9,7 +9,7 @@ import { DCPositionsTab } from "./DCPositionsTab";
 import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
 import { DCSignalsTab } from "./DCSignalsTab";
-import { DCRipeBanner } from "./DCRipeBanner";
+import { DCArmedBanner } from "./DCArmedBanner";
 
 type DCTab = "positions" | "history" | "strategies" | "signals";
 
@@ -91,8 +91,8 @@ export function DCDashboard() {
         </div>
       )}
 
-      {/* Ripe banner — appears when subscribed strategies are imminent/firing */}
-      <DCRipeBanner signals={data.signals} onClickJumpToSignals={() => setTab("signals")} />
+      {/* Armed banner — appears when subscribed strategies are imminent/firing */}
+      <DCArmedBanner signals={data.signals} onClickJumpToSignals={() => setTab("signals")} />
 
       {/* Tab bar */}
       <div className="tab-bar" style={{ padding: "0 12px", marginTop: 8 }}>

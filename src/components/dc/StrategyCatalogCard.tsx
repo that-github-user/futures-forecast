@@ -24,7 +24,7 @@ interface Props {
 const FAMILY_LABELS: Record<string, string> = {
   long_dte: "Long DTE",
   short_dte: "Short DTE",
-  hybrid_fm: "Hybrid FM",
+  hybrid_fm: "Hybrid Fri-Mon",
 };
 
 const FAMILY_COLORS: Record<string, string> = {
@@ -168,23 +168,58 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
           style={{
             borderTop: "1px solid #1e293b",
             paddingTop: 8,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            display: "flex",
+            flexDirection: "column",
             gap: 6,
             fontSize: 11,
             fontFamily: "JetBrains Mono, monospace",
           }}
         >
-          <Stat label="Trades" value={`${stats.total_trades}`} />
-          <Stat
-            label="Win Rate"
-            value={stats.win_rate != null ? `${(stats.win_rate * 100).toFixed(0)}%` : "—"}
-          />
-          <Stat
-            label="P&L"
-            value={`${stats.total_pnl >= 0 ? "+" : ""}$${stats.total_pnl.toFixed(0)}`}
-            color={stats.total_pnl >= 0 ? "#10b981" : "#ef4444"}
-          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 6,
+            }}
+          >
+            <Stat label="Trades" value={`${stats.total_trades}`} />
+            <Stat
+              label="Win Rate"
+              value={stats.win_rate != null ? `${(stats.win_rate * 100).toFixed(0)}%` : "—"}
+            />
+            <Stat
+              label="P&L"
+              value={`${stats.total_pnl >= 0 ? "+" : ""}$${stats.total_pnl.toFixed(0)}`}
+              color={stats.total_pnl >= 0 ? "#10b981" : "#ef4444"}
+            />
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 6,
+            }}
+          >
+            <Stat
+              label="Avg P&L"
+              value={stats.avg_pnl != null ? `$${stats.avg_pnl.toFixed(2)}` : "—"}
+            />
+            <Stat label="D'Alembert" value={`${stats.current_mult.toFixed(1)}x`} />
+            <Stat
+              label="W / L"
+              value={`${stats.total_wins} / ${stats.total_losses}`}
+            />
+          </div>
+          {(stats.consecutive_wins > 0 || stats.consecutive_losses > 0) && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+              {stats.consecutive_wins > 0 && (
+                <span style={{ color: "#10b981" }}>{stats.consecutive_wins}W streak</span>
+              )}
+              {stats.consecutive_losses > 0 && (
+                <span style={{ color: "#ef4444" }}>{stats.consecutive_losses}L streak</span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
