@@ -9,6 +9,7 @@ import { DCPositionsTab } from "./DCPositionsTab";
 import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
 import { DCSignalsTab } from "./DCSignalsTab";
+import { DCArmedBanner } from "./DCArmedBanner";
 
 type DCTab = "positions" | "history" | "strategies" | "signals";
 
@@ -90,6 +91,9 @@ export function DCDashboard() {
         </div>
       )}
 
+      {/* Armed banner — appears when subscribed strategies are imminent/firing */}
+      <DCArmedBanner signals={data.signals} onClickJumpToSignals={() => setTab("signals")} />
+
       {/* Tab bar */}
       <div className="tab-bar" style={{ padding: "0 12px", marginTop: 8 }}>
         {TABS.map((t) => (
@@ -107,7 +111,7 @@ export function DCDashboard() {
       <div style={{ flex: 1, overflow: "auto", padding: "8px 12px" }}>
         {tab === "positions" && <DCPositionsTab positions={data.positions} risk={data.risk} />}
         {tab === "history" && <DCHistoryTab trades={data.trades} />}
-        {tab === "strategies" && <DCStrategiesTab strategies={data.strategies} />}
+        {tab === "strategies" && <DCStrategiesTab stats={data.strategies} signals={data.signals} />}
         {tab === "signals" && <DCSignalsTab signals={data.signals} />}
       </div>
     </div>

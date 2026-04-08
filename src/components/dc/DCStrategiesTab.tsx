@@ -1,72 +1,122 @@
-import type { DCStrategyStats } from "../../api/dcTypes";
+/**
+ * DCStrategiesTab — strategy catalog (browse + subscribe).
+ *
+ * Lists every DC strategy as a card with full specs and a subscribe
+ * checkbox. Subscribed strategies appear in the Signals tab as live
+ * monitors. Historical performance stats are shown in the card footer
+ * when available, but the primary purpose of this tab is for new viewers
+ * to discover the strategies and pick which ones to follow.
+ *
+ * Specs are fetched once via useStrategySpecs and cached in memory.
+ * Signals provide the current per-strategy state for the badge.
+ */
+
+import { useStrategySpecs } from "../../hooks/useStrategySpecs";
+import { useSubscriptions } from "../../hooks/useSubscriptions";
+import type { DCSignalsResponse, DCStrategyStats } from "../../api/dcTypes";
+import { StrategyCatalogCard } from "./StrategyCatalogCard";
 
 interface Props {
-  strategies: DCStrategyStats[];
+  stats: DCStrategyStats[];
+  signals: DCSignalsResponse | null;
 }
 
-export function DCStrategiesTab({ strategies }: Props) {
-  if (strategies.length === 0) {
+const FAMILY_ORDER = ["short_dte", "hybrid_fm", "long_dte"] as const;
+const FAMILY_HEADERS: Record<string, string> = {
+  short_dte: "Short DTE",
+  hybrid_fm: "Hybrid Fri-Mon",
+  long_dte: "Long DTE",
+};
+
+export function DCStrategiesTab({ stats, signals }: Props) {
+  const { specs, loading, error } = useStrategySpecs();
+  const subs = useSubscriptions();
+
+  if (loading) {
     return (
       <div className="fade-in" style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
-        No strategy data yet
+        Loading strategy catalog…
       </div>
     );
   }
 
-  return (
-    <div className="fade-in" style={{
-      display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10,
-    }}>
-      {strategies.map((s) => (
-        <div
-          key={s.strategy_name}
-          style={{
-            background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: 14,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", fontFamily: "Inter, sans-serif" }}>
-              {s.strategy_name}
-            </span>
-            <span style={{
-              fontSize: 11, fontFamily: "JetBrains Mono, monospace",
-              color: s.total_pnl >= 0 ? "#10b981" : "#ef4444",
-            }}>
-              ${s.total_pnl >= 0 ? "+" : ""}{s.total_pnl.toFixed(0)}
-            </span>
-          </div>
+  if (error || !specs) {
+    return (
+      <div className="fade-in" style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
+        Strategy catalog unavailable. Ensure the DC API is reachable.
+      </div>
+    );
+  }
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12 }}>
-            <StatLine label="Trades" value={`${s.total_trades}`} />
-            <StatLine label="Win Rate" value={s.win_rate != null ? `${(s.win_rate * 100).toFixed(1)}%` : "—"} />
-            <StatLine label="Avg P&L" value={s.avg_pnl != null ? `$${s.avg_pnl.toFixed(2)}` : "—"} />
-            <StatLine label="D'Alembert" value={`${s.current_mult.toFixed(1)}x`} />
-            <StatLine label="Wins" value={`${s.total_wins}`} color="#10b981" />
-            <StatLine label="Losses" value={`${s.total_losses}`} color="#ef4444" />
-          </div>
-
-          {/* Streak indicator */}
-          {(s.consecutive_wins > 0 || s.consecutive_losses > 0) && (
-            <div style={{ marginTop: 8, fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-              {s.consecutive_wins > 0 && (
-                <span style={{ color: "#10b981" }}>{s.consecutive_wins}W streak</span>
-              )}
-              {s.consecutive_losses > 0 && (
-                <span style={{ color: "#ef4444" }}>{s.consecutive_losses}L streak</span>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+  const statsByName = new Map(stats.map((s) => [s.strategy_name, s]));
+  const signalByName = new Map(
+    (signals?.signals ?? []).map((s) => [s.strategy_name, s.signal] as const),
   );
-}
 
-function StatLine({ label, value, color }: { label: string; value: string; color?: string }) {
+  const grouped = new Map<string, typeof specs>();
+  for (const spec of specs) {
+    const list = grouped.get(spec.family) ?? [];
+    list.push(spec);
+    grouped.set(spec.family, list);
+  }
+
   return (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
-      <span style={{ color: "#64748b", fontFamily: "Inter, sans-serif", fontSize: 11 }}>{label}</span>
-      <span style={{ color: color ?? "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}>{value}</span>
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Subscription summary */}
+      <div
+        style={{
+          background: "#0f172a",
+          border: "1px solid #1e293b",
+          borderRadius: 6,
+          padding: "8px 12px",
+          fontSize: 12,
+          color: "#94a3b8",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        Subscribed to <span style={{ color: "#3b82f6", fontWeight: 600 }}>{subs.count}</span> of{" "}
+        {specs.length} strategies. Subscribed strategies appear in the Signals tab as live monitors.
+      </div>
+
+      {FAMILY_ORDER.map((family) => {
+        const list = grouped.get(family);
+        if (!list || list.length === 0) return null;
+        return (
+          <section key={family} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                fontFamily: "Inter, sans-serif",
+              }}
+            >
+              {FAMILY_HEADERS[family]} ({list.length})
+            </h2>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {list.map((spec) => (
+                <StrategyCatalogCard
+                  key={spec.name}
+                  spec={spec}
+                  signal={signalByName.get(spec.name) ?? null}
+                  isSubscribed={subs.isSubscribed(spec.name)}
+                  onToggle={() => subs.toggle(spec.name)}
+                  stats={statsByName.get(spec.name) ?? null}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
