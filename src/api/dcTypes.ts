@@ -64,6 +64,8 @@ export interface DCSignalStatus {
   signal: string; // GO_PLUS, GO, READY, SKIP
   entry_days: number[];
   next_entry_times: string[];
+  sl_ratio: number | null;
+  sl_ratio_meets_min: boolean | null;
 }
 
 export interface DCFeatures {

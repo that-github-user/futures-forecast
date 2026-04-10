@@ -31,7 +31,10 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
     const signalByName = new Map<string, string>();
     for (const s of signals?.signals ?? []) signalByName.set(s.strategy_name, s.signal);
 
-    const out: Array<{ name: string; state: string; secondsUntilNext: number | null; nextHHMM: string | null; signal: string | null }> = [];
+    const slByName = new Map<string, number | null>();
+    for (const s of signals?.signals ?? []) slByName.set(s.strategy_name, s.sl_ratio ?? null);
+
+    const out: Array<{ name: string; state: string; secondsUntilNext: number | null; nextHHMM: string | null; signal: string | null; slRatio: number | null }> = [];
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
@@ -43,6 +46,7 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
           secondsUntilNext: info.secondsUntilNext,
           nextHHMM: info.nextEntryHHMM,
           signal,
+          slRatio: slByName.get(spec.name) ?? null,
         });
       }
     }
@@ -99,7 +103,8 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
                   : r.secondsUntilNext != null
                     ? `in ${formatCountdown(r.secondsUntilNext)}`
                     : "imminent";
-              return `${r.name} ${tail}`;
+              const sl = r.slRatio != null ? ` S/L:${r.slRatio.toFixed(2)}` : "";
+              return `${r.name} ${tail}${sl}`;
             })
             .join("  •  ")}
         </span>
