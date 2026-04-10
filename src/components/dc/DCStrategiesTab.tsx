@@ -62,20 +62,58 @@ export function DCStrategiesTab({ stats, signals }: Props) {
 
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Subscription summary */}
+      {/* Subscription controls */}
       <div
         style={{
           background: "#0f172a",
           border: "1px solid #1e293b",
           borderRadius: 6,
           padding: "8px 12px",
-          fontSize: 12,
-          color: "#94a3b8",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
           fontFamily: "Inter, sans-serif",
         }}
       >
-        Subscribed to <span style={{ color: "#3b82f6", fontWeight: 600 }}>{subs.count}</span> of{" "}
-        {specs.length} strategies. Subscribed strategies appear in the Signals tab as live monitors.
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          Subscribed to <span style={{ color: "#3b82f6", fontWeight: 600 }}>{subs.count}</span> of{" "}
+          {specs.length} strategies.
+        </span>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <SubButton
+            label="All"
+            onClick={() => subs.setAll(specs.map((s) => s.name))}
+            active={subs.count === specs.length}
+          />
+          {FAMILY_ORDER.map((family) => {
+            const familyNames = (grouped.get(family) ?? []).map((s) => s.name);
+            if (familyNames.length === 0) return null;
+            const allIn = familyNames.every((n) => subs.isSubscribed(n));
+            return (
+              <SubButton
+                key={family}
+                label={FAMILY_HEADERS[family]}
+                onClick={() => {
+                  if (allIn) {
+                    // Unsubscribe this group (keep others)
+                    const remaining = [...subs.subscribed].filter((n) => !familyNames.includes(n));
+                    subs.setAll(remaining);
+                  } else {
+                    // Add this group to existing subscriptions
+                    const merged = new Set([...subs.subscribed, ...familyNames]);
+                    subs.setAll([...merged]);
+                  }
+                }}
+                active={allIn}
+              />
+            );
+          })}
+          {subs.count > 0 && (
+            <SubButton label="Clear" onClick={() => subs.setAll([])} active={false} muted />
+          )}
+        </div>
       </div>
 
       {FAMILY_ORDER.map((family) => {
@@ -118,5 +156,39 @@ export function DCStrategiesTab({ stats, signals }: Props) {
         );
       })}
     </div>
+  );
+}
+
+function SubButton({
+  label,
+  onClick,
+  active,
+  muted,
+}: {
+  label: string;
+  onClick: () => void;
+  active: boolean;
+  muted?: boolean;
+}) {
+  const color = muted ? "#64748b" : active ? "#10b981" : "#3b82f6";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        color,
+        background: active ? color + "18" : "transparent",
+        border: `1px solid ${color}${active ? "60" : "40"}`,
+        borderRadius: 4,
+        padding: "3px 8px",
+        cursor: "pointer",
+        fontFamily: "Inter, sans-serif",
+        letterSpacing: 0.3,
+      }}
+    >
+      {active && !muted ? `${label} \u2713` : label}
+    </button>
   );
 }

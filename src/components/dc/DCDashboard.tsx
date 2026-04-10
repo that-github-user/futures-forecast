@@ -14,15 +14,15 @@ import { DCArmedBanner } from "./DCArmedBanner";
 type DCTab = "positions" | "history" | "strategies" | "signals";
 
 const TABS: { value: DCTab; label: string }[] = [
+  { value: "signals", label: "Signals" },
+  { value: "strategies", label: "Strategies" },
   { value: "positions", label: "Positions" },
   { value: "history", label: "History" },
-  { value: "strategies", label: "Strategies" },
-  { value: "signals", label: "Signals" },
 ];
 
 export function DCDashboard() {
   const data = useDCData();
-  const [tab, setTab] = useState<DCTab>("positions");
+  const [tab, setTab] = useState<DCTab>("signals");
 
   if (data.loading) {
     return (
