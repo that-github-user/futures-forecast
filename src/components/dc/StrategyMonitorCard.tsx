@@ -25,6 +25,8 @@ interface Props {
   spec: DCStrategySpec;
   signal: string | null;
   info: LifecycleInfo;
+  slRatio: number | null;
+  slRatioMeetsMin: boolean | null;
 }
 
 interface StyleSet {
@@ -110,7 +112,7 @@ const STATE_LABELS: Record<LifecycleState, string> = {
   closed: "CLOSED",
 };
 
-export function StrategyMonitorCard({ spec, signal, info }: Props) {
+export function StrategyMonitorCard({ spec, signal, info, slRatio, slRatioMeetsMin }: Props) {
   const style = STATE_STYLES[info.state];
 
   return (
@@ -163,6 +165,12 @@ export function StrategyMonitorCard({ spec, signal, info }: Props) {
       {/* Body: state-driven copy */}
       <BodyContent spec={spec} signal={signal} info={info} />
 
+      {/* S/L ratio — shown for active states where the ratio is decision-relevant */}
+      {(info.state === "primed" || info.state === "imminent" || info.state === "firing" ||
+        info.state === "recently_fired" || info.state === "not_fired_yet") && (
+        <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />
+      )}
+
       {/* Footer: entry days + times reference */}
       <div
         style={{
@@ -182,7 +190,7 @@ export function StrategyMonitorCard({ spec, signal, info }: Props) {
   );
 }
 
-function BodyContent({ spec, signal, info }: Props) {
+function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "info">) {
   switch (info.state) {
     case "inactive":
       return (
@@ -316,4 +324,48 @@ function Body({
 function formatSignal(signal: string | null): string {
   if (!signal) return "—";
   return signal.replace("_", "+");
+}
+
+function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: boolean | null }) {
+  if (slRatio == null) {
+    return (
+      <div style={{ fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: "#475569" }}>
+        S/L: --
+      </div>
+    );
+  }
+
+  let color: string;
+  let suffix = "";
+  if (meetsMin === true) {
+    color = "#10b981";
+    suffix = " PASS";
+  } else if (meetsMin === false) {
+    color = "#ef4444";
+    suffix = " FAIL";
+  } else {
+    color = "#94a3b8"; // no gate for this strategy
+  }
+
+  return (
+    <div style={{ fontSize: 12, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color }}>
+      S/L: {slRatio.toFixed(3)}
+      {suffix && (
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 700,
+            marginLeft: 6,
+            padding: "1px 5px",
+            borderRadius: 4,
+            background: color + "18",
+            border: `1px solid ${color}40`,
+            letterSpacing: 0.5,
+          }}
+        >
+          {suffix}
+        </span>
+      )}
+    </div>
+  );
 }

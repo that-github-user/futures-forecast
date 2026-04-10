@@ -51,17 +51,38 @@ export function DCSignalsTab({ signals }: Props) {
     return m;
   }, [signals]);
 
+  const slByName = useMemo(() => {
+    const m = new Map<string, { sl_ratio: number | null; sl_ratio_meets_min: boolean | null }>();
+    for (const s of signals?.signals ?? []) {
+      m.set(s.strategy_name, { sl_ratio: s.sl_ratio ?? null, sl_ratio_meets_min: s.sl_ratio_meets_min ?? null });
+    }
+    return m;
+  }, [signals]);
+
   const featuresStale = signals?.features_stale ?? true;
 
-  // Build the list of {spec, signal, info} for subscribed strategies only.
+  // Build the list of {spec, signal, info, sl} for subscribed strategies only.
   const monitors = useMemo(() => {
     if (!specs) return [];
-    const list: Array<{ spec: DCStrategySpec; signal: string | null; info: LifecycleInfo }> = [];
+    const list: Array<{
+      spec: DCStrategySpec;
+      signal: string | null;
+      info: LifecycleInfo;
+      slRatio: number | null;
+      slRatioMeetsMin: boolean | null;
+    }> = [];
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
       const info = deriveLifecycle(spec, signal, featuresStale, now);
-      list.push({ spec, signal, info });
+      const sl = slByName.get(spec.name);
+      list.push({
+        spec,
+        signal,
+        info,
+        slRatio: sl?.sl_ratio ?? null,
+        slRatioMeetsMin: sl?.sl_ratio_meets_min ?? null,
+      });
     }
     list.sort((a, b) => {
       const pa = STATE_PRIORITY[a.info.state];
@@ -70,7 +91,7 @@ export function DCSignalsTab({ signals }: Props) {
       return a.spec.name.localeCompare(b.spec.name);
     });
     return list;
-  }, [specs, subs, signalByName, featuresStale, now]);
+  }, [specs, subs, signalByName, slByName, featuresStale, now]);
 
   // Detect lifecycle transitions to fire notifications. The first effect run
   // after mount is treated as a "seed pass" — we record the current state of
@@ -158,8 +179,15 @@ export function DCSignalsTab({ signals }: Props) {
             gap: 10,
           }}
         >
-          {monitors.map(({ spec, signal, info }) => (
-            <StrategyMonitorCard key={spec.name} spec={spec} signal={signal} info={info} />
+          {monitors.map(({ spec, signal, info, slRatio, slRatioMeetsMin }) => (
+            <StrategyMonitorCard
+              key={spec.name}
+              spec={spec}
+              signal={signal}
+              info={info}
+              slRatio={slRatio}
+              slRatioMeetsMin={slRatioMeetsMin}
+            />
           ))}
         </div>
       )}
