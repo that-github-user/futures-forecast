@@ -91,7 +91,7 @@ export function DCSignalsTab({ signals }: Props) {
       return a.spec.name.localeCompare(b.spec.name);
     });
     return list;
-  }, [specs, subs, signalByName, featuresStale, now]);
+  }, [specs, subs, signalByName, slByName, featuresStale, now]);
 
   // Detect lifecycle transitions to fire notifications. The first effect run
   // after mount is treated as a "seed pass" — we record the current state of
