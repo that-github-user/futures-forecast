@@ -91,7 +91,7 @@ export function DCSignalsTab({ signals }: Props) {
       const signal = signalByName.get(spec.name) ?? null;
       const info = deriveLifecycle(spec, signal, featuresStale, now);
       // Start from the signals-derived bundle (may be missing if no data yet),
-      // then overlay the strategy spec's profit_target_pct for the PT display.
+      // then overlay the strategy spec's profit_target_pct for the TP display.
       const base = legDataByName.get(spec.name);
       const legData: LegData = {
         slRatio: base?.slRatio ?? null,

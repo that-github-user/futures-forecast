@@ -33,7 +33,7 @@ export interface LegData {
   netDebit: number | null;
   entryNetDebit: number | null;
   snapshot: DCSnapshotInfo | null;
-  profitTargetPct: number;  // from strategy spec — used to compute $ PT from net debit
+  profitTargetPct: number;  // from strategy spec — used to compute $ TP from net debit
 }
 
 interface Props {
@@ -513,7 +513,7 @@ function ProfitTargetLine({
   profitTargetPct: number;
 }) {
   // Debit DC profit = spread widening. Target close value = basis × (1 + pct).
-  // e.g. entry $11.90 + 40% PT → close at $16.66.
+  // e.g. entry $11.90 + 40% TP → close at $16.66.
   //
   // Pre-entry (potential): basis = current net debit (moves with prices). If a
   //   viewer were to enter RIGHT NOW at the live debit, this is the target
@@ -552,7 +552,7 @@ function ProfitTargetLine({
           fontFamily: "Inter, sans-serif",
         }}
       >
-        PT {pctLabel} close
+        TP {pctLabel} close
       </div>
       <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
         ${ptTarget.toFixed(2)}
