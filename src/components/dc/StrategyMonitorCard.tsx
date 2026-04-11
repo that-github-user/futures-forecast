@@ -33,6 +33,7 @@ export interface LegData {
   netDebit: number | null;
   entryNetDebit: number | null;
   snapshot: DCSnapshotInfo | null;
+  profitTargetPct: number;  // from strategy spec — used to compute $ PT from net debit
 }
 
 interface Props {
@@ -405,7 +406,7 @@ const LEG_LABELS: Record<LegName, string> = {
 };
 
 function LegDetailBlock({ legData }: { legData: LegData }) {
-  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin } = legData;
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct } = legData;
 
   // No leg data yet (worker hasn't polled or this strategy isn't eligible) — just show the S/L line.
   if (!legs) {
@@ -414,8 +415,13 @@ function LegDetailBlock({ legData }: { legData: LegData }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* Net debit header */}
+      {/* Net debit header + profit target line */}
       <NetDebitHeader netDebit={netDebit} entryNetDebit={entryNetDebit} snapshotTime={snapshot?.entry_time ?? null} />
+      <ProfitTargetLine
+        netDebit={netDebit}
+        entryNetDebit={entryNetDebit}
+        profitTargetPct={profitTargetPct}
+      />
 
       {/* Leg table */}
       <div
@@ -493,6 +499,74 @@ function NetDebitHeader({
           <span style={{ color: deltaColor, fontWeight: 700 }}>({deltaStr})</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProfitTargetLine({
+  netDebit,
+  entryNetDebit,
+  profitTargetPct,
+}: {
+  netDebit: number | null;
+  entryNetDebit: number | null;
+  profitTargetPct: number;
+}) {
+  // Pre-entry: potential PT = current debit × pct (moves with prices)
+  // Post-entry: locked PT = snapshot entry_debit × pct (what the daemon actually targets)
+  const entered = entryNetDebit != null;
+  const basisDebit = entered ? entryNetDebit : netDebit;
+
+  if (basisDebit == null) {
+    return null;
+  }
+
+  const ptDollars = basisDebit * profitTargetPct;
+  const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
+  const statusLabel = entered ? "locked" : "potential";
+  const statusColor = entered ? "#10b981" : "#94a3b8";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        gap: 10,
+        flexWrap: "wrap",
+        fontFamily: "JetBrains Mono, monospace",
+        marginTop: -4,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        PT @ {pctLabel}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
+        ${ptDollars.toFixed(2)}
+      </div>
+      <div
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          color: statusColor,
+          background: statusColor + "18",
+          border: `1px solid ${statusColor}40`,
+          padding: "1px 5px",
+          borderRadius: 4,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        {statusLabel}
+      </div>
     </div>
   );
 }

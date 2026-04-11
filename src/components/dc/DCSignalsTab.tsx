@@ -57,8 +57,11 @@ export function DCSignalsTab({ signals }: Props) {
     return m;
   }, [signals]);
 
+  // Signals-derived half of the per-strategy display bundle. The monitors loop
+  // below overlays the strategy spec's profit_target_pct to form the full LegData.
+  type LegDataBase = Omit<LegData, "profitTargetPct">;
   const legDataByName = useMemo(() => {
-    const m = new Map<string, LegData>();
+    const m = new Map<string, LegDataBase>();
     for (const s of signals?.signals ?? []) {
       m.set(s.strategy_name, {
         slRatio: s.sl_ratio ?? null,
@@ -87,13 +90,17 @@ export function DCSignalsTab({ signals }: Props) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
       const info = deriveLifecycle(spec, signal, featuresStale, now);
-      const legData: LegData = legDataByName.get(spec.name) ?? {
-        slRatio: null,
-        slRatioMeetsMin: null,
-        legs: null,
-        netDebit: null,
-        entryNetDebit: null,
-        snapshot: null,
+      // Start from the signals-derived bundle (may be missing if no data yet),
+      // then overlay the strategy spec's profit_target_pct for the PT display.
+      const base = legDataByName.get(spec.name);
+      const legData: LegData = {
+        slRatio: base?.slRatio ?? null,
+        slRatioMeetsMin: base?.slRatioMeetsMin ?? null,
+        legs: base?.legs ?? null,
+        netDebit: base?.netDebit ?? null,
+        entryNetDebit: base?.entryNetDebit ?? null,
+        snapshot: base?.snapshot ?? null,
+        profitTargetPct: spec.profit_target_pct,
       };
       list.push({ spec, signal, info, legData });
     }
