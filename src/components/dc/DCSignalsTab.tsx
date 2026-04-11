@@ -58,8 +58,9 @@ export function DCSignalsTab({ signals }: Props) {
   }, [signals]);
 
   // Signals-derived half of the per-strategy display bundle. The monitors loop
-  // below overlays the strategy spec's profit_target_pct to form the full LegData.
-  type LegDataBase = Omit<LegData, "profitTargetPct">;
+  // below overlays the spec-derived fields (profitTargetPct, usesSlRatio) to
+  // form the full LegData.
+  type LegDataBase = Omit<LegData, "profitTargetPct" | "usesSlRatio">;
   const legDataByName = useMemo(() => {
     const m = new Map<string, LegDataBase>();
     for (const s of signals?.signals ?? []) {
@@ -91,7 +92,8 @@ export function DCSignalsTab({ signals }: Props) {
       const signal = signalByName.get(spec.name) ?? null;
       const info = deriveLifecycle(spec, signal, featuresStale, now);
       // Start from the signals-derived bundle (may be missing if no data yet),
-      // then overlay the strategy spec's profit_target_pct for the TP display.
+      // then overlay per-strategy constants from the spec (profit target,
+      // whether the strategy actually uses S/L as a criterion).
       const base = legDataByName.get(spec.name);
       const legData: LegData = {
         slRatio: base?.slRatio ?? null,
@@ -101,6 +103,7 @@ export function DCSignalsTab({ signals }: Props) {
         entryNetDebit: base?.entryNetDebit ?? null,
         snapshot: base?.snapshot ?? null,
         profitTargetPct: spec.profit_target_pct,
+        usesSlRatio: spec.sl_ratio_min != null || spec.sl_ratio_exit != null,
       };
       list.push({ spec, signal, info, legData });
     }
