@@ -34,7 +34,7 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
     const slByName = new Map<string, number | null>();
     for (const s of signals?.signals ?? []) slByName.set(s.strategy_name, s.sl_ratio ?? null);
 
-    const out: Array<{ name: string; state: string; secondsUntilNext: number | null; nextHHMM: string | null; signal: string | null; slRatio: number | null }> = [];
+    const out: Array<{ name: string; state: string; secondsUntilNext: number | null; nextHHMM: string | null; signal: string | null; slRatio: number | null; usesSlRatio: boolean }> = [];
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
@@ -47,6 +47,7 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
           nextHHMM: info.nextEntryHHMM,
           signal,
           slRatio: slByName.get(spec.name) ?? null,
+          usesSlRatio: spec.sl_ratio_min != null || spec.sl_ratio_exit != null,
         });
       }
     }
@@ -103,7 +104,8 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
                   : r.secondsUntilNext != null
                     ? `in ${formatCountdown(r.secondsUntilNext)}`
                     : "imminent";
-              const sl = r.slRatio != null ? ` S/L:${r.slRatio.toFixed(2)}` : "";
+              // Only show S/L suffix when the strategy actually uses it as a criterion.
+              const sl = r.usesSlRatio && r.slRatio != null ? ` S/L:${r.slRatio.toFixed(2)}` : "";
               return `${r.name} ${tail}${sl}`;
             })
             .join("  •  ")}

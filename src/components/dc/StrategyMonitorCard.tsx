@@ -34,6 +34,7 @@ export interface LegData {
   entryNetDebit: number | null;
   snapshot: DCSnapshotInfo | null;
   profitTargetPct: number;  // from strategy spec — used to compute $ TP from net debit
+  usesSlRatio: boolean;     // true if the daemon gates entry or exit on S/L — hides ratio display when false
 }
 
 interface Props {
@@ -406,11 +407,12 @@ const LEG_LABELS: Record<LegName, string> = {
 };
 
 function LegDetailBlock({ legData }: { legData: LegData }) {
-  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct } = legData;
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio } = legData;
 
-  // No leg data yet (worker hasn't polled or this strategy isn't eligible) — just show the S/L line.
+  // No leg data yet (worker hasn't polled or this strategy isn't eligible).
+  // Fall back to just the S/L line for strategies that use it; otherwise render nothing.
   if (!legs) {
-    return <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />;
+    return usesSlRatio ? <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} /> : null;
   }
 
   return (
@@ -448,8 +450,8 @@ function LegDetailBlock({ legData }: { legData: LegData }) {
         })}
       </div>
 
-      {/* S/L footer (reuses the existing single-line component) */}
-      <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />
+      {/* S/L footer — suppressed for strategies that don't use S/L as an entry or exit criterion */}
+      {usesSlRatio && <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />}
     </div>
   );
 }
