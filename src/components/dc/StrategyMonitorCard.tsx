@@ -512,8 +512,14 @@ function ProfitTargetLine({
   entryNetDebit: number | null;
   profitTargetPct: number;
 }) {
-  // Pre-entry: potential PT = current debit × pct (moves with prices)
-  // Post-entry: locked PT = snapshot entry_debit × pct (what the daemon actually targets)
+  // Debit DC profit = spread widening. Target close value = basis × (1 + pct).
+  // e.g. entry $11.90 + 40% PT → close at $16.66.
+  //
+  // Pre-entry (potential): basis = current net debit (moves with prices). If a
+  //   viewer were to enter RIGHT NOW at the live debit, this is the target
+  //   close they'd watch for.
+  // Post-entry (locked): basis = snapshot entry_net_debit. This is the fixed
+  //   close target the daemon is watching for.
   const entered = entryNetDebit != null;
   const basisDebit = entered ? entryNetDebit : netDebit;
 
@@ -521,7 +527,7 @@ function ProfitTargetLine({
     return null;
   }
 
-  const ptDollars = basisDebit * profitTargetPct;
+  const ptTarget = basisDebit * (1 + profitTargetPct);
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
   const statusLabel = entered ? "locked" : "potential";
   const statusColor = entered ? "#10b981" : "#94a3b8";
@@ -546,10 +552,10 @@ function ProfitTargetLine({
           fontFamily: "Inter, sans-serif",
         }}
       >
-        PT @ {pctLabel}
+        PT {pctLabel} close
       </div>
       <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
-        ${ptDollars.toFixed(2)}
+        ${ptTarget.toFixed(2)}
       </div>
       <div
         style={{
