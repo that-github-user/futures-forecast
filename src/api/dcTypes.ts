@@ -59,6 +59,23 @@ export interface DCStrategyStats {
   consecutive_losses: number;
 }
 
+export interface DCLegDetail {
+  action: "STO" | "BTO";
+  strike: number;
+  expiry: string;              // YYYYMMDD
+  mid: number | null;
+  entry_mid: number | null;    // from snapshot
+}
+
+export interface DCSnapshotInfo {
+  captured_at: string;         // ISO datetime ET
+  entry_time: string;          // "HH:MM"
+  net_debit: number;
+  sl_ratio: number | null;
+}
+
+export type LegName = "front_put" | "front_call" | "back_put" | "back_call";
+
 export interface DCSignalStatus {
   strategy_name: string;
   signal: string; // GO_PLUS, GO, READY, SKIP
@@ -66,6 +83,10 @@ export interface DCSignalStatus {
   next_entry_times: string[];
   sl_ratio: number | null;
   sl_ratio_meets_min: boolean | null;
+  legs: Record<LegName, DCLegDetail> | null;
+  net_debit: number | null;
+  entry_net_debit: number | null;
+  snapshot: DCSnapshotInfo | null;
 }
 
 export interface DCFeatures {

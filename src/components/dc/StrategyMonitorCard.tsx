@@ -16,17 +16,30 @@
  *   closed            → fully faded, "Closed for the day"
  */
 
-import type { DCStrategySpec } from "../../api/dcTypes";
+import type {
+  DCLegDetail,
+  DCSnapshotInfo,
+  DCStrategySpec,
+  LegName,
+} from "../../api/dcTypes";
 import type { LifecycleInfo, LifecycleState } from "../../lib/dcLifecycle";
-import { dowName, formatCountdown, formatEntryDays } from "../../lib/dcLifecycle";
+import { dowName, formatCountdown, formatEntryDays, formatExpiry } from "../../lib/dcLifecycle";
 import { SignalBadge } from "./SignalBadge";
+
+export interface LegData {
+  slRatio: number | null;
+  slRatioMeetsMin: boolean | null;
+  legs: Record<LegName, DCLegDetail> | null;
+  netDebit: number | null;
+  entryNetDebit: number | null;
+  snapshot: DCSnapshotInfo | null;
+}
 
 interface Props {
   spec: DCStrategySpec;
   signal: string | null;
   info: LifecycleInfo;
-  slRatio: number | null;
-  slRatioMeetsMin: boolean | null;
+  legData: LegData;
 }
 
 interface StyleSet {
@@ -112,7 +125,7 @@ const STATE_LABELS: Record<LifecycleState, string> = {
   closed: "CLOSED",
 };
 
-export function StrategyMonitorCard({ spec, signal, info, slRatio, slRatioMeetsMin }: Props) {
+export function StrategyMonitorCard({ spec, signal, info, legData }: Props) {
   const style = STATE_STYLES[info.state];
 
   return (
@@ -165,11 +178,10 @@ export function StrategyMonitorCard({ spec, signal, info, slRatio, slRatioMeetsM
       {/* Body: state-driven copy */}
       <BodyContent spec={spec} signal={signal} info={info} />
 
-      {/* S/L ratio — shown for active states where the ratio is decision-relevant */}
-      {(info.state === "primed" || info.state === "imminent" || info.state === "firing" ||
-        info.state === "recently_fired" || info.state === "not_fired_yet") && (
-        <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />
-      )}
+      {/* Leg detail — net debit header + 4-leg table + S/L footer.
+          Shown for all active entry-day states (incl. passed_* so late-joiners
+          can still see snapshot drift after the entry time has passed). */}
+      {isActiveLifecycleState(info.state) && <LegDetailBlock legData={legData} />}
 
       {/* Footer: entry days + times reference */}
       <div
@@ -367,5 +379,191 @@ function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: 
         </span>
       )}
     </div>
+  );
+}
+
+const ACTIVE_STATES = new Set<LifecycleState>([
+  "primed",
+  "imminent",
+  "firing",
+  "recently_fired",
+  "not_fired_yet",
+  "passed_will_fire",
+  "passed_skipped",
+]);
+
+function isActiveLifecycleState(state: LifecycleState): boolean {
+  return ACTIVE_STATES.has(state);
+}
+
+const LEG_ORDER: LegName[] = ["front_put", "front_call", "back_put", "back_call"];
+const LEG_LABELS: Record<LegName, string> = {
+  front_put: "Front P",
+  front_call: "Front C",
+  back_put: "Back P",
+  back_call: "Back C",
+};
+
+function LegDetailBlock({ legData }: { legData: LegData }) {
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin } = legData;
+
+  // No leg data yet (worker hasn't polled or this strategy isn't eligible) — just show the S/L line.
+  if (!legs) {
+    return <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Net debit header */}
+      <NetDebitHeader netDebit={netDebit} entryNetDebit={entryNetDebit} snapshotTime={snapshot?.entry_time ?? null} />
+
+      {/* Leg table */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "auto auto 1fr 1fr 1fr",
+          gap: "3px 8px",
+          fontSize: 11,
+          fontFamily: "JetBrains Mono, monospace",
+          alignItems: "center",
+        }}
+      >
+        {/* Header row */}
+        <TableHeader text="Leg" align="left" />
+        <TableHeader text="Exp" align="left" />
+        <TableHeader text="Now" align="right" />
+        <TableHeader text="Entry" align="right" />
+        <TableHeader text="Δ" align="right" />
+
+        {LEG_ORDER.map((legName) => {
+          const leg = legs[legName];
+          return <LegRow key={legName} label={LEG_LABELS[legName]} leg={leg} />;
+        })}
+      </div>
+
+      {/* S/L footer (reuses the existing single-line component) */}
+      <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />
+    </div>
+  );
+}
+
+function NetDebitHeader({
+  netDebit,
+  entryNetDebit,
+  snapshotTime,
+}: {
+  netDebit: number | null;
+  entryNetDebit: number | null;
+  snapshotTime: string | null;
+}) {
+  if (netDebit == null) {
+    return (
+      <div style={{ fontSize: 12, color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>
+        Debit: --
+      </div>
+    );
+  }
+
+  const hasSnapshot = entryNetDebit != null;
+  const delta = hasSnapshot ? netDebit - entryNetDebit : null;
+  // Net debit: positive delta = more expensive → red. Negative delta = cheaper → green.
+  const deltaColor = delta == null ? "#94a3b8" : delta > 0 ? "#ef4444" : delta < 0 ? "#10b981" : "#94a3b8";
+  const deltaStr = delta == null ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        gap: 10,
+        flexWrap: "wrap",
+        fontFamily: "JetBrains Mono, monospace",
+      }}
+    >
+      <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "Inter, sans-serif" }}>
+        Net Debit
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>
+        ${netDebit.toFixed(2)}
+      </div>
+      {hasSnapshot && (
+        <div style={{ fontSize: 10, color: "#64748b", display: "flex", alignItems: "baseline", gap: 4 }}>
+          <span>entry {snapshotTime} ${entryNetDebit!.toFixed(2)}</span>
+          <span style={{ color: deltaColor, fontWeight: 700 }}>({deltaStr})</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TableHeader({ text, align }: { text: string; align: "left" | "right" }) {
+  return (
+    <div
+      style={{
+        fontSize: 9,
+        color: "#64748b",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        fontFamily: "Inter, sans-serif",
+        textAlign: align,
+        borderBottom: "1px solid #1e293b",
+        paddingBottom: 2,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
+  const actionColor = leg.action === "STO" ? "#10b981" : "#ef4444"; // green = credit side, red = debit side
+  const currentStr = leg.mid != null ? leg.mid.toFixed(2) : "--";
+  const entryStr = leg.entry_mid != null ? leg.entry_mid.toFixed(2) : "";
+  const hasBoth = leg.mid != null && leg.entry_mid != null;
+  const delta = hasBoth ? leg.mid! - leg.entry_mid! : null;
+
+  // STO legs: positive delta = more credit = BETTER → green
+  // BTO legs: positive delta = more debit = WORSE → red
+  let deltaColor = "#94a3b8";
+  let deltaStr = "";
+  if (delta != null) {
+    if (delta === 0) {
+      deltaColor = "#94a3b8";
+      deltaStr = "0.00";
+    } else if (leg.action === "STO") {
+      deltaColor = delta > 0 ? "#10b981" : "#ef4444";
+      deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+    } else {
+      deltaColor = delta > 0 ? "#ef4444" : "#10b981";
+      deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+    }
+  }
+
+  return (
+    <>
+      <div style={{ color: "#e2e8f0", display: "flex", alignItems: "center", gap: 4 }}>
+        <span>{label}</span>
+        <span
+          style={{
+            fontSize: 8,
+            fontWeight: 700,
+            color: actionColor,
+            padding: "1px 3px",
+            borderRadius: 2,
+            background: actionColor + "18",
+            letterSpacing: 0.3,
+          }}
+        >
+          {leg.action}
+        </span>
+        <span style={{ color: "#64748b" }}>{leg.strike}</span>
+      </div>
+      <div style={{ color: "#94a3b8", fontSize: 10 }}>{formatExpiry(leg.expiry)}</div>
+      <div style={{ color: leg.mid != null ? "#e2e8f0" : "#475569", textAlign: "right" }}>{currentStr}</div>
+      <div style={{ color: leg.entry_mid != null ? "#94a3b8" : "#475569", textAlign: "right" }}>
+        {entryStr || "—"}
+      </div>
+      <div style={{ color: deltaColor, textAlign: "right", fontWeight: 600 }}>{deltaStr}</div>
+    </>
   );
 }

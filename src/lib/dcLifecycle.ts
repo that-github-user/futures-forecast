@@ -360,3 +360,14 @@ export function formatEntryDays(days: number[]): string {
   if (days.length === 5 && [0, 1, 2, 3, 4].every((d) => days.includes(d))) return "Daily";
   return days.map(dowName).join(", ");
 }
+
+const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Format a YYYYMMDD IBKR expiry string as "Mon DD" (year dropped — we only trade short DTE). */
+export function formatExpiry(expiry: string): string {
+  if (!expiry || expiry.length !== 8) return expiry || "—";
+  const monthIdx = parseInt(expiry.slice(4, 6), 10) - 1;
+  const day = parseInt(expiry.slice(6, 8), 10);
+  if (monthIdx < 0 || monthIdx > 11 || !Number.isFinite(day)) return expiry;
+  return `${MONTH_ABBREV[monthIdx]} ${day}`;
+}

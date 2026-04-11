@@ -12,13 +12,19 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
-import type { DCSignalsResponse, DCStrategySpec } from "../../api/dcTypes";
+import type {
+  DCLegDetail,
+  DCSignalsResponse,
+  DCSnapshotInfo,
+  DCStrategySpec,
+  LegName,
+} from "../../api/dcTypes";
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useTick } from "../../hooks/useTick";
 import { deriveLifecycle, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
-import { StrategyMonitorCard } from "./StrategyMonitorCard";
+import { StrategyMonitorCard, type LegData } from "./StrategyMonitorCard";
 
 interface Props {
   signals: DCSignalsResponse | null;
@@ -51,38 +57,45 @@ export function DCSignalsTab({ signals }: Props) {
     return m;
   }, [signals]);
 
-  const slByName = useMemo(() => {
-    const m = new Map<string, { sl_ratio: number | null; sl_ratio_meets_min: boolean | null }>();
+  const legDataByName = useMemo(() => {
+    const m = new Map<string, LegData>();
     for (const s of signals?.signals ?? []) {
-      m.set(s.strategy_name, { sl_ratio: s.sl_ratio ?? null, sl_ratio_meets_min: s.sl_ratio_meets_min ?? null });
+      m.set(s.strategy_name, {
+        slRatio: s.sl_ratio ?? null,
+        slRatioMeetsMin: s.sl_ratio_meets_min ?? null,
+        legs: (s.legs ?? null) as Record<LegName, DCLegDetail> | null,
+        netDebit: s.net_debit ?? null,
+        entryNetDebit: s.entry_net_debit ?? null,
+        snapshot: (s.snapshot ?? null) as DCSnapshotInfo | null,
+      });
     }
     return m;
   }, [signals]);
 
   const featuresStale = signals?.features_stale ?? true;
 
-  // Build the list of {spec, signal, info, sl} for subscribed strategies only.
+  // Build the list of {spec, signal, info, legData} for subscribed strategies only.
   const monitors = useMemo(() => {
     if (!specs) return [];
     const list: Array<{
       spec: DCStrategySpec;
       signal: string | null;
       info: LifecycleInfo;
-      slRatio: number | null;
-      slRatioMeetsMin: boolean | null;
+      legData: LegData;
     }> = [];
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
       const info = deriveLifecycle(spec, signal, featuresStale, now);
-      const sl = slByName.get(spec.name);
-      list.push({
-        spec,
-        signal,
-        info,
-        slRatio: sl?.sl_ratio ?? null,
-        slRatioMeetsMin: sl?.sl_ratio_meets_min ?? null,
-      });
+      const legData: LegData = legDataByName.get(spec.name) ?? {
+        slRatio: null,
+        slRatioMeetsMin: null,
+        legs: null,
+        netDebit: null,
+        entryNetDebit: null,
+        snapshot: null,
+      };
+      list.push({ spec, signal, info, legData });
     }
     list.sort((a, b) => {
       const pa = STATE_PRIORITY[a.info.state];
@@ -91,7 +104,7 @@ export function DCSignalsTab({ signals }: Props) {
       return a.spec.name.localeCompare(b.spec.name);
     });
     return list;
-  }, [specs, subs, signalByName, slByName, featuresStale, now]);
+  }, [specs, subs, signalByName, legDataByName, featuresStale, now]);
 
   // Detect lifecycle transitions to fire notifications. The first effect run
   // after mount is treated as a "seed pass" — we record the current state of
@@ -179,14 +192,13 @@ export function DCSignalsTab({ signals }: Props) {
             gap: 10,
           }}
         >
-          {monitors.map(({ spec, signal, info, slRatio, slRatioMeetsMin }) => (
+          {monitors.map(({ spec, signal, info, legData }) => (
             <StrategyMonitorCard
               key={spec.name}
               spec={spec}
               signal={signal}
               info={info}
-              slRatio={slRatio}
-              slRatioMeetsMin={slRatioMeetsMin}
+              legData={legData}
             />
           ))}
         </div>
