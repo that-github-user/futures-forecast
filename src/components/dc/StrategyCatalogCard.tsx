@@ -105,7 +105,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
         }}
       >
         <SpecRow label="DTE" value={`${spec.front_dte} / ${spec.back_dte}`} />
-        <SpecRow label="PT" value={`${(spec.profit_target_pct * 100).toFixed(0)}%`} />
+        <SpecRow label="TP" value={`${(spec.profit_target_pct * 100).toFixed(0)}%`} />
         <SpecRow
           label="Δ Put / Call"
           value={
@@ -155,7 +155,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
             {spec.partial_close && (
               <div>
                 Close {(spec.partial_close.pct_of_position * 100).toFixed(0)}% at{" "}
-                {(spec.partial_close.at_pt_pct * 100).toFixed(0)}% PT
+                {(spec.partial_close.at_pt_pct * 100).toFixed(0)}% TP
               </div>
             )}
           </div>
