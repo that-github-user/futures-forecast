@@ -437,6 +437,7 @@ function LegDetailBlock({ legData }: { legData: LegData }) {
 
         {LEG_ORDER.map((legName) => {
           const leg = legs[legName];
+          if (!leg) return null; // defensive — backend currently always builds all 4
           return <LegRow key={legName} label={LEG_LABELS[legName]} leg={leg} />;
         })}
       </div>
