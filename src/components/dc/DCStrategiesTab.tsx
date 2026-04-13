@@ -21,11 +21,13 @@ interface Props {
   signals: DCSignalsResponse | null;
 }
 
-const FAMILY_ORDER = ["short_dte", "hybrid_fm", "long_dte"] as const;
+const FAMILY_ORDER = ["short_dte", "hybrid_fm", "long_dte", "spy_short_puts", "spy_straddles"] as const;
 const FAMILY_HEADERS: Record<string, string> = {
   short_dte: "Short DTE",
   hybrid_fm: "Hybrid Fri-Mon",
   long_dte: "Long DTE",
+  spy_short_puts: "SPY Short Puts",
+  spy_straddles: "SPY Straddles",
 };
 
 export function DCStrategiesTab({ stats, signals }: Props) {

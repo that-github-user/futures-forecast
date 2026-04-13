@@ -98,6 +98,7 @@ export interface DCFeatures {
   vix_close: number | null;
   vix_pctile: number | null;
   vol_regime: number | null;
+  vix_vix3m_ratio: number | null;
   feature_date: string | null;
 }
 

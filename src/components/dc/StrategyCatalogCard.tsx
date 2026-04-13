@@ -25,12 +25,16 @@ const FAMILY_LABELS: Record<string, string> = {
   long_dte: "Long DTE",
   short_dte: "Short DTE",
   hybrid_fm: "Hybrid Fri-Mon",
+  spy_short_puts: "SPY Short Puts",
+  spy_straddles: "SPY Straddles",
 };
 
 const FAMILY_COLORS: Record<string, string> = {
   long_dte: "#3b82f6",
   short_dte: "#a855f7",
   hybrid_fm: "#f59e0b",
+  spy_short_puts: "#06b6d4",  // cyan
+  spy_straddles: "#ec4899",   // pink
 };
 
 export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats }: Props) {
