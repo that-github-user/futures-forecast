@@ -270,6 +270,10 @@ export function DCSignalsTab({ signals }: Props) {
               label="Vol Regime"
               value={signals.features.vol_regime != null ? `R${signals.features.vol_regime}` : "—"}
             />
+            <FeatureCard
+              label="VIX/VIX3M"
+              value={signals.features.vix_vix3m_ratio != null ? signals.features.vix_vix3m_ratio.toFixed(3) : "—"}
+            />
           </div>
         </div>
       )}
