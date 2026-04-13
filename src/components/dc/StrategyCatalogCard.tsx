@@ -19,6 +19,8 @@ interface Props {
   isSubscribed: boolean;
   onToggle: () => void;
   stats: DCStrategyStats | null;
+  formatTime: (hhmmET: string | null) => string;
+  tzLabel: string;
 }
 
 const FAMILY_LABELS: Record<string, string> = {
@@ -37,7 +39,7 @@ const FAMILY_COLORS: Record<string, string> = {
   spy_straddles: "#ec4899",   // pink
 };
 
-export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats }: Props) {
+export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats, formatTime, tzLabel }: Props) {
   const familyLabel = FAMILY_LABELS[spec.family] ?? spec.family;
   const familyColor = FAMILY_COLORS[spec.family] ?? "#64748b";
 
@@ -121,7 +123,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
         <SpecRow label="S/L Min" value={spec.sl_ratio_min != null ? spec.sl_ratio_min.toFixed(2) : "—"} />
         <SpecRow label="Days" value={formatEntryDays(spec.entry_days)} />
         <SpecRow label="S/L Exit" value={spec.sl_ratio_exit != null ? spec.sl_ratio_exit.toFixed(2) : "—"} />
-        <SpecRow label="Times (ET)" value={spec.entry_times.join(", ")} fullWidth />
+        <SpecRow label={`Times (${tzLabel})`} value={spec.entry_times.map(formatTime).join(", ")} fullWidth />
         {spec.entry_window_end != null && (
           <SpecRow label="Window End" value={spec.entry_window_end} />
         )}
