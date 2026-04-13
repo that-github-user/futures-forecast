@@ -106,7 +106,7 @@ export function useTimezone(): TimezoneApi {
 
   const formatTime = useCallback(
     (hhmmET: string | null): string => {
-      if (!hhmmET || hhmmET.length < 4) return hhmmET ?? "—";
+      if (!hhmmET || hhmmET.length < 4) return "—";
       const parts = hhmmET.split(":");
       if (parts.length !== 2) return hhmmET;
       const h = parseInt(parts[0], 10);

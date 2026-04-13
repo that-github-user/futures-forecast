@@ -141,8 +141,8 @@ export function DCSignalsTab({ signals }: Props) {
         const { slRatio, slRatioMeetsMin, usesSlRatio } = legData;
         let slSuffix = "";
         if (usesSlRatio && slRatio != null) {
-          const gate = slRatioMeetsMin === true ? "PASS" : slRatioMeetsMin === false ? "FAIL" : "";
-          slSuffix = ` — S/L: ${slRatio.toFixed(3)} ${gate}`;
+          const gate = slRatioMeetsMin === true ? " PASS" : slRatioMeetsMin === false ? " FAIL" : "";
+          slSuffix = ` — S/L: ${slRatio.toFixed(3)}${gate}`;
         }
 
         if (next === "imminent") {
