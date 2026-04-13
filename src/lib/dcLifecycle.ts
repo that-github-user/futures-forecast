@@ -198,12 +198,21 @@ export function deriveLifecycle(
     }
 
     if (secondsOfDay <= winEnd) {
-      // Inside the window
+      // Inside the range window. The daemon can fire at any minute — but
+      // treating a 5-hour window as "imminent" misleads viewers. Use "primed"
+      // for the general within-window period and only escalate to "imminent"
+      // within 10 minutes of the window END (the actual deadline).
+      const timeToEnd = winEnd - secondsOfDay;
+      const windowState = !armedSignal
+        ? "not_fired_yet" as const
+        : timeToEnd <= IMMINENT_WINDOW_SECONDS
+          ? "imminent" as const
+          : "primed" as const;
       return baseInfo({
-        state: armedSignal ? "imminent" : "not_fired_yet",
+        state: windowState,
         windowKind,
         nextEntryHHMM: spec.entry_window_end,
-        secondsUntilNext: winEnd - secondsOfDay,
+        secondsUntilNext: timeToEnd,
         lastEntryHHMM: spec.entry_times[0],
         secondsSinceLast: secondsOfDay - winStart,
         isArmed: armedSignal,
