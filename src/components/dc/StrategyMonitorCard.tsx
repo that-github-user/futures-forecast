@@ -42,6 +42,8 @@ interface Props {
   signal: string | null;
   info: LifecycleInfo;
   legData: LegData;
+  formatTime: (hhmmET: string | null) => string;
+  tzLabel: string;
 }
 
 interface StyleSet {
@@ -127,8 +129,18 @@ const STATE_LABELS: Record<LifecycleState, string> = {
   closed: "CLOSED",
 };
 
-export function StrategyMonitorCard({ spec, signal, info, legData }: Props) {
-  const style = STATE_STYLES[info.state];
+export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, tzLabel }: Props) {
+  // When a strategy is imminent/firing but the S/L gate is FAILING, override
+  // the visual to show "GATE FAIL" instead of the urgent glow — the daemon
+  // won't actually enter if the gate fails, so the urgency is misleading.
+  const slGateFailing =
+    legData.usesSlRatio &&
+    legData.slRatioMeetsMin === false &&
+    (info.state === "imminent" || info.state === "firing");
+
+  const effectiveStyle = slGateFailing ? STATE_STYLES["not_fired_yet"] : STATE_STYLES[info.state];
+  const effectiveLabel = slGateFailing ? "GATE FAIL" : STATE_LABELS[info.state];
+  const style = effectiveStyle;
 
   return (
     <div
@@ -173,12 +185,12 @@ export function StrategyMonitorCard({ spec, signal, info, legData }: Props) {
             textTransform: "uppercase",
           }}
         >
-          {STATE_LABELS[info.state]}
+          {effectiveLabel}
         </span>
       </div>
 
       {/* Body: state-driven copy */}
-      <BodyContent spec={spec} signal={signal} info={info} />
+      <BodyContent spec={spec} signal={signal} info={info} formatTime={formatTime} tzLabel={tzLabel} />
 
       {/* Leg detail — net debit header + 4-leg table + S/L footer.
           Shown for all active entry-day states (incl. passed_* so late-joiners
@@ -198,13 +210,13 @@ export function StrategyMonitorCard({ spec, signal, info, legData }: Props) {
         }}
       >
         <span>{formatEntryDays(spec.entry_days)}</span>
-        <span>{spec.entry_times.join(", ")} ET</span>
+        <span>{spec.entry_times.map(formatTime).join(", ")} {tzLabel}</span>
       </div>
     </div>
   );
 }
 
-function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "info">) {
+function BodyContent({ spec, signal, info, formatTime, tzLabel }: Pick<Props, "spec" | "signal" | "info" | "formatTime" | "tzLabel">) {
   switch (info.state) {
     case "inactive":
       return (
@@ -223,7 +235,7 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
     case "primed":
       return (
         <Body
-          headline={info.nextEntryHHMM ? `Fires at ${info.nextEntryHHMM} ET` : "Fires today"}
+          headline={info.nextEntryHHMM ? `Fires at ${formatTime(info.nextEntryHHMM)} ${tzLabel}` : "Fires today"}
           subline={
             info.secondsUntilNext != null ? `in ${formatCountdown(info.secondsUntilNext)}` : ""
           }
@@ -233,7 +245,7 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
     case "imminent":
       return (
         <Body
-          headline={info.nextEntryHHMM ? `FIRES AT ${info.nextEntryHHMM} ET` : "FIRES IMMINENTLY"}
+          headline={info.nextEntryHHMM ? `FIRES AT ${formatTime(info.nextEntryHHMM)} ${tzLabel}` : "FIRES IMMINENTLY"}
           subline={
             info.secondsUntilNext != null ? formatCountdown(info.secondsUntilNext) : ""
           }
@@ -242,12 +254,12 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
         />
       );
     case "firing":
-      return <Body headline="FIRING NOW" subline={info.nextEntryHHMM ?? info.lastEntryHHMM ?? ""} accent="#10b981" large />;
+      return <Body headline="FIRING NOW" subline={formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)} accent="#10b981" large />;
     case "recently_fired":
       return (
         <Body
           headline={
-            info.lastEntryHHMM ? `Just fired at ${info.lastEntryHHMM} ET` : "Just fired"
+            info.lastEntryHHMM ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Just fired"
           }
           subline={
             info.secondsSinceLast != null
@@ -263,7 +275,7 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
           headline="Should have entered earlier"
           subline={
             info.lastEntryHHMM
-              ? `Signal was ${formatSignal(signal)} at ${info.lastEntryHHMM} ET`
+              ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
               : `Signal was ${formatSignal(signal)} at fire time`
           }
           accent="#10b981"
@@ -275,7 +287,7 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
           headline="No fire today"
           subline={
             info.lastEntryHHMM
-              ? `Signal was ${formatSignal(signal)} at ${info.lastEntryHHMM} ET`
+              ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
               : `Signal was ${formatSignal(signal)} at fire time`
           }
         />
@@ -286,7 +298,7 @@ function BodyContent({ spec, signal, info }: Pick<Props, "spec" | "signal" | "in
           headline={`Watching — currently ${formatSignal(signal)}`}
           subline={
             info.nextEntryHHMM && info.secondsUntilNext != null
-              ? `Next check: ${info.nextEntryHHMM} ET (${formatCountdown(info.secondsUntilNext)})`
+              ? `Next check: ${formatTime(info.nextEntryHHMM)} ${tzLabel} (${formatCountdown(info.secondsUntilNext)})`
               : "Awaiting next entry window"
           }
         />
@@ -624,7 +636,7 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
 
   return (
     <>
-      <div style={{ color: "#e2e8f0", display: "flex", alignItems: "center", gap: 4 }}>
+      <div style={{ color: "#e2e8f0", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
         <span>{label}</span>
         <span
           style={{

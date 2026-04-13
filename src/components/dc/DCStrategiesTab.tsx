@@ -13,6 +13,7 @@
 
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
+import { useTimezone } from "../../hooks/useTimezone";
 import type { DCSignalsResponse, DCStrategyStats } from "../../api/dcTypes";
 import { StrategyCatalogCard } from "./StrategyCatalogCard";
 
@@ -33,6 +34,7 @@ const FAMILY_HEADERS: Record<string, string> = {
 export function DCStrategiesTab({ stats, signals }: Props) {
   const { specs, loading, error } = useStrategySpecs();
   const subs = useSubscriptions();
+  const { formatTime, tzLabel } = useTimezone();
 
   if (loading) {
     return (
@@ -151,6 +153,8 @@ export function DCStrategiesTab({ stats, signals }: Props) {
                   isSubscribed={subs.isSubscribed(spec.name)}
                   onToggle={() => subs.toggle(spec.name)}
                   stats={statsByName.get(spec.name) ?? null}
+                  formatTime={formatTime}
+                  tzLabel={tzLabel}
                 />
               ))}
             </div>

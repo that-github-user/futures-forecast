@@ -23,6 +23,7 @@ import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useTick } from "../../hooks/useTick";
+import { useTimezone, type TZOption } from "../../hooks/useTimezone";
 import { deriveLifecycle, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
 import { StrategyMonitorCard, type LegData } from "./StrategyMonitorCard";
 
@@ -49,6 +50,7 @@ export function DCSignalsTab({ signals }: Props) {
   const subs = useSubscriptions();
   const notifications = useNotifications();
   const nowMs = useTick(1000);
+  const timezone = useTimezone();
   const now = useMemo(() => new Date(nowMs), [nowMs]);
 
   const signalByName = useMemo(() => {
@@ -130,20 +132,29 @@ export function DCSignalsTab({ signals }: Props) {
       seededRef.current = true;
       return;
     }
-    for (const { spec, info } of monitors) {
+    for (const { spec, info, legData } of monitors) {
       const prev = last.get(spec.name);
       const next = info.state;
       if (prev !== next) {
+        // Build S/L gate suffix for the notification body so group members
+        // know whether the entry criteria are actually passing or failing.
+        const { slRatio, slRatioMeetsMin, usesSlRatio } = legData;
+        let slSuffix = "";
+        if (usesSlRatio && slRatio != null) {
+          const gate = slRatioMeetsMin === true ? "PASS" : slRatioMeetsMin === false ? "FAIL" : "";
+          slSuffix = ` — S/L: ${slRatio.toFixed(3)} ${gate}`;
+        }
+
         if (next === "imminent") {
           const key = `${spec.name}|${info.nextEntryHHMM ?? ""}|imminent`;
           notifications.notify(
             key,
             `${spec.name} is imminent`,
-            `Fires at ${info.nextEntryHHMM ?? "—"} ET`,
+            `Fires at ${info.nextEntryHHMM ?? "—"} ET${slSuffix}`,
           );
         } else if (next === "firing") {
           const key = `${spec.name}|${info.nextEntryHHMM ?? info.lastEntryHHMM ?? ""}|firing`;
-          notifications.notify(key, `${spec.name} is firing now`);
+          notifications.notify(key, `${spec.name} is firing now`, slSuffix ? slSuffix.slice(3) : undefined);
         }
         last.set(spec.name, next);
       }
@@ -179,10 +190,13 @@ export function DCSignalsTab({ signals }: Props) {
           Monitoring{" "}
           <span style={{ color: "#3b82f6", fontWeight: 600 }}>{monitors.length}</span> strategies
         </span>
-        <NotificationControl
-          permission={notifications.permission}
-          onRequest={notifications.requestPermission}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <TimezoneSelector tz={timezone.tz} setTz={timezone.setTz} />
+          <NotificationControl
+            permission={notifications.permission}
+            onRequest={notifications.requestPermission}
+          />
+        </div>
       </div>
 
       {/* Monitor cards */}
@@ -209,6 +223,8 @@ export function DCSignalsTab({ signals }: Props) {
               signal={signal}
               info={info}
               legData={legData}
+              formatTime={timezone.formatTime}
+              tzLabel={timezone.tzLabel}
             />
           ))}
         </div>
@@ -278,6 +294,34 @@ export function DCSignalsTab({ signals }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+const TZ_OPTIONS: TZOption[] = ["ET", "CT", "MT", "PT", "local"];
+
+function TimezoneSelector({ tz, setTz }: { tz: TZOption; setTz: (t: TZOption) => void }) {
+  return (
+    <select
+      value={tz}
+      onChange={(e) => setTz(e.target.value as TZOption)}
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        fontFamily: "Inter, sans-serif",
+        color: "#94a3b8",
+        background: "#1e293b",
+        border: "1px solid #334155",
+        borderRadius: 4,
+        padding: "3px 6px",
+        cursor: "pointer",
+      }}
+    >
+      {TZ_OPTIONS.map((o) => (
+        <option key={o} value={o}>
+          {o === "local" ? "Local" : o}
+        </option>
+      ))}
+    </select>
   );
 }
 
