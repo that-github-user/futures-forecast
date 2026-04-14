@@ -267,12 +267,15 @@ export function deriveLifecycle(
   const nextHHMM = nextSec != null ? secondsToHHMM(nextSec) : null;
 
   // Check "just fired" first — a recently passed entry takes precedence
-  // over a far-future next entry on multi-time strategies.
+  // over a far-future next entry on multi-time strategies. SKIP-signal
+  // strategies never enter "firing" or "recently_fired" states — those
+  // imply actual entry. Use passed_skipped so the card shows "NO FIRE"
+  // instead of "FIRING NOW" (which would fire a misleading notification).
   if (lastSec != null) {
     const secondsSince = secondsOfDay - lastSec;
     if (secondsSince <= FIRING_WINDOW_SECONDS) {
       return baseInfo({ ...todayBase,
-        state: "firing",
+        state: armedSignal ? "firing" : "passed_skipped",
         windowKind,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: secondsSince,
@@ -284,7 +287,7 @@ export function deriveLifecycle(
     }
     if (secondsSince <= IMMINENT_WINDOW_SECONDS) {
       return baseInfo({ ...todayBase,
-        state: "recently_fired",
+        state: armedSignal ? "recently_fired" : "passed_skipped",
         windowKind,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: secondsSince,
@@ -300,8 +303,9 @@ export function deriveLifecycle(
   if (nextSec != null) {
     const delta = nextSec - secondsOfDay;
     if (delta <= FIRING_WINDOW_SECONDS) {
+      // Same gate as above: SKIP-signal strategies don't fire.
       return baseInfo({ ...todayBase,
-        state: "firing",
+        state: armedSignal ? "firing" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
         secondsUntilNext: delta,
