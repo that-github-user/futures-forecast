@@ -54,6 +54,9 @@ export interface LifecycleInfo {
   isArmed: boolean;
   /** Whether the strategy fires today at all (entry day && ≥1 GO/GO+ window). */
   firesToday: boolean;
+  /** Next entry day-of-week (Python convention: 0=Mon..6=Sun). For active states = today.
+   *  For inactive/closed = the next matching weekday from spec.entry_days. Used for sort. */
+  nextEntryDow: number;
 }
 
 const RTH_CLOSE_SECONDS = 16 * 3600; // 16:00 ET
@@ -144,18 +147,25 @@ export function deriveLifecycle(
       windowKind,
       isArmed: false,
       firesToday: false,
+      nextEntryDow: nextEntryDowFrom(spec.entry_days, pythonDow),
     });
   }
 
   // After RTH close on an entry day: nothing more to anticipate today.
+  // Next entry = next matching weekday after today (may be next week).
   if (secondsOfDay >= RTH_CLOSE_SECONDS) {
     return baseInfo({
       state: "closed",
       windowKind,
+      nextEntryDow: nextEntryDowFrom(spec.entry_days, pythonDow),
       isArmed: false,
       firesToday: false,
     });
   }
+
+  // All states below are on an entry day → nextEntryDow is today.
+  // Override the baseInfo default for every subsequent return.
+  const todayBase = { nextEntryDow: pythonDow };
 
   if (featuresStale) {
     return baseInfo({
@@ -163,6 +173,7 @@ export function deriveLifecycle(
       windowKind,
       isArmed: false,
       firesToday: false,
+      ...todayBase,
     });
   }
 
@@ -178,7 +189,7 @@ export function deriveLifecycle(
       const delta = winStart - secondsOfDay;
       const nextHHMM = spec.entry_times[0];
       if (delta <= IMMINENT_WINDOW_SECONDS) {
-        return baseInfo({
+        return baseInfo({ ...todayBase,
           state: armedSignal ? "imminent" : "not_fired_yet",
           windowKind,
           nextEntryHHMM: nextHHMM,
@@ -187,7 +198,7 @@ export function deriveLifecycle(
           firesToday: armedSignal,
         });
       }
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: armedSignal ? "primed" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
@@ -208,7 +219,7 @@ export function deriveLifecycle(
         : timeToEnd <= IMMINENT_WINDOW_SECONDS
           ? "imminent" as const
           : "primed" as const;
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: windowState,
         windowKind,
         nextEntryHHMM: spec.entry_window_end,
@@ -223,7 +234,7 @@ export function deriveLifecycle(
     // Past the window end
     const sinceWindow = secondsOfDay - winEnd;
     if (sinceWindow <= IMMINENT_WINDOW_SECONDS && armedSignal) {
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: "recently_fired",
         windowKind,
         lastEntryHHMM: spec.entry_window_end,
@@ -232,7 +243,7 @@ export function deriveLifecycle(
         firesToday: armedSignal,
       });
     }
-    return baseInfo({
+    return baseInfo({ ...todayBase,
       state: armedSignal ? "passed_will_fire" : "passed_skipped",
       windowKind,
       lastEntryHHMM: spec.entry_window_end,
@@ -260,7 +271,7 @@ export function deriveLifecycle(
   if (lastSec != null) {
     const secondsSince = secondsOfDay - lastSec;
     if (secondsSince <= FIRING_WINDOW_SECONDS) {
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: "firing",
         windowKind,
         lastEntryHHMM: lastHHMM,
@@ -272,7 +283,7 @@ export function deriveLifecycle(
       });
     }
     if (secondsSince <= IMMINENT_WINDOW_SECONDS) {
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: "recently_fired",
         windowKind,
         lastEntryHHMM: lastHHMM,
@@ -289,7 +300,7 @@ export function deriveLifecycle(
   if (nextSec != null) {
     const delta = nextSec - secondsOfDay;
     if (delta <= FIRING_WINDOW_SECONDS) {
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: "firing",
         windowKind,
         nextEntryHHMM: nextHHMM,
@@ -301,7 +312,7 @@ export function deriveLifecycle(
       });
     }
     if (delta <= IMMINENT_WINDOW_SECONDS) {
-      return baseInfo({
+      return baseInfo({ ...todayBase,
         state: armedSignal ? "imminent" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
@@ -312,7 +323,7 @@ export function deriveLifecycle(
         firesToday: armedSignal,
       });
     }
-    return baseInfo({
+    return baseInfo({ ...todayBase,
       state: armedSignal ? "primed" : "not_fired_yet",
       windowKind,
       nextEntryHHMM: nextHHMM,
@@ -326,7 +337,7 @@ export function deriveLifecycle(
 
   // All discrete entries have passed and we're more than 10min past the
   // last one (otherwise the recently_fired branch above would have caught it).
-  return baseInfo({
+  return baseInfo({ ...todayBase,
     state: armedSignal ? "passed_will_fire" : "passed_skipped",
     windowKind,
     lastEntryHHMM: lastHHMM,
@@ -336,7 +347,7 @@ export function deriveLifecycle(
   });
 }
 
-function baseInfo(partial: Partial<LifecycleInfo> & { state: LifecycleState; windowKind: WindowKind }): LifecycleInfo {
+function baseInfo(partial: Partial<LifecycleInfo> & { state: LifecycleState; windowKind: WindowKind; nextEntryDow: number }): LifecycleInfo {
   return {
     nextEntryHHMM: null,
     lastEntryHHMM: null,
@@ -346,6 +357,27 @@ function baseInfo(partial: Partial<LifecycleInfo> & { state: LifecycleState; win
     firesToday: false,
     ...partial,
   };
+}
+
+/** Days from `currentDow` until `targetDow` (1-7, wraps at week boundary). */
+export function daysUntilDow(currentDow: number, targetDow: number): number {
+  const diff = targetDow - currentDow;
+  return diff > 0 ? diff : diff + 7;
+}
+
+/** Compute the nearest entry day-of-week from spec.entry_days after currentDow. */
+function nextEntryDowFrom(entryDays: number[], currentDow: number): number {
+  if (entryDays.length === 0) return currentDow;
+  let best = entryDays[0];
+  let bestDist = daysUntilDow(currentDow, entryDays[0]);
+  for (let i = 1; i < entryDays.length; i++) {
+    const d = daysUntilDow(currentDow, entryDays[i]);
+    if (d < bestDist) {
+      bestDist = d;
+      best = entryDays[i];
+    }
+  }
+  return best;
 }
 
 /** Format a duration in seconds as "1h 23m" / "5m 12s" / "23s". */
