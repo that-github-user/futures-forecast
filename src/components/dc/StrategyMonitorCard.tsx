@@ -130,16 +130,18 @@ const STATE_LABELS: Record<LifecycleState, string> = {
 };
 
 export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, tzLabel }: Props) {
-  // When a strategy is imminent/firing but the S/L gate is FAILING, override
-  // the visual to show "GATE FAIL" instead of the urgent glow — the daemon
-  // won't actually enter if the gate fails, so the urgency is misleading.
+  // When the S/L gate is FAILING, override the visual so viewers don't think
+  // the daemon entered. Before entry: "GATE FAIL". After entry: "SKIPPED".
   const slGateFailing =
     legData.usesSlRatio &&
     legData.slRatioMeetsMin === false &&
-    (info.state === "imminent" || info.state === "firing");
+    (info.state === "imminent" || info.state === "firing" ||
+     info.state === "recently_fired" || info.state === "passed_will_fire");
 
   const effectiveStyle = slGateFailing ? STATE_STYLES["not_fired_yet"] : STATE_STYLES[info.state];
-  const effectiveLabel = slGateFailing ? "GATE FAIL" : STATE_LABELS[info.state];
+  const effectiveLabel = slGateFailing
+    ? (info.state === "recently_fired" || info.state === "passed_will_fire") ? "SKIPPED" : "GATE FAIL"
+    : STATE_LABELS[info.state];
   const style = effectiveStyle;
 
   return (
@@ -190,7 +192,7 @@ export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, t
       </div>
 
       {/* Body: state-driven copy */}
-      <BodyContent spec={spec} signal={signal} info={info} formatTime={formatTime} tzLabel={tzLabel} />
+      <BodyContent spec={spec} signal={signal} info={info} formatTime={formatTime} tzLabel={tzLabel} gateSkipped={slGateFailing} />
 
       {/* Leg detail — net debit header + 4-leg table + S/L footer.
           Shown for all active entry-day states (incl. passed_* so late-joiners
@@ -216,7 +218,7 @@ export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, t
   );
 }
 
-function BodyContent({ spec, signal, info, formatTime, tzLabel }: Pick<Props, "spec" | "signal" | "info" | "formatTime" | "tzLabel">) {
+function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: Pick<Props, "spec" | "signal" | "info" | "formatTime" | "tzLabel"> & { gateSkipped: boolean }) {
   switch (info.state) {
     case "inactive":
       return (
@@ -256,7 +258,13 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel }: Pick<Props, "s
     case "firing":
       return <Body headline="FIRING NOW" subline={formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)} accent="#10b981" large />;
     case "recently_fired":
-      return (
+      return gateSkipped ? (
+        <Body
+          headline={info.lastEntryHHMM ? `Skipped at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Skipped"}
+          subline="S/L gate failed — daemon did not enter"
+          accent="#ef4444"
+        />
+      ) : (
         <Body
           headline={
             info.lastEntryHHMM ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Just fired"
@@ -270,7 +278,17 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel }: Pick<Props, "s
         />
       );
     case "passed_will_fire":
-      return (
+      return gateSkipped ? (
+        <Body
+          headline="Skipped — S/L gate failed"
+          subline={
+            info.lastEntryHHMM
+              ? `Entry was at ${formatTime(info.lastEntryHHMM)} ${tzLabel} but gate was not met`
+              : "S/L gate was not met at entry time"
+          }
+          accent="#ef4444"
+        />
+      ) : (
         <Body
           headline="Should have entered earlier"
           subline={

@@ -24,7 +24,7 @@ import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useTick } from "../../hooks/useTick";
 import { useTimezone, type TZOption } from "../../hooks/useTimezone";
-import { deriveLifecycle, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
+import { deriveLifecycle, daysUntilDow, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
 import { StrategyMonitorCard, type LegData } from "./StrategyMonitorCard";
 
 interface Props {
@@ -109,10 +109,28 @@ export function DCSignalsTab({ signals }: Props) {
       };
       list.push({ spec, signal, info, legData });
     }
+    // Sort: state priority → days until next entry → first entry time → name.
+    // This ensures that after close, tomorrow's strategies sort above later days.
+    const etParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+    }).formatToParts(new Date(nowMs));
+    const weekdayStr = etParts.find((p) => p.type === "weekday")?.value ?? "Mon";
+    const DOW_MAP: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+    const currentDow = DOW_MAP[weekdayStr] ?? 0;
+
     list.sort((a, b) => {
       const pa = STATE_PRIORITY[a.info.state];
       const pb = STATE_PRIORITY[b.info.state];
       if (pa !== pb) return pa - pb;
+      // Days until next entry (0 for active-today strategies, 1-7 for inactive/closed)
+      const da = a.info.nextEntryDow === currentDow ? 0 : daysUntilDow(currentDow, a.info.nextEntryDow);
+      const db = b.info.nextEntryDow === currentDow ? 0 : daysUntilDow(currentDow, b.info.nextEntryDow);
+      if (da !== db) return da - db;
+      // Within the same day: earlier entry time first
+      const ta = a.spec.entry_times[0] ?? "";
+      const tb = b.spec.entry_times[0] ?? "";
+      if (ta !== tb) return ta.localeCompare(tb);
       return a.spec.name.localeCompare(b.spec.name);
     });
     return list;
