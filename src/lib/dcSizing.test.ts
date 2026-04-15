@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DCAllocationPolicy, DCPosition, DCStrategySpec } from "../api/dcTypes";
-import { computeSuggestedContracts, SPX_MULTIPLIER } from "./dcSizing";
+import { computeSuggestedContracts, roundHalfToEven, SPX_MULTIPLIER } from "./dcSizing";
 import fixture from "./__fixtures__/sizing_parity.json";
 
 interface FixtureCase {
@@ -147,3 +147,163 @@ describe("dcSizing parity with vega-pilot daemon", () => {
     expect(result.stratUsed).toBeCloseTo(c.expected.strat_used, 6);
   });
 });
+
+describe("roundHalfToEven — matches Python round()", () => {
+  it.each([
+    [0.5, 0],
+    [1.5, 2],
+    [2.5, 2],
+    [3.5, 4],
+    [4.5, 4],
+    [10.5, 10],
+    [-0.5, 0],
+    [-1.5, -2],
+    [-2.5, -2],
+    // Non-halves should agree with Math.round
+    [1.4, 1],
+    [1.6, 2],
+    [-1.4, -1],
+    [-1.6, -2],
+    // Exact integers pass through
+    [0, 0],
+    [7, 7],
+    [-3, -3],
+  ])("round(%f) === %i", (input, expected) => {
+    expect(roundHalfToEven(input)).toBe(expected);
+  });
+});
+
+describe("computeSuggestedContracts — defensive edge cases", () => {
+  const basePolicy: DCAllocationPolicy = {
+    key: "rec_60_10",
+    name: "",
+    description: "",
+    base_pct: 5,
+    dal_cap: 2,
+    go_plus_mult: 1.5,
+    global_pct: 60,
+    per_strat_pct: 10,
+    hard_cap: 50,
+    copeland_mode: "aggressive",
+    recommended: true,
+    backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 3.8, trades_skipped: 0 },
+    monte_carlo: null,
+  };
+  const baseSpec: DCStrategySpec = {
+    name: "TEST",
+    family: "short_dte",
+    avg_margin: 870,
+    front_dte: 2,
+    back_dte: 3,
+    put_delta: 25,
+    call_delta: 25,
+    is_asymmetric: false,
+    entry_days: [0],
+    entry_times: ["12:00"],
+    sl_ratio_min: null,
+    vix_min: null,
+    profit_target_pct: 0.3,
+    exit_time: "15:30",
+    sl_ratio_exit: null,
+    max_dit: null,
+    delta_exits: [],
+    tested_exits: [],
+    partial_close: null,
+    entry_window_end: null,
+  };
+
+  it("returns 0 when portfolioSize is 0", () => {
+    const r = computeSuggestedContracts({
+      spec: baseSpec,
+      signal: "GO",
+      portfolioSize: 0,
+      policy: basePolicy,
+      currentDalMult: 1,
+      openPositions: [],
+      marginPerContract: 870,
+    });
+    expect(r.finalContracts).toBe(0);
+    expect(r.reasonIfZero).not.toBeNull();
+  });
+
+  it("returns 0 when avg_margin is null", () => {
+    const r = computeSuggestedContracts({
+      spec: { ...baseSpec, avg_margin: null },
+      signal: "GO",
+      portfolioSize: 100_000,
+      policy: basePolicy,
+      currentDalMult: 1,
+      openPositions: [],
+      marginPerContract: null,
+    });
+    expect(r.finalContracts).toBe(0);
+  });
+
+  it("clamps currentDalMult below 1 up to 1", () => {
+    const r = computeSuggestedContracts({
+      spec: baseSpec,
+      signal: "GO",
+      portfolioSize: 100_000,
+      policy: basePolicy,
+      currentDalMult: 0,            // malformed input
+      openPositions: [],
+      marginPerContract: 870,
+    });
+    expect(r.dalMultApplied).toBe(1);
+  });
+
+  it("clamps currentDalMult above policy.dal_cap down to the cap", () => {
+    const r = computeSuggestedContracts({
+      spec: baseSpec,
+      signal: "GO",
+      portfolioSize: 100_000,
+      policy: basePolicy,              // dal_cap = 2
+      currentDalMult: 10,              // daemon-side counter went haywire
+      openPositions: [],
+      marginPerContract: 870,
+    });
+    expect(r.dalMultApplied).toBe(2);
+  });
+
+  it("skips malformed position records when computing open margin", () => {
+    const r = computeSuggestedContracts({
+      spec: baseSpec,
+      signal: "GO",
+      portfolioSize: 100_000,
+      policy: basePolicy,
+      currentDalMult: 1,
+      openPositions: [
+        // Each of these should be ignored — not count toward margin
+        { ...makeZeroPos(), entry_debit: null as unknown as number, quantity: 5 },
+        { ...makeZeroPos(), entry_debit: 5, quantity: null as unknown as number },
+        { ...makeZeroPos(), entry_debit: -5, quantity: 5 },
+        { ...makeZeroPos(), status: "closed", entry_debit: 5, quantity: 5 },
+      ],
+      marginPerContract: 870,
+    });
+    expect(r.globalUsed).toBe(0);
+    expect(r.stratUsed).toBe(0);
+  });
+});
+
+function makeZeroPos(): DCPosition {
+  return {
+    id: 0,
+    strategy_name: "TEST",
+    signal: "GO",
+    entry_time: "",
+    entry_date: "",
+    put_strike: 0,
+    call_strike: 0,
+    front_exp: "",
+    back_exp: "",
+    entry_debit: 0,
+    quantity: 0,
+    original_quantity: 0,
+    spx_at_entry: null,
+    status: "open",
+    close_reason: null,
+    close_time: null,
+    close_pnl: null,
+  };
+}

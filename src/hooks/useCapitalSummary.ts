@@ -19,11 +19,20 @@ export function useCapitalSummary() {
 
   useEffect(() => {
     let cancelled = false;
-    dcApi.capitalSummary().then((result) => {
-      if (cancelled) return;
-      setSummary(result);
-      setLoading(false);
-    });
+    dcApi
+      .capitalSummary()
+      .then((result) => {
+        if (cancelled) return;
+        setSummary(result);
+        setLoading(false);
+      })
+      .catch(() => {
+        // dcGet already returns null on HTTP/network errors; .catch() guards
+        // against a synchronous throw so the hook can't get stuck loading.
+        if (cancelled) return;
+        setSummary(null);
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };

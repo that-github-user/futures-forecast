@@ -32,18 +32,22 @@ export const SPX_MULTIPLIER = 100;
  * rounds half-to-+inf: Math.round(0.5) = 1, Math.round(10.5) = 11. The daemon's
  * sizing (core/sizing.py::calculate_size line 105) uses Python's round; the
  * frontend must match or the "Suggested contracts" number drifts from what
- * the daemon would submit. Implement the banker's form explicitly.
+ * the daemon would submit.
+ *
+ * The implementation detects exact-half cases (within float tolerance) and
+ * branches: `floor(x)` if that floor is even, otherwise `floor(x) + 1`.
+ * This works correctly for negatives too — `floor(-0.5) = -1`, which is odd,
+ * so we bump to `0` (matching Python's `round(-0.5) = 0`). Non-half values
+ * fall through to `Math.round`, which agrees with Python on all non-half
+ * inputs. The parity fixture exercises both branches.
  */
 export function roundHalfToEven(x: number): number {
-  const rounded = Math.round(x);
-  const diff = Math.abs(x - Math.trunc(x));
-  // Only adjust exact .5 cases (within a tiny epsilon for float hygiene).
-  if (Math.abs(diff - 0.5) < 1e-9) {
-    const floor = Math.floor(x);
-    // If the floor is even, keep it; otherwise round up to the next even.
+  const floor = Math.floor(x);
+  const frac = x - floor;
+  if (Math.abs(frac - 0.5) < 1e-9) {
     return floor % 2 === 0 ? floor : floor + 1;
   }
-  return rounded;
+  return Math.round(x);
 }
 
 export type SuggestedSignal = "GO" | "GO_PLUS";
