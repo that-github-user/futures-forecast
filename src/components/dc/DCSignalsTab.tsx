@@ -564,7 +564,11 @@ function PolicySelector({
         cursor: "pointer",
       }}
     >
-      {(Object.keys(POLICY_LABEL) as PolicyKey[]).map((k) => (
+      {(Object.keys(POLICY_LABEL) as PolicyKey[])
+        // Hide reference-only policies (take_all) — they render on the
+        // Capital tab chart as overlays, not as selectable live policies.
+        .filter((k) => !policies(k)?.reference_only)
+        .map((k) => (
         <option key={k} value={k}>
           {POLICY_LABEL[k]}
         </option>

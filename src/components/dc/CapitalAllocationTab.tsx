@@ -12,7 +12,7 @@
  * produce at each capital level.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 
 import type {
@@ -27,7 +27,7 @@ import { useCapitalAllocation } from "../../hooks/useCapitalAllocation";
 import { useCapitalSummary } from "../../hooks/useCapitalSummary";
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { computeSuggestedContracts, SPX_MULTIPLIER } from "../../lib/dcSizing";
-import { samplePaths } from "../../lib/dcPathSim";
+import { samplePaths, samplePathsLinear } from "../../lib/dcPathSim";
 
 interface Props {
   positions: DCPosition[];
@@ -53,10 +53,29 @@ export function CapitalAllocationTab({ positions }: Props) {
     );
   }
 
-  const selectedPolicy = summary.policies.find((p) => p.key === capital.policyKey) ?? summary.policies[0];
-  const selectedCurve =
-    summary.compounding_curves[capital.policyKey] ??
-    (Object.values(summary.compounding_curves)[0] as typeof summary.compounding_curves[PolicyKey] | undefined);
+  // Policies the user can actually pick. `reference_only` policies (take_all)
+  // are rendered as overlays on the compounding chart rather than as selectable
+  // options — the picker excludes them and any localStorage that still points
+  // at one gets coerced back to the default in the useEffect below.
+  const selectablePolicies = summary.policies.filter((p) => !p.reference_only);
+  const referencePolicies = summary.policies.filter((p) => p.reference_only);
+
+  const selectedPolicy =
+    selectablePolicies.find((p) => p.key === capital.policyKey) ??
+    selectablePolicies[0];
+  const selectedCurve = selectedPolicy
+    ? summary.compounding_curves[selectedPolicy.key]
+    : undefined;
+
+  // Migrate a pre-PR selection of take_all (now reference_only) back to the
+  // default. Runs once per mount if needed.
+  useEffect(() => {
+    const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
+    if (stillPicked?.reference_only && selectablePolicies.length > 0) {
+      capital.setPolicy(selectablePolicies[0].key);
+    }
+  }, [summary.policies, capital, selectablePolicies]);
+
   if (!selectedPolicy || !selectedCurve) {
     return (
       <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
@@ -77,9 +96,10 @@ export function CapitalAllocationTab({ positions }: Props) {
         source={summary.source}
       />
 
-      {/* Panel A — pick a policy (reactive) */}
+      {/* Panel A — pick a policy (reactive). reference_only policies
+          (take_all) are excluded — they appear as overlays on the chart. */}
       <PolicyPicker
-        policies={summary.policies}
+        policies={selectablePolicies}
         selectedKey={capital.policyKey}
         onSelect={capital.setPolicy}
         portfolioSize={capital.portfolioSize}
@@ -93,11 +113,16 @@ export function CapitalAllocationTab({ positions }: Props) {
         positions={positions}
       />
 
-      {/* Panel C — compounding projection (reactive to policy + portfolio size + jittered paths) */}
+      {/* Panel C — compounding projection (reactive to policy + portfolio size +
+          jittered paths). reference-only policies render as dashed overlays. */}
       <CompoundingChart
         curve={selectedCurve}
         policy={selectedPolicy}
         portfolioSize={capital.portfolioSize}
+        referenceOverlays={referencePolicies.map((p) => ({
+          policy: p,
+          curve: summary.compounding_curves[p.key],
+        }))}
       />
 
       {/* Panel D — static EV reference (not affected by user's choice; parked at bottom) */}
@@ -364,22 +389,42 @@ function PolicyCard({
       </div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
       {policy.backtest === null ? (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              color: "#64748b",
-              fontStyle: "italic",
-              fontFamily: "JetBrains Mono, monospace",
-              marginTop: 4,
-            }}
-          >
-            Baseline — no backtest applies
-          </div>
-          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-            Every entry: 1 contract regardless of capital or streak
-          </div>
-        </>
+        (() => {
+          // static_1ct carries linear_growth parameters — surface the annualized
+          // dollars and 3.8y terminal scaled to the user's portfolio size so
+          // the user can compare "conservative live strategy" in concrete terms.
+          const lg = policy.linear_growth;
+          const scale = portfolioSize / 100_000;
+          const annualPL = lg ? lg.monthly_pl * 12 * scale : 0;
+          const terminal38 = lg ? portfolioSize + lg.monthly_pl * 46 * scale : portfolioSize;
+          return (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 6,
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 11,
+                  marginTop: 4,
+                }}
+              >
+                <Stat
+                  label="~Annual P/L"
+                  value={`$${formatCompact(annualPL)}`}
+                  color="#e2e8f0"
+                />
+                <Stat
+                  label="3.8y terminal"
+                  value={`$${formatCompact(terminal38)}`}
+                />
+              </div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+                1 contract per entry · linear growth (no compounding)
+              </div>
+            </>
+          );
+        })()
       ) : (
         (() => {
           // Alias narrowed inside the IIFE so subsequent accesses don't need
@@ -656,40 +701,71 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
 
 const N_SAMPLE_PATHS = 8;
 
+interface ReferenceOverlay {
+  policy: DCAllocationPolicy;
+  curve: DCCompoundingCurve;
+}
+
 function CompoundingChart({
   curve,
   policy,
   portfolioSize,
+  referenceOverlays = [],
 }: {
   curve: DCCompoundingCurve;
   policy: DCAllocationPolicy;
   portfolioSize: number;
+  referenceOverlays?: ReferenceOverlay[];
 }) {
   const option = useMemo(() => {
     const months = curve.months;
+    const horizonMonths = months.length - 1;
+    const lg = policy.linear_growth;
+    const isLinear = lg !== null;
+
+    // For compounding policies (backtest set) the backend emits a multiplier
+    // curve; scale it by portfolio size. For linear policies (static_1ct) the
+    // same multipliers work — 1.0× → $portfolioSize, then grows linearly.
     const median = curve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1));
     // p5/p95 arrays are empty for policies without documented Monte Carlo
-    // (see CAPITAL_ALLOCATION.md §10 — only rec_60_10 has MC). Hide the band
-    // in that case rather than showing fabricated data.
-    const hasBand = curve.p5_multiplier.length === months.length && curve.p95_multiplier.length === months.length;
+    // (see CAPITAL_ALLOCATION.md §10 — only rec_60_10 has MC) or for linear
+    // policies. Hide the band in that case rather than showing fabricated data.
+    const hasBand =
+      curve.p5_multiplier.length === months.length && curve.p95_multiplier.length === months.length;
     const p5 = hasBand ? curve.p5_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
     const p95 = hasBand ? curve.p95_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
 
-    // Client-side illustrative sample paths. Skip for the static_1ct baseline
-    // (flat curve, no variance) and any policy missing backtest data.
-    const showSamplePaths = policy.backtest !== null;
-    const terminalMult = policy.backtest
-      ? policy.backtest.terminal_equity / policy.backtest.start_equity
-      : 1;
-    const maxDdPct = policy.backtest?.max_dd_pct ?? 0;
-    const horizonMonths = months.length - 1;
-    const jitteredPaths = showSamplePaths
-      ? samplePaths(policy.key, N_SAMPLE_PATHS, {
-          horizonMonths,
-          terminalMultiplier: terminalMult,
-          maxDdPct,
-        })
-      : [];
+    // Client-side illustrative sample paths. Two flavors:
+    //   - Compounding policies (GBM around the exponential median, MaxDD-calibrated).
+    //   - Linear policies (additive around the straight-line median, sigma from
+    //     linear_growth.monthly_sigma). static_1ct uses this branch so the
+    //     chart honestly shows per-trade P/L variance at 1 contract.
+    let jitteredPaths: number[][] = [];
+    if (isLinear && lg !== null) {
+      jitteredPaths = samplePathsLinear(policy.key, N_SAMPLE_PATHS, {
+        horizonMonths,
+        startEquity: portfolioSize,
+        monthlyPL: lg.monthly_pl * (portfolioSize / 100_000),
+        monthlySigma: lg.monthly_sigma * (portfolioSize / 100_000),
+      });
+    } else if (policy.backtest !== null) {
+      const bt = policy.backtest;
+      const terminalMult = bt.terminal_equity / bt.start_equity;
+      jitteredPaths = samplePaths(policy.key, N_SAMPLE_PATHS, {
+        horizonMonths,
+        terminalMultiplier: terminalMult,
+        maxDdPct: bt.max_dd_pct,
+      }).map((path) => path.map((m) => Math.max(m * portfolioSize, 1)));
+      // For non-linear paths, multipliers need to be scaled to dollars AFTER
+      // sample generation (they come out as multipliers). For linear paths
+      // the values are already in dollars.
+    }
+    // Normalize: both branches now produce dollar-valued paths.
+    if (isLinear) {
+      // samplePathsLinear already returns dollars.
+    } else {
+      // jitteredPaths from samplePaths was mapped to dollars in-place above.
+    }
 
     const series: Array<Record<string, unknown>> = [];
 
@@ -698,12 +774,27 @@ function CompoundingChart({
       series.push({
         name: `Illustrative path ${idx + 1}`,
         type: "line",
-        data: path.map((m) => Math.max(m * portfolioSize, 1)),
+        data: path,
         lineStyle: { color: "#10b98128", width: 1 },
         symbol: "none",
         showInLegend: false,
         tooltip: { show: false },
         z: 0,
+      });
+    }
+
+    // Reference-only policy overlays (dashed, neutral color). Rendered behind
+    // the primary median so the user's chosen policy visually dominates, but
+    // above the jitter so the comparison is legible.
+    for (const { policy: refPolicy, curve: refCurve } of referenceOverlays) {
+      if (refCurve.months.length !== months.length) continue;
+      series.push({
+        name: `${refPolicy.name} (reference)`,
+        type: "line",
+        data: refCurve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1)),
+        lineStyle: { color: "#94a3b8", width: 1.5, type: "dashed" },
+        symbol: "none",
+        z: 1,
       });
     }
 
@@ -789,7 +880,7 @@ function CompoundingChart({
       },
       series,
     };
-  }, [curve, policy, portfolioSize]);
+  }, [curve, policy, portfolioSize, referenceOverlays]);
 
   // Milestone annotations (read directly off the computed median curve).
   const milestone = (m: number) => {
@@ -800,13 +891,16 @@ function CompoundingChart({
   const y1 = milestone(12);
   const y3 = milestone(36);
 
-  const isBaseline = policy.backtest === null;
+  const isLinear = policy.linear_growth !== null;
   const hasBand = curve.p5_multiplier.length === curve.months.length;
-  const subtitle = isBaseline
-    ? "Flat baseline — 1 contract per entry, no compounding."
+  const overlayNote = referenceOverlays.length
+    ? ` Dashed gray = ${referenceOverlays.map((r) => r.policy.name).join(" / ")} for comparison.`
+    : "";
+  const subtitle = isLinear
+    ? `${policy.name}: linear growth from per-trade EV (~$${Math.round((policy.linear_growth?.monthly_pl ?? 0) * 12 / 1000)}K/yr at $100K start) + ${N_SAMPLE_PATHS} sample paths with ±$${Math.round((policy.linear_growth?.monthly_sigma ?? 0) / 1000)}K/mo jitter.${overlayNote}`
     : hasBand
-    ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM).`
-    : `${policy.name}: deterministic median curve from §5 backtest + ${N_SAMPLE_PATHS} illustrative paths (no documented Monte Carlo).`;
+    ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM).${overlayNote}`
+    : `${policy.name}: deterministic median curve from §5 backtest + ${N_SAMPLE_PATHS} illustrative paths (no documented Monte Carlo).${overlayNote}`;
 
   return (
     <Panel title="Compounding Growth Projection" subtitle={subtitle}>
@@ -825,18 +919,28 @@ function CompoundingChart({
         <Milestone label="1y median" value={y1} />
         <Milestone label="3y median" value={y3} />
         <Milestone
-          label={policy.backtest ? `Historical ${policy.backtest.years}y` : "Baseline"}
+          label={
+            policy.backtest
+              ? `Historical ${policy.backtest.years}y`
+              : isLinear
+              ? "3.8y linear"
+              : "Baseline"
+          }
           value={
             policy.backtest
               ? policy.backtest.terminal_equity * (portfolioSize / policy.backtest.start_equity)
+              : isLinear
+              ? // Terminal equity under static_1ct = start + monthly_pl × 46mo,
+                // scaled by the portfolio-size multiplier against the $100K baseline.
+                curve.median_multiplier[curve.median_multiplier.length - 1] * portfolioSize
               : portfolioSize
           }
           color="#3b82f6"
         />
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: "#64748b", fontStyle: "italic" }}>
-        {isBaseline
-          ? "Static 1-contract baseline. No research model — included as a comparison anchor."
+        {isLinear
+          ? `Static 1-contract sizing. Growth numbers are back-of-envelope from CAPITAL_ALLOCATION.md §4 EV × §8 schedule × §3 fire rate — replace with a vega-prime static-sizing backtest when available. Past performance ≠ future results.`
           : `Based on ${policy.copeland_mode} Copeland gating + ${policy.global_pct}/${policy.per_strat_pct} margin budget. Hard contract cap: ${policy.hard_cap}. SPX multiplier: ${SPX_MULTIPLIER}. Past performance ≠ future results.`}
       </div>
     </Panel>

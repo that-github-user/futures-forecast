@@ -132,3 +132,64 @@ export function samplePaths(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Linear-growth sample paths (for non-compounding policies like static_1ct)
+// ---------------------------------------------------------------------------
+
+export interface LinearSamplePathInput {
+  /** Number of months (steps) in the path. Result length = months + 1. */
+  horizonMonths: number;
+  /** Starting equity in dollars. */
+  startEquity: number;
+  /** Expected monthly P/L in dollars (policy.linear_growth.monthly_pl). */
+  monthlyPL: number;
+  /** Per-month P/L standard deviation in dollars (policy.linear_growth.monthly_sigma). */
+  monthlySigma: number;
+  /** Deterministic seed. */
+  seed: number;
+}
+
+/**
+ * Generate one linear-growth sample path with Gaussian noise.
+ *
+ * For non-compounding policies (e.g. static 1-contract sizing), each month
+ * adds a draw from N(monthlyPL, monthlySigma²) to equity. There's no
+ * multiplicative effect — the median is a straight line and the variance
+ * comes from per-month P/L jitter. Returns a path in dollar terms (not
+ * multipliers) so the chart axis is unambiguous.
+ *
+ * Each equity value is floored at $1 so the log-scale yAxis never sees
+ * a zero or negative from a deep pathological draw.
+ */
+export function samplePathLinear({
+  horizonMonths,
+  startEquity,
+  monthlyPL,
+  monthlySigma,
+  seed,
+}: LinearSamplePathInput): number[] {
+  if (horizonMonths <= 0) return [startEquity];
+  const rng = mulberry32(seed);
+  const path: number[] = new Array(horizonMonths + 1);
+  path[0] = startEquity;
+  for (let t = 1; t <= horizonMonths; t++) {
+    const z = monthlySigma > 0 ? standardNormal(rng) : 0;
+    const delta = monthlyPL + monthlySigma * z;
+    path[t] = Math.max(path[t - 1] + delta, 1);
+  }
+  return path;
+}
+
+/** Batch variant of samplePathLinear. Same stable seeding as `samplePaths`. */
+export function samplePathsLinear(
+  policyKey: string,
+  nPaths: number,
+  opts: Omit<LinearSamplePathInput, "seed">,
+): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < nPaths; i++) {
+    out.push(samplePathLinear({ ...opts, seed: hashSeed(`${policyKey}:linear:${i}`) }));
+  }
+  return out;
+}
