@@ -12,7 +12,8 @@
  * produce at each capital level.
  */
 
-import { useEffect, useMemo } from "react";
+import { Component, useEffect, useMemo } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 
 import type {
@@ -33,7 +34,74 @@ interface Props {
   positions: DCPosition[];
 }
 
-export function CapitalAllocationTab({ positions }: Props) {
+// Defense in depth: any render crash inside the Capital tab body now shows a
+// small error panel instead of unmounting the dashboard. The root cause
+// should still be fixed upstream, but this prevents a single-line bug from
+// taking down the whole route and making users refresh to navigate away.
+class CapitalAllocationErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error("[CapitalAllocationTab] render error", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            margin: 20,
+            padding: 14,
+            background: "#111827",
+            border: "1px solid #ef4444",
+            borderRadius: 6,
+            color: "#fca5a5",
+            fontFamily: "Inter, sans-serif",
+            fontSize: 13,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Capital tab crashed.</div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>
+            Likely cause: dc-api.service is running an older build than the frontend
+            expects. Restart the service (`sudo systemctl restart dc-api.service`) and
+            hard-reload. If it persists, the browser console has the stack trace.
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#fca5a5",
+              fontFamily: "JetBrains Mono, monospace",
+              background: "#0f172a",
+              padding: 6,
+              borderRadius: 4,
+            }}
+          >
+            {this.state.error.message}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export function CapitalAllocationTab(props: Props) {
+  return (
+    <CapitalAllocationErrorBoundary>
+      <CapitalAllocationTabInner {...props} />
+    </CapitalAllocationErrorBoundary>
+  );
+}
+
+function CapitalAllocationTabInner({ positions }: Props) {
   const capital = useCapitalAllocation();
   const { summary, loading } = useCapitalSummary();
   const { specs } = useStrategySpecs();
@@ -340,7 +408,13 @@ function PolicyCard({
   portfolioSize: number;
 }) {
   const color = selected ? "#3b82f6" : policy.recommended ? "#10b981" : "#334155";
-  const isBaseline = policy.backtest === null;
+  // Use `== null` (loose) not `=== null` — the backend's Optional fields can
+  // serialize to either `null` or be entirely absent (→ `undefined` on the
+  // frontend) depending on pydantic version or a stale dc-api deploy. A
+  // strict `=== null` check lets `undefined` fall through into the compounding
+  // branch, which then crashes on `policy.backtest.pf` because backtest is
+  // actually undefined. That's a blank-page render error.
+  const isBaseline = policy.backtest == null;
   return (
     <button
       onClick={onClick}
@@ -393,7 +467,7 @@ function PolicyCard({
         )}
       </div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
-      {policy.backtest === null ? (
+      {policy.backtest == null ? (
         (() => {
           // static_1ct carries linear_growth parameters. These numbers are
           // UNSCALED: at 1 contract per entry, dollar P/L is identical whether
@@ -728,7 +802,12 @@ function CompoundingChart({
     const months = curve.months;
     const horizonMonths = months.length - 1;
     const lg = policy.linear_growth;
-    const isLinear = lg !== null;
+    // `!= null` (loose) intentionally matches both `null` AND `undefined`.
+    // Strict `!== null` would return `true` when the backend omits the
+    // field entirely — e.g. a stale dc-api deploy that doesn't yet know
+    // about linear_growth — and then the branch below would crash on
+    // `lg.monthly_pl`. That crash renders a blank Capital tab.
+    const isLinear = lg != null;
 
     // Two semantic flavors, one chart:
     //
@@ -744,7 +823,7 @@ function CompoundingChart({
     //   frontend builds median = portfolioSize + monthly_pl × t directly,
     //   and sample paths use unscaled monthly_pl / monthly_sigma.
     let median: number[];
-    if (isLinear && lg !== null) {
+    if (lg != null) {
       median = Array.from({ length: horizonMonths + 1 }, (_, t) =>
         Math.max(portfolioSize + lg.monthly_pl * t, 1),
       );
@@ -769,14 +848,14 @@ function CompoundingChart({
     //     sigma from linear_growth.monthly_sigma (UNSCALED — 1ct P/L
     //     variance is also capital-invariant). Generated directly in dollars.
     let jitteredPaths: number[][] = [];
-    if (isLinear && lg !== null) {
+    if (lg != null) {
       jitteredPaths = samplePathsLinear(policy.key, N_SAMPLE_PATHS, {
         horizonMonths,
         startEquity: portfolioSize,
         monthlyPL: lg.monthly_pl,
         monthlySigma: lg.monthly_sigma,
       });
-    } else if (policy.backtest !== null) {
+    } else if (policy.backtest != null) {
       const bt = policy.backtest;
       const terminalMult = bt.terminal_equity / bt.start_equity;
       jitteredPaths = samplePaths(policy.key, N_SAMPLE_PATHS, {
@@ -910,7 +989,10 @@ function CompoundingChart({
   const y1 = milestone(12);
   const y3 = milestone(36);
 
-  const isLinear = policy.linear_growth !== null;
+  // `!= null` handles both null (fresh backend) and undefined (old backend
+  // that doesn't serialize the field). Strict `!==` would crash below when
+  // the branch accesses policy.linear_growth fields on undefined.
+  const isLinear = policy.linear_growth != null;
   const hasBand =
     !isLinear && curve.p5_multiplier.length === curve.months.length;
   const overlayNote = referenceOverlays.length
