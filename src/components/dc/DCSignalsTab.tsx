@@ -228,15 +228,23 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
           <span style={{ color: "#3b82f6", fontWeight: 600 }}>{monitors.length}</span> strategies
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <PortfolioInput
-            value={capital.portfolioSize}
-            onChange={capital.setPortfolioSize}
-          />
-          <PolicySelector
-            value={capital.policyKey}
-            onChange={capital.setPolicy}
-            policies={findPolicy}
-          />
+          {/* Portfolio + policy selectors only make sense when the user has
+              opted into policy-driven sizing on the Capital tab. Hiding them
+              when useCapitalForSignals is false avoids inviting the user to
+              tune knobs that don't do anything here. */}
+          {capital.useCapitalForSignals && (
+            <>
+              <PortfolioInput
+                value={capital.portfolioSize}
+                onChange={capital.setPortfolioSize}
+              />
+              <PolicySelector
+                value={capital.policyKey}
+                onChange={capital.setPolicy}
+                policies={findPolicy}
+              />
+            </>
+          )}
           <TimezoneSelector tz={timezone.tz} setTz={timezone.setTz} />
           <NotificationControl
             permission={notifications.permission}
@@ -271,8 +279,8 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
               legData={legData}
               formatTime={timezone.formatTime}
               tzLabel={timezone.tzLabel}
-              policy={selectedPolicy}
-              portfolioSize={capital.portfolioSize}
+              policy={capital.useCapitalForSignals ? selectedPolicy : null}
+              portfolioSize={capital.useCapitalForSignals ? capital.portfolioSize : undefined}
               currentDalMult={dalMultByName.get(spec.name) ?? 1}
               openPositions={positions}
             />
@@ -521,6 +529,7 @@ const POLICY_LABEL: Record<PolicyKey, string> = {
   rec_60_10: "Recommended 60/10",
   cons_40_8: "Stricter 40/8",
   cop_cons_60_10: "Cop-Con 60/10",
+  static_1ct: "Static 1 ct (baseline)",
 };
 
 function PolicySelector({
@@ -533,9 +542,11 @@ function PolicySelector({
   policies: (k: PolicyKey) => import("../../api/dcTypes").DCAllocationPolicy | null;
 }) {
   const current = policies(value);
-  const tooltip = current
-    ? `${current.name} — backtest PF ${current.backtest.pf.toFixed(2)} / MaxDD ${current.backtest.max_dd_pct.toFixed(1)}% / $${(current.backtest.terminal_equity / 1e6).toFixed(1)}M at 3.8y from $100K`
-    : undefined;
+  const tooltip = !current
+    ? undefined
+    : current.backtest
+    ? `${current.name} — backtest PF ${current.backtest.pf.toFixed(2)} / MaxDD ${current.backtest.max_dd_pct.toFixed(1)}% / $${(current.backtest.terminal_equity / 1e6).toFixed(1)}M at ${current.backtest.years}y from $${(current.backtest.start_equity / 1e3).toFixed(0)}K`
+    : `${current.name} — baseline (no backtest). Always enters 1 contract.`;
   return (
     <select
       title={tooltip}

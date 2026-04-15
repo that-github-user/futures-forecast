@@ -22,23 +22,30 @@ import type { CopelandMode, PolicyKey } from "../api/dcTypes";
 const STORAGE_KEY = "dc.capitalAllocation";
 
 const DEFAULT_PORTFOLIO_SIZE = 25_000;
-const DEFAULT_POLICY: PolicyKey = "rec_60_10";
+// Default is the neutral baseline — new visitors see no sizing math until
+// they deliberately change the policy. Combined with useCapitalForSignals
+// defaulting to false, the Signals tab looks identical to pre-PR until a
+// two-step opt-in.
+export const DEFAULT_POLICY: PolicyKey = "static_1ct";
 const DEFAULT_SIGNAL_MODE: CopelandMode = "aggressive";
+const DEFAULT_USE_CAPITAL_FOR_SIGNALS = false;
 
 const MIN_PORTFOLIO_SIZE = 1_000;
 const MAX_PORTFOLIO_SIZE = 100_000_000;
 
-const VALID_POLICIES: readonly PolicyKey[] = [
+export const VALID_POLICIES: readonly PolicyKey[] = [
   "take_all",
   "rec_60_10",
   "cons_40_8",
   "cop_cons_60_10",
+  "static_1ct",
 ];
 
 interface StoredState {
   portfolioSize: number;
   policyKey: PolicyKey;
   signalMode: CopelandMode;
+  useCapitalForSignals: boolean;
 }
 
 function clampPortfolio(v: unknown): number {
@@ -54,22 +61,28 @@ function coerceMode(v: unknown): CopelandMode {
   return v === "conservative" || v === "aggressive" ? v : DEFAULT_SIGNAL_MODE;
 }
 
+const DEFAULT_STATE: StoredState = {
+  portfolioSize: DEFAULT_PORTFOLIO_SIZE,
+  policyKey: DEFAULT_POLICY,
+  signalMode: DEFAULT_SIGNAL_MODE,
+  useCapitalForSignals: DEFAULT_USE_CAPITAL_FOR_SIGNALS,
+};
+
 function load(): StoredState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { portfolioSize: DEFAULT_PORTFOLIO_SIZE, policyKey: DEFAULT_POLICY, signalMode: DEFAULT_SIGNAL_MODE };
+    if (!raw) return { ...DEFAULT_STATE };
     const parsed = JSON.parse(raw);
     return {
       portfolioSize: clampPortfolio(parsed?.portfolioSize),
       policyKey: coercePolicy(parsed?.policyKey),
       signalMode: coerceMode(parsed?.signalMode),
+      // Strict bool coerce — any truthy non-boolean is still normalized.
+      // Missing field (pre-upgrade shape) reads as false (default off).
+      useCapitalForSignals: Boolean(parsed?.useCapitalForSignals),
     };
   } catch {
-    return {
-      portfolioSize: DEFAULT_PORTFOLIO_SIZE,
-      policyKey: DEFAULT_POLICY,
-      signalMode: DEFAULT_SIGNAL_MODE,
-    };
+    return { ...DEFAULT_STATE };
   }
 }
 
@@ -85,9 +98,11 @@ export interface CapitalAllocationApi {
   portfolioSize: number;
   policyKey: PolicyKey;
   signalMode: CopelandMode;
+  useCapitalForSignals: boolean;
   setPortfolioSize: (v: number) => void;
   setPolicy: (k: PolicyKey) => void;
   setSignalMode: (m: CopelandMode) => void;
+  setUseCapitalForSignals: (v: boolean) => void;
 }
 
 export function useCapitalAllocation(): CapitalAllocationApi {
@@ -126,10 +141,19 @@ export function useCapitalAllocation(): CapitalAllocationApi {
     });
   }, []);
 
+  const setUseCapitalForSignals = useCallback((v: boolean) => {
+    setState((prev) => {
+      const next = { ...prev, useCapitalForSignals: Boolean(v) };
+      persist(next);
+      return next;
+    });
+  }, []);
+
   return {
     ...state,
     setPortfolioSize,
     setPolicy,
     setSignalMode,
+    setUseCapitalForSignals,
   };
 }

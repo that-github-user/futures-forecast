@@ -180,7 +180,7 @@ export interface DCStrategySpec {
 // Capital Allocation tab (CAPITAL_ALLOCATION.md §4, §5, §8, §10)
 // ---------------------------------------------------------------------------
 
-export type PolicyKey = "take_all" | "rec_60_10" | "cons_40_8" | "cop_cons_60_10";
+export type PolicyKey = "take_all" | "rec_60_10" | "cons_40_8" | "cop_cons_60_10" | "static_1ct";
 export type CopelandMode = "aggressive" | "conservative";
 
 export interface DCPolicyBacktest {
@@ -210,7 +210,9 @@ export interface DCAllocationPolicy {
   hard_cap: number;
   copeland_mode: CopelandMode;
   recommended: boolean;
-  backtest: DCPolicyBacktest;
+  // Null for the static_1ct baseline (no vega-prime research behind it);
+  // populated for every other policy.
+  backtest: DCPolicyBacktest | null;
   // Only populated for the rec_60_10 policy — see CAPITAL_ALLOCATION.md §10.
   monte_carlo: DCPolicyMonteCarlo | null;
 }
