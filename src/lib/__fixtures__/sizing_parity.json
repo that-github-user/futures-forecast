@@ -1,0 +1,286 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "final_contracts": 10,
+        "global_cap": 60000.0,
+        "global_used": 0.0,
+        "max_affordable": 14,
+        "sized_before_margin_trim": 10,
+        "strat_cap": 10000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 677.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "FM Mon"
+      },
+      "label": "FM Mon @ $100K GO+ DAl=1"
+    },
+    {
+      "expected": {
+        "final_contracts": 5,
+        "global_cap": 60000.0,
+        "global_used": 0.0,
+        "max_affordable": 11,
+        "sized_before_margin_trim": 5,
+        "strat_cap": 10000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 870.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO",
+        "spx_multiplier": 100,
+        "strategy": "2/3 DC"
+      },
+      "label": "2/3 DC @ $100K GO DAl=1"
+    },
+    {
+      "expected": {
+        "final_contracts": 3,
+        "global_cap": 60000.0,
+        "global_used": 0.0,
+        "max_affordable": 4,
+        "sized_before_margin_trim": 3,
+        "strat_cap": 10000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 2200.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "50d 2/4"
+      },
+      "label": "50d 2/4 @ $100K GO+ DAl=1"
+    },
+    {
+      "expected": {
+        "final_contracts": 14,
+        "global_cap": 60000.0,
+        "global_used": 0.0,
+        "max_affordable": 14,
+        "sized_before_margin_trim": 14,
+        "strat_cap": 10000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 677.0,
+        "current_mult": 2.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO",
+        "spx_multiplier": 100,
+        "strategy": "FM Mon"
+      },
+      "label": "FM Mon @ $100K GO DAl=2"
+    },
+    {
+      "expected": {
+        "final_contracts": 8,
+        "global_cap": 100000.0,
+        "global_used": 0.0,
+        "max_affordable": 114,
+        "sized_before_margin_trim": 8,
+        "strat_cap": 100000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 870.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 100,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 100
+        },
+        "policy_key": "take_all",
+        "portfolio_value": 100000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "2/3 DC"
+      },
+      "label": "2/3 DC @ $100K GO+ take_all"
+    },
+    {
+      "expected": {
+        "final_contracts": 0,
+        "global_cap": 60000.0,
+        "global_used": 8274.0,
+        "max_affordable": 0,
+        "sized_before_margin_trim": 2,
+        "strat_cap": 10000.0,
+        "strat_used": 8274.0
+      },
+      "input": {
+        "avg_margin": 2068.0,
+        "current_mult": 1.0,
+        "open_positions": [
+          {
+            "entry_debit": 2.0685,
+            "quantity": 20,
+            "strategy_name": "21/28 30d"
+          },
+          {
+            "entry_debit": 2.0685,
+            "quantity": 20,
+            "strategy_name": "21/28 30d"
+          }
+        ],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO",
+        "spx_multiplier": 100,
+        "strategy": "21/28 30d"
+      },
+      "label": "21/28 30d trimmed by per-strat cap"
+    },
+    {
+      "expected": {
+        "final_contracts": 4,
+        "global_cap": 30000.0,
+        "global_used": 0.0,
+        "max_affordable": 7,
+        "sized_before_margin_trim": 4,
+        "strat_cap": 5000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 677.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 50000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "FM Mon"
+      },
+      "label": "FM Mon @ $50K GO+ DAl=1"
+    },
+    {
+      "expected": {
+        "final_contracts": 50,
+        "global_cap": 300000.0,
+        "global_used": 0.0,
+        "max_affordable": 57,
+        "sized_before_margin_trim": 50,
+        "strat_cap": 50000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 870.0,
+        "current_mult": 2.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "rec_60_10",
+        "portfolio_value": 500000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "2/3 DC"
+      },
+      "label": "2/3 DC @ $500K GO+ DAl=2"
+    },
+    {
+      "expected": {
+        "final_contracts": 7,
+        "global_cap": 60000.0,
+        "global_used": 0.0,
+        "max_affordable": 14,
+        "sized_before_margin_trim": 7,
+        "strat_cap": 10000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 677.0,
+        "current_mult": 1.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 5.0,
+          "dal_cap": 2.0,
+          "global_pct": 60,
+          "go_plus_mult": 1.5,
+          "hard_cap": 50,
+          "per_strat_pct": 10
+        },
+        "policy_key": "cop_cons_60_10",
+        "portfolio_value": 100000,
+        "signal": "GO",
+        "spx_multiplier": 100,
+        "strategy": "FM Mon"
+      },
+      "label": "FM Mon @ $100K GO cop_cons_60_10"
+    }
+  ],
+  "source": "tests/test_frontend_sizing_parity.py"
+}

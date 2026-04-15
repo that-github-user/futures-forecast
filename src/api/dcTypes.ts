@@ -155,6 +155,7 @@ export interface DCPartialClose {
 export interface DCStrategySpec {
   name: string;
   family: string;       // 'long_dte' | 'short_dte' | 'hybrid_fm'
+  avg_margin: number | null; // dollars per contract, from CAPITAL_ALLOCATION.md §8
   front_dte: number;
   back_dte: number;
   put_delta: number;
@@ -172,4 +173,68 @@ export interface DCStrategySpec {
   tested_exits: DCTestedExitRule[];
   partial_close: DCPartialClose | null;
   entry_window_end: string | null; // 'HH:MM' ET, only set when the strategy has an entry window range
+}
+
+
+// ---------------------------------------------------------------------------
+// Capital Allocation tab (CAPITAL_ALLOCATION.md §4, §5, §8, §10)
+// ---------------------------------------------------------------------------
+
+export type PolicyKey = "take_all" | "rec_60_10" | "cons_40_8" | "cop_cons_60_10";
+export type CopelandMode = "aggressive" | "conservative";
+
+export interface DCPolicyBacktest {
+  start_equity: number;
+  terminal_equity: number;
+  pf: number;
+  max_dd_pct: number;
+  years: number;
+  trades_skipped: number;
+}
+
+export interface DCPolicyMonteCarlo {
+  median: number;
+  p5: number;
+  p95: number;
+}
+
+export interface DCAllocationPolicy {
+  key: PolicyKey;
+  name: string;
+  description: string;
+  base_pct: number;
+  dal_cap: number;
+  go_plus_mult: number;
+  global_pct: number;
+  per_strat_pct: number;
+  hard_cap: number;
+  copeland_mode: CopelandMode;
+  recommended: boolean;
+  backtest: DCPolicyBacktest;
+  // Only populated for the rec_60_10 policy — see CAPITAL_ALLOCATION.md §10.
+  monte_carlo: DCPolicyMonteCarlo | null;
+}
+
+export interface DCEVRankingRow {
+  rank: number;
+  strategy: string;
+  e_pl: number;
+  margin: number;
+  avg_hold: number;
+  ev_mg_day: number;
+  pf: number;
+}
+
+export interface DCCompoundingCurve {
+  months: number[];
+  median_multiplier: number[];
+  p5_multiplier: number[];
+  p95_multiplier: number[];
+}
+
+export interface DCCapitalSummary {
+  policies: DCAllocationPolicy[];
+  ev_ranking: DCEVRankingRow[];
+  compounding_curves: Record<PolicyKey, DCCompoundingCurve>;
+  source: string;
 }

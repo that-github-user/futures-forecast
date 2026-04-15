@@ -14,11 +14,16 @@
 import { useEffect, useMemo, useRef } from "react";
 import type {
   DCLegDetail,
+  DCPosition,
   DCSignalsResponse,
   DCSnapshotInfo,
   DCStrategySpec,
+  DCStrategyStats,
   LegName,
+  PolicyKey,
 } from "../../api/dcTypes";
+import { useCapitalAllocation } from "../../hooks/useCapitalAllocation";
+import { useCapitalSummary } from "../../hooks/useCapitalSummary";
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useNotifications } from "../../hooks/useNotifications";
@@ -29,6 +34,8 @@ import { StrategyMonitorCard, type LegData } from "./StrategyMonitorCard";
 
 interface Props {
   signals: DCSignalsResponse | null;
+  strategies?: DCStrategyStats[];
+  positions?: DCPosition[];
 }
 
 // Sort key — lower is more important / shown first.
@@ -45,13 +52,25 @@ const STATE_PRIORITY: Record<LifecycleState, number> = {
   closed: 9,
 };
 
-export function DCSignalsTab({ signals }: Props) {
+export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props) {
   const { specs, loading: specsLoading } = useStrategySpecs();
   const subs = useSubscriptions();
   const notifications = useNotifications();
   const nowMs = useTick(1000);
   const timezone = useTimezone();
   const now = useMemo(() => new Date(nowMs), [nowMs]);
+
+  // Capital allocation inputs — driven by localStorage and a one-shot fetch
+  // of the policies catalog from /dc-api/v1/capital/summary.
+  const capital = useCapitalAllocation();
+  const { findPolicy } = useCapitalSummary();
+  const selectedPolicy = findPolicy(capital.policyKey);
+  // Per-strategy D'Alembert multiplier lookup (from DCStrategyStats).
+  const dalMultByName = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of strategies) m.set(s.strategy_name, s.current_mult);
+    return m;
+  }, [strategies]);
 
   const signalByName = useMemo(() => {
     const m = new Map<string, string>();
@@ -208,7 +227,16 @@ export function DCSignalsTab({ signals }: Props) {
           Monitoring{" "}
           <span style={{ color: "#3b82f6", fontWeight: 600 }}>{monitors.length}</span> strategies
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <PortfolioInput
+            value={capital.portfolioSize}
+            onChange={capital.setPortfolioSize}
+          />
+          <PolicySelector
+            value={capital.policyKey}
+            onChange={capital.setPolicy}
+            policies={findPolicy}
+          />
           <TimezoneSelector tz={timezone.tz} setTz={timezone.setTz} />
           <NotificationControl
             permission={notifications.permission}
@@ -243,6 +271,10 @@ export function DCSignalsTab({ signals }: Props) {
               legData={legData}
               formatTime={timezone.formatTime}
               tzLabel={timezone.tzLabel}
+              policy={selectedPolicy}
+              portfolioSize={capital.portfolioSize}
+              currentDalMult={dalMultByName.get(spec.name) ?? 1}
+              openPositions={positions}
             />
           ))}
         </div>
@@ -437,5 +469,95 @@ function FeatureCard({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Capital allocation header controls
+// ---------------------------------------------------------------------------
+
+function PortfolioInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <label
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#94a3b8",
+        fontFamily: "Inter, sans-serif",
+      }}
+    >
+      Portfolio
+      <span style={{ color: "#64748b", marginLeft: 2 }}>$</span>
+      <input
+        type="number"
+        min={1000}
+        max={100_000_000}
+        step={5000}
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n);
+        }}
+        style={{
+          fontSize: 11,
+          fontFamily: "JetBrains Mono, monospace",
+          color: "#e2e8f0",
+          background: "#1e293b",
+          border: "1px solid #334155",
+          borderRadius: 4,
+          padding: "3px 6px",
+          width: 90,
+        }}
+      />
+    </label>
+  );
+}
+
+const POLICY_LABEL: Record<PolicyKey, string> = {
+  take_all: "Take-all",
+  rec_60_10: "Recommended 60/10",
+  cons_40_8: "Stricter 40/8",
+  cop_cons_60_10: "Cop-Con 60/10",
+};
+
+function PolicySelector({
+  value,
+  onChange,
+  policies,
+}: {
+  value: PolicyKey;
+  onChange: (k: PolicyKey) => void;
+  policies: (k: PolicyKey) => import("../../api/dcTypes").DCAllocationPolicy | null;
+}) {
+  const current = policies(value);
+  const tooltip = current
+    ? `${current.name} — backtest PF ${current.backtest.pf.toFixed(2)} / MaxDD ${current.backtest.max_dd_pct.toFixed(1)}% / $${(current.backtest.terminal_equity / 1e6).toFixed(1)}M at 3.8y from $100K`
+    : undefined;
+  return (
+    <select
+      title={tooltip}
+      value={value}
+      onChange={(e) => onChange(e.target.value as PolicyKey)}
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        fontFamily: "Inter, sans-serif",
+        color: "#94a3b8",
+        background: "#1e293b",
+        border: "1px solid #334155",
+        borderRadius: 4,
+        padding: "3px 6px",
+        cursor: "pointer",
+      }}
+    >
+      {(Object.keys(POLICY_LABEL) as PolicyKey[]).map((k) => (
+        <option key={k} value={k}>
+          {POLICY_LABEL[k]}
+        </option>
+      ))}
+    </select>
   );
 }
