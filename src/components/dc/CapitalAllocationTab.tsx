@@ -53,7 +53,16 @@ export function CapitalAllocationTab({ positions }: Props) {
   }
 
   const selectedPolicy = summary.policies.find((p) => p.key === capital.policyKey) ?? summary.policies[0];
-  const selectedCurve = summary.compounding_curves[capital.policyKey] ?? Object.values(summary.compounding_curves)[0];
+  const selectedCurve =
+    summary.compounding_curves[capital.policyKey] ??
+    (Object.values(summary.compounding_curves)[0] as typeof summary.compounding_curves[PolicyKey] | undefined);
+  if (!selectedPolicy || !selectedCurve) {
+    return (
+      <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
+        Capital Allocation payload is missing policy or curve data. Check the DC API's /capital/summary endpoint.
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -264,7 +273,9 @@ function PolicyCard({
         <Stat label="MaxDD" value={`${policy.backtest.max_dd_pct.toFixed(1)}%`} />
       </div>
       <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-        MC median ${formatCompact(policy.monte_carlo.median * scale)} ({policy.backtest.years}y from ${formatCompact(portfolioSize)})
+        {policy.monte_carlo
+          ? `MC median $${formatCompact(policy.monte_carlo.median * scale)} (${policy.backtest.years}y from $${formatCompact(portfolioSize)})`
+          : `${policy.backtest.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
       </div>
     </button>
   );
@@ -400,6 +411,18 @@ function SizingGrid({
 // ---------------------------------------------------------------------------
 
 function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <Panel
+        title="Capital Efficiency — EV per Margin-Day"
+        subtitle="No ranking data available"
+      >
+        <div style={{ color: "#64748b", fontSize: 12, padding: 20, textAlign: "center" }}>
+          EV ranking unavailable — daemon may be offline.
+        </div>
+      </Panel>
+    );
+  }
   const maxEv = Math.max(...rows.map((r) => r.ev_mg_day));
 
   const chartOption = useMemo(
@@ -503,9 +526,52 @@ function CompoundingChart({
 }) {
   const option = useMemo(() => {
     const months = curve.months;
-    const median = curve.median_multiplier.map((m) => m * portfolioSize);
-    const p5 = curve.p5_multiplier.map((m) => m * portfolioSize);
-    const p95 = curve.p95_multiplier.map((m) => m * portfolioSize);
+    const median = curve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1));
+    // p5/p95 arrays are empty for policies without documented Monte Carlo
+    // (see CAPITAL_ALLOCATION.md §10 — only rec_60_10 has MC). Hide the band
+    // in that case rather than showing fabricated data.
+    const hasBand = curve.p5_multiplier.length === months.length && curve.p95_multiplier.length === months.length;
+    const p5 = hasBand ? curve.p5_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
+    const p95 = hasBand ? curve.p95_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
+
+    const series: Array<Record<string, unknown>> = [
+      {
+        name: "Median",
+        type: "line",
+        data: median,
+        lineStyle: { color: "#10b981", width: 2 },
+        symbol: "none",
+        z: 3,
+      },
+      {
+        name: "Start",
+        type: "line",
+        data: months.map(() => portfolioSize),
+        lineStyle: { color: "#475569", type: "dotted", width: 1 },
+        symbol: "none",
+        z: 0,
+      },
+    ];
+    if (hasBand) {
+      series.push(
+        {
+          name: "p95",
+          type: "line",
+          data: p95,
+          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
+          symbol: "none",
+          z: 1,
+        },
+        {
+          name: "p5",
+          type: "line",
+          data: p5,
+          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
+          symbol: "none",
+          z: 1,
+        },
+      );
+    }
 
     return {
       grid: { left: 70, right: 40, top: 30, bottom: 40 },
@@ -514,11 +580,13 @@ function CompoundingChart({
         backgroundColor: "#0f172a",
         borderColor: "#1e293b",
         textStyle: { color: "#e2e8f0", fontSize: 11 },
-        formatter: (params: Array<{ axisValue: number; seriesName: string; value: number }>) => {
-          const month = params[0].axisValue;
+        formatter: (params: Array<{ axisValue: number; seriesName: string; value: number }> | { axisValue: number; seriesName: string; value: number }) => {
+          const arr = Array.isArray(params) ? params : [params];
+          if (!arr.length) return "";
+          const month = arr[0].axisValue;
           const lines = [
             `<b>Month ${month}</b> (${(month / 12).toFixed(1)}y)`,
-            ...params.map((p) => `${p.seriesName}: $${formatCompact(p.value)}`),
+            ...arr.map((p) => `${p.seriesName}: $${formatCompact(p.value)}`),
           ];
           return lines.join("<br/>");
         },
@@ -542,41 +610,7 @@ function CompoundingChart({
         axisLabel: { color: "#64748b", fontSize: 10, formatter: (v: number) => `$${formatCompact(v)}` },
         splitLine: { lineStyle: { color: "#1e293b" } },
       },
-      series: [
-        {
-          name: "p95",
-          type: "line",
-          data: p95,
-          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
-          symbol: "none",
-          areaStyle: undefined,
-          z: 1,
-        },
-        {
-          name: "Median",
-          type: "line",
-          data: median,
-          lineStyle: { color: "#10b981", width: 2 },
-          symbol: "none",
-          z: 3,
-        },
-        {
-          name: "p5",
-          type: "line",
-          data: p5,
-          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
-          symbol: "none",
-          z: 1,
-        },
-        {
-          name: "Start",
-          type: "line",
-          data: months.map(() => portfolioSize),
-          lineStyle: { color: "#475569", type: "dotted", width: 1 },
-          symbol: "none",
-          z: 0,
-        },
-      ],
+      series,
     };
   }, [curve, portfolioSize]);
 
@@ -590,10 +624,14 @@ function CompoundingChart({
   const y3 = milestone(36);
   const y5 = milestone(60);
 
+  const hasBand = curve.p5_multiplier.length === curve.months.length;
+  const subtitle = hasBand
+    ? `Monte Carlo trajectory for ${policy.name}. Scaled from §10's $100K baseline.`
+    : `Backtest compounding curve for ${policy.name} — §5 only (no Monte Carlo documented).`;
   return (
     <Panel
       title="Compounding Growth Projection"
-      subtitle={`Monte Carlo trajectory for ${policy.name}. Scaled from $100K baseline in §10.`}
+      subtitle={subtitle}
     >
       <div style={{ height: 360 }}>
         <ReactECharts option={option} style={{ height: "100%", width: "100%" }} notMerge />

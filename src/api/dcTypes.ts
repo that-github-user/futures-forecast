@@ -211,7 +211,8 @@ export interface DCAllocationPolicy {
   copeland_mode: CopelandMode;
   recommended: boolean;
   backtest: DCPolicyBacktest;
-  monte_carlo: DCPolicyMonteCarlo;
+  // Only populated for the rec_60_10 policy — see CAPITAL_ALLOCATION.md §10.
+  monte_carlo: DCPolicyMonteCarlo | null;
 }
 
 export interface DCEVRankingRow {
