@@ -17,13 +17,21 @@
  */
 
 import type {
+  DCAllocationPolicy,
   DCLegDetail,
+  DCPosition,
   DCSnapshotInfo,
   DCStrategySpec,
   LegName,
 } from "../../api/dcTypes";
 import type { LifecycleInfo, LifecycleState } from "../../lib/dcLifecycle";
 import { dowName, formatCountdown, formatEntryDays, formatExpiry } from "../../lib/dcLifecycle";
+import {
+  computeSizingBreakdown,
+  computeSuggestedContracts,
+  formatMarginUsage,
+  SPX_MULTIPLIER,
+} from "../../lib/dcSizing";
 import { SignalBadge } from "./SignalBadge";
 
 export interface LegData {
@@ -44,6 +52,12 @@ interface Props {
   legData: LegData;
   formatTime: (hhmmET: string | null) => string;
   tzLabel: string;
+  // Capital-allocation inputs (optional — cards still render without them).
+  // Drives the "Suggested: N cts" row rendered before BodyContent.
+  policy?: DCAllocationPolicy | null;
+  portfolioSize?: number;
+  currentDalMult?: number;       // from DCStrategyStats.current_mult for this strategy
+  openPositions?: DCPosition[];  // for margin-budget math
 }
 
 interface StyleSet {
@@ -129,7 +143,18 @@ const STATE_LABELS: Record<LifecycleState, string> = {
   closed: "CLOSED",
 };
 
-export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, tzLabel }: Props) {
+export function StrategyMonitorCard({
+  spec,
+  signal,
+  info,
+  legData,
+  formatTime,
+  tzLabel,
+  policy,
+  portfolioSize,
+  currentDalMult,
+  openPositions,
+}: Props) {
   // When the S/L gate is FAILING, override the visual so viewers don't think
   // the daemon entered. Before entry: "GATE FAIL". After entry: "SKIPPED".
   const slGateFailing =
@@ -190,6 +215,22 @@ export function StrategyMonitorCard({ spec, signal, info, legData, formatTime, t
           {effectiveLabel}
         </span>
       </div>
+
+      {/* Suggested contracts row (capital allocation). Hidden when the
+          capital-allocation context isn't plumbed in by the caller, or when
+          the lifecycle state doesn't warrant it (no point showing a size
+          recommendation on a strategy that's INACTIVE all day). */}
+      {policy && portfolioSize != null && shouldShowSuggested(info.state, signal) && (
+        <SuggestedRow
+          spec={spec}
+          signal={signal}
+          policy={policy}
+          portfolioSize={portfolioSize}
+          currentDalMult={currentDalMult ?? 1}
+          openPositions={openPositions ?? []}
+          legData={legData}
+        />
+      )}
 
       {/* Body: state-driven copy */}
       <BodyContent spec={spec} signal={signal} info={info} formatTime={formatTime} tzLabel={tzLabel} gateSkipped={slGateFailing} />
@@ -678,5 +719,110 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
       </div>
       <div style={{ color: deltaColor, textAlign: "right", fontWeight: 600 }}>{deltaStr}</div>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suggested contracts row (capital allocation)
+// ---------------------------------------------------------------------------
+
+function shouldShowSuggested(state: LifecycleState, signal: string | null): boolean {
+  // Hide when there's no meaningful GO/GO+ signal — no point recommending a
+  // size on a SKIP. Also hide when the lifecycle state is fully inactive
+  // (not firing today) or closed (already fired / exited).
+  const activeEnough =
+    state === "primed" ||
+    state === "imminent" ||
+    state === "firing" ||
+    state === "recently_fired" ||
+    state === "passed_will_fire";
+  const hasGoSignal = signal === "GO" || signal === "GO_PLUS";
+  return activeEnough && hasGoSignal;
+}
+
+function SuggestedRow({
+  spec,
+  signal,
+  policy,
+  portfolioSize,
+  currentDalMult,
+  openPositions,
+  legData,
+}: {
+  spec: DCStrategySpec;
+  signal: string | null;
+  policy: DCAllocationPolicy;
+  portfolioSize: number;
+  currentDalMult: number;
+  openPositions: DCPosition[];
+  legData: LegData;
+}) {
+  const sizedSignal: "GO" | "GO_PLUS" = signal === "GO_PLUS" ? "GO_PLUS" : "GO";
+  // Prefer the live entry debit from the snapshot when present — more accurate
+  // than spec.avg_margin. Falls back to spec.avg_margin inside the helper.
+  const liveDebit = legData.snapshot?.net_debit ?? legData.netDebit ?? null;
+  const marginPerContract =
+    liveDebit != null ? liveDebit * SPX_MULTIPLIER : (spec.avg_margin ?? null);
+
+  const result = computeSuggestedContracts({
+    spec,
+    signal: sizedSignal,
+    portfolioSize,
+    policy,
+    currentDalMult,
+    openPositions,
+    marginPerContract,
+  });
+
+  // Color treatment:
+  //   green  — sized ok
+  //   amber  — sized but margin-trimmed or hard-capped
+  //   red    — skipped
+  const zero = result.finalContracts === 0;
+  const trimmed = !zero && (result.marginTrimmed || result.hardCapped);
+  const color = zero ? "#ef4444" : trimmed ? "#f59e0b" : "#10b981";
+  const bg = color + "14";
+  const border = color + "40";
+
+  const breakdown = computeSizingBreakdown(result, sizedSignal);
+  const marginLine = formatMarginUsage(result);
+
+  return (
+    <div
+      style={{
+        background: bg,
+        border: `1px solid ${border}`,
+        borderRadius: 6,
+        padding: "6px 8px",
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ color, fontWeight: 700 }}>
+          {zero
+            ? `Suggested: skip — ${result.reasonIfZero ?? "over budget"}`
+            : `Suggested: ${result.finalContracts} cts`}
+        </span>
+        {!zero && (
+          <span style={{ color: "#64748b", fontSize: 10 }}>{breakdown}</span>
+        )}
+      </div>
+      {!zero && (
+        <div style={{ color: "#64748b", fontSize: 10 }}>
+          {trimmed && (
+            <span style={{ color: "#f59e0b", marginRight: 6 }}>
+              {result.marginTrimmed
+                ? `trimmed from ${result.goPlusContracts} (margin cap)`
+                : `capped from ${result.goPlusContracts} (hard cap)`}
+            </span>
+          )}
+          {marginLine}
+        </div>
+      )}
+    </div>
   );
 }
