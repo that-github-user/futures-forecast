@@ -26,14 +26,14 @@ const DEFAULT_PORTFOLIO_SIZE = 25_000;
 // they deliberately change the policy. Combined with useCapitalForSignals
 // defaulting to false, the Signals tab looks identical to pre-PR until a
 // two-step opt-in.
-const DEFAULT_POLICY: PolicyKey = "static_1ct";
+export const DEFAULT_POLICY: PolicyKey = "static_1ct";
 const DEFAULT_SIGNAL_MODE: CopelandMode = "aggressive";
 const DEFAULT_USE_CAPITAL_FOR_SIGNALS = false;
 
 const MIN_PORTFOLIO_SIZE = 1_000;
 const MAX_PORTFOLIO_SIZE = 100_000_000;
 
-const VALID_POLICIES: readonly PolicyKey[] = [
+export const VALID_POLICIES: readonly PolicyKey[] = [
   "take_all",
   "rec_60_10",
   "cons_40_8",

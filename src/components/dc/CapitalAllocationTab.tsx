@@ -363,7 +363,7 @@ function PolicyCard({
         )}
       </div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
-      {isBaseline ? (
+      {policy.backtest === null ? (
         <>
           <div
             style={{
@@ -381,31 +381,40 @@ function PolicyCard({
           </div>
         </>
       ) : (
-        <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 6,
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: 11,
-              marginTop: 4,
-            }}
-          >
-            <Stat
-              label="Terminal"
-              value={`$${formatCompact(policy.backtest!.terminal_equity * (portfolioSize / policy.backtest!.start_equity))}`}
-              color="#e2e8f0"
-            />
-            <Stat label="PF" value={policy.backtest!.pf.toFixed(2)} />
-            <Stat label="MaxDD" value={`${policy.backtest!.max_dd_pct.toFixed(1)}%`} />
-          </div>
-          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-            {policy.monte_carlo
-              ? `MC median $${formatCompact(policy.monte_carlo.median * (portfolioSize / policy.backtest!.start_equity))} (${policy.backtest!.years}y from $${formatCompact(portfolioSize)})`
-              : `${policy.backtest!.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
-          </div>
-        </>
+        (() => {
+          // Alias narrowed inside the IIFE so subsequent accesses don't need
+          // `policy.backtest!`. The `backtest === null` check above gives TS
+          // the narrowing, but it doesn't flow through the `isBaseline` local.
+          const bt = policy.backtest;
+          const scale = portfolioSize / bt.start_equity;
+          return (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 6,
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 11,
+                  marginTop: 4,
+                }}
+              >
+                <Stat
+                  label="Terminal"
+                  value={`$${formatCompact(bt.terminal_equity * scale)}`}
+                  color="#e2e8f0"
+                />
+                <Stat label="PF" value={bt.pf.toFixed(2)} />
+                <Stat label="MaxDD" value={`${bt.max_dd_pct.toFixed(1)}%`} />
+              </div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+                {policy.monte_carlo
+                  ? `MC median $${formatCompact(policy.monte_carlo.median * scale)} (${bt.years}y from $${formatCompact(portfolioSize)})`
+                  : `${bt.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
+              </div>
+            </>
+          );
+        })()
       )}
     </button>
   );
