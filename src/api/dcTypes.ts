@@ -95,10 +95,15 @@ export interface DCFeatures {
   bb_position: number | null;
   rsi_14: number | null;
   return_5d: number | null;
+  return_20d: number | null;
   vix_close: number | null;
   vix_pctile: number | null;
-  vol_regime: number | null;
+  vix_change_pct: number | null;
   vix_vix3m_ratio: number | null;
+  vol_regime: number | null;
+  trend_score: number | null;
+  price_vs_sma50_pct: number | null;
+  consecutive_days: number | null;
   feature_date: string | null;
 }
 

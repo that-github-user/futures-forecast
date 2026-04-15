@@ -308,6 +308,26 @@ export function DCSignalsTab({ signals }: Props) {
               label="VIX/VIX3M"
               value={signals.features.vix_vix3m_ratio != null ? signals.features.vix_vix3m_ratio.toFixed(3) : "—"}
             />
+            <FeatureCard
+              label="VIX Chg %"
+              value={signals.features.vix_change_pct != null ? `${signals.features.vix_change_pct.toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="Return 20D"
+              value={signals.features.return_20d != null ? `${signals.features.return_20d.toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="Trend Score"
+              value={signals.features.trend_score != null ? `${signals.features.trend_score.toFixed(0)}/4` : "—"}
+            />
+            <FeatureCard
+              label="Px vs SMA50"
+              value={signals.features.price_vs_sma50_pct != null ? `${signals.features.price_vs_sma50_pct.toFixed(2)}%` : "—"}
+            />
+            <FeatureCard
+              label="Consec Days"
+              value={signals.features.consecutive_days != null ? `${signals.features.consecutive_days > 0 ? "+" : ""}${signals.features.consecutive_days.toFixed(0)}` : "—"}
+            />
           </div>
         </div>
       )}
