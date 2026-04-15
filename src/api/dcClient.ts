@@ -4,6 +4,7 @@
  */
 
 import type {
+  DCCapitalSummary,
   DCHealthResponse,
   DCPosition,
   DCRiskStatus,
@@ -40,4 +41,5 @@ export const dcApi = {
   signals: () => dcGet<DCSignalsResponse>("/dc-api/v1/signals"),
   risk: () => dcGet<DCRiskStatus>("/dc-api/v1/risk"),
   summary: () => dcGet<DCSummary>("/dc-api/v1/summary"),
+  capitalSummary: () => dcGet<DCCapitalSummary>("/dc-api/v1/capital/summary"),
 };
