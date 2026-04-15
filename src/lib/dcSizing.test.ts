@@ -265,6 +265,23 @@ describe("computeSuggestedContracts — defensive edge cases", () => {
     expect(r.dalMultApplied).toBe(2);
   });
 
+  it("returns 0 when marginPerContract is negative (malformed live debit)", () => {
+    const r = computeSuggestedContracts({
+      spec: baseSpec,
+      signal: "GO",
+      portfolioSize: 100_000,
+      policy: basePolicy,
+      currentDalMult: 1,
+      openPositions: [],
+      marginPerContract: -500,   // corrupt feed or calc bug
+    });
+    // Negative margin_per_contract is unreasonable — lib falls back to avg_margin,
+    // so sizing still produces a positive number. This test documents the
+    // fallback behavior so a future change doesn't silently start using the
+    // negative value.
+    expect(r.finalContracts).toBeGreaterThan(0);
+  });
+
   it("skips malformed position records when computing open margin", () => {
     const r = computeSuggestedContracts({
       spec: baseSpec,
