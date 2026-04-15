@@ -68,13 +68,18 @@ export function CapitalAllocationTab({ positions }: Props) {
     : undefined;
 
   // Migrate a pre-PR selection of take_all (now reference_only) back to the
-  // default. Runs once per mount if needed.
+  // default. Deps are narrow (only what actually changes the decision) to
+  // avoid re-firing on every render — `capital` itself is a fresh object
+  // literal each render, and `selectablePolicies` is a fresh `.filter()`
+  // result each render, so depending on them would run this effect
+  // unnecessarily until the migration fires.
   useEffect(() => {
     const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
-    if (stillPicked?.reference_only && selectablePolicies.length > 0) {
-      capital.setPolicy(selectablePolicies[0].key);
+    if (stillPicked?.reference_only) {
+      const fallback = summary.policies.find((p) => !p.reference_only);
+      if (fallback) capital.setPolicy(fallback.key);
     }
-  }, [summary.policies, capital, selectablePolicies]);
+  }, [summary.policies, capital.policyKey, capital.setPolicy]);
 
   if (!selectedPolicy || !selectedCurve) {
     return (
@@ -390,13 +395,15 @@ function PolicyCard({
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
       {policy.backtest === null ? (
         (() => {
-          // static_1ct carries linear_growth parameters — surface the annualized
-          // dollars and 3.8y terminal scaled to the user's portfolio size so
-          // the user can compare "conservative live strategy" in concrete terms.
+          // static_1ct carries linear_growth parameters. These numbers are
+          // UNSCALED: at 1 contract per entry, dollar P/L is identical whether
+          // the user's account is $25K or $500K — the trade makes the trade
+          // whatever. Terminal adds that constant gain to the user's starting
+          // equity, so the 3.8y number varies with portfolioSize but the
+          // annualized P/L does not.
           const lg = policy.linear_growth;
-          const scale = portfolioSize / 100_000;
-          const annualPL = lg ? lg.monthly_pl * 12 * scale : 0;
-          const terminal38 = lg ? portfolioSize + lg.monthly_pl * 46 * scale : portfolioSize;
+          const annualPL = lg ? lg.monthly_pl * 12 : 0;
+          const terminal38 = lg ? portfolioSize + lg.monthly_pl * 46 : portfolioSize;
           return (
             <>
               <div
@@ -723,30 +730,51 @@ function CompoundingChart({
     const lg = policy.linear_growth;
     const isLinear = lg !== null;
 
-    // For compounding policies (backtest set) the backend emits a multiplier
-    // curve; scale it by portfolio size. For linear policies (static_1ct) the
-    // same multipliers work — 1.0× → $portfolioSize, then grows linearly.
-    const median = curve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1));
+    // Two semantic flavors, one chart:
+    //
+    //   Compounding policies (policy.backtest set): backend emits multiplier
+    //   curves. Dollar equity = multiplier × portfolioSize (at $500K start,
+    //   a 100× multiplier really does mean $50M terminal — that's the point
+    //   of compounding).
+    //
+    //   Linear policies (policy.linear_growth set, e.g. static_1ct): the
+    //   ABSOLUTE dollar P/L from 1 contract per entry is capital-invariant.
+    //   A user at $25K and a user at $500K both make ~$87K/yr at 1ct.
+    //   Backend emits an EMPTY median_multiplier to signal "don't scale";
+    //   frontend builds median = portfolioSize + monthly_pl × t directly,
+    //   and sample paths use unscaled monthly_pl / monthly_sigma.
+    let median: number[];
+    if (isLinear && lg !== null) {
+      median = Array.from({ length: horizonMonths + 1 }, (_, t) =>
+        Math.max(portfolioSize + lg.monthly_pl * t, 1),
+      );
+    } else {
+      median = curve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1));
+    }
+
     // p5/p95 arrays are empty for policies without documented Monte Carlo
     // (see CAPITAL_ALLOCATION.md §10 — only rec_60_10 has MC) or for linear
     // policies. Hide the band in that case rather than showing fabricated data.
     const hasBand =
-      curve.p5_multiplier.length === months.length && curve.p95_multiplier.length === months.length;
+      !isLinear &&
+      curve.p5_multiplier.length === months.length &&
+      curve.p95_multiplier.length === months.length;
     const p5 = hasBand ? curve.p5_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
     const p95 = hasBand ? curve.p95_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
 
     // Client-side illustrative sample paths. Two flavors:
-    //   - Compounding policies (GBM around the exponential median, MaxDD-calibrated).
-    //   - Linear policies (additive around the straight-line median, sigma from
-    //     linear_growth.monthly_sigma). static_1ct uses this branch so the
-    //     chart honestly shows per-trade P/L variance at 1 contract.
+    //   - Compounding: GBM around the exponential median, MaxDD-calibrated.
+    //     Generated as multipliers then scaled to dollars.
+    //   - Linear: additive Gaussian noise around the straight-line median,
+    //     sigma from linear_growth.monthly_sigma (UNSCALED — 1ct P/L
+    //     variance is also capital-invariant). Generated directly in dollars.
     let jitteredPaths: number[][] = [];
     if (isLinear && lg !== null) {
       jitteredPaths = samplePathsLinear(policy.key, N_SAMPLE_PATHS, {
         horizonMonths,
         startEquity: portfolioSize,
-        monthlyPL: lg.monthly_pl * (portfolioSize / 100_000),
-        monthlySigma: lg.monthly_sigma * (portfolioSize / 100_000),
+        monthlyPL: lg.monthly_pl,
+        monthlySigma: lg.monthly_sigma,
       });
     } else if (policy.backtest !== null) {
       const bt = policy.backtest;
@@ -756,15 +784,6 @@ function CompoundingChart({
         terminalMultiplier: terminalMult,
         maxDdPct: bt.max_dd_pct,
       }).map((path) => path.map((m) => Math.max(m * portfolioSize, 1)));
-      // For non-linear paths, multipliers need to be scaled to dollars AFTER
-      // sample generation (they come out as multipliers). For linear paths
-      // the values are already in dollars.
-    }
-    // Normalize: both branches now produce dollar-valued paths.
-    if (isLinear) {
-      // samplePathsLinear already returns dollars.
-    } else {
-      // jitteredPaths from samplePaths was mapped to dollars in-place above.
     }
 
     const series: Array<Record<string, unknown>> = [];
@@ -892,12 +911,13 @@ function CompoundingChart({
   const y3 = milestone(36);
 
   const isLinear = policy.linear_growth !== null;
-  const hasBand = curve.p5_multiplier.length === curve.months.length;
+  const hasBand =
+    !isLinear && curve.p5_multiplier.length === curve.months.length;
   const overlayNote = referenceOverlays.length
     ? ` Dashed gray = ${referenceOverlays.map((r) => r.policy.name).join(" / ")} for comparison.`
     : "";
   const subtitle = isLinear
-    ? `${policy.name}: linear growth from per-trade EV (~$${Math.round((policy.linear_growth?.monthly_pl ?? 0) * 12 / 1000)}K/yr at $100K start) + ${N_SAMPLE_PATHS} sample paths with ±$${Math.round((policy.linear_growth?.monthly_sigma ?? 0) / 1000)}K/mo jitter.${overlayNote}`
+    ? `${policy.name}: linear growth at ~$${Math.round((policy.linear_growth?.monthly_pl ?? 0) * 12 / 1000)}K/yr from 1-contract EV (capital-invariant — the dollar P/L doesn't depend on your portfolio size) + ${N_SAMPLE_PATHS} sample paths with ±$${Math.round((policy.linear_growth?.monthly_sigma ?? 0) / 1000)}K/mo jitter.${overlayNote}`
     : hasBand
     ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM).${overlayNote}`
     : `${policy.name}: deterministic median curve from §5 backtest + ${N_SAMPLE_PATHS} illustrative paths (no documented Monte Carlo).${overlayNote}`;
@@ -929,10 +949,11 @@ function CompoundingChart({
           value={
             policy.backtest
               ? policy.backtest.terminal_equity * (portfolioSize / policy.backtest.start_equity)
-              : isLinear
-              ? // Terminal equity under static_1ct = start + monthly_pl × 46mo,
-                // scaled by the portfolio-size multiplier against the $100K baseline.
-                curve.median_multiplier[curve.median_multiplier.length - 1] * portfolioSize
+              : isLinear && policy.linear_growth
+              ? // 1ct terminal = portfolioSize + monthly_pl × 46. The monthly
+                // P/L is unscaled — 1 contract produces the same dollar gain
+                // regardless of account size.
+                portfolioSize + policy.linear_growth.monthly_pl * 46
               : portfolioSize
           }
           color="#3b82f6"
