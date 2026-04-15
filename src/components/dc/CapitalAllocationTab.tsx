@@ -106,6 +106,25 @@ function CapitalAllocationTabInner({ positions }: Props) {
   const { summary, loading } = useCapitalSummary();
   const { specs } = useStrategySpecs();
 
+  // Migrate a pre-PR selection of take_all (now reference_only) back to the
+  // default. MUST stay ABOVE the early `if (loading)` / `if (!summary)`
+  // returns — React requires the same hook order on every render, and
+  // `loading` flips false on the second render which would otherwise
+  // introduce a hook where there wasn't one before (React error #310).
+  //
+  // Deps are narrow (only what actually changes the decision) to avoid
+  // re-firing on every render — `capital` itself is a fresh object literal
+  // each render, so depending on it would run this effect unnecessarily.
+  // The `summary?.policies` optional-chain handles the still-loading state.
+  useEffect(() => {
+    if (!summary) return;
+    const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
+    if (stillPicked?.reference_only) {
+      const fallback = summary.policies.find((p) => !p.reference_only);
+      if (fallback) capital.setPolicy(fallback.key);
+    }
+  }, [summary, capital.policyKey, capital.setPolicy]);
+
   if (loading) {
     return (
       <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
@@ -124,7 +143,7 @@ function CapitalAllocationTabInner({ positions }: Props) {
   // Policies the user can actually pick. `reference_only` policies (take_all)
   // are rendered as overlays on the compounding chart rather than as selectable
   // options — the picker excludes them and any localStorage that still points
-  // at one gets coerced back to the default in the useEffect below.
+  // at one gets coerced back to the default by the useEffect above.
   const selectablePolicies = summary.policies.filter((p) => !p.reference_only);
   const referencePolicies = summary.policies.filter((p) => p.reference_only);
 
@@ -134,20 +153,6 @@ function CapitalAllocationTabInner({ positions }: Props) {
   const selectedCurve = selectedPolicy
     ? summary.compounding_curves[selectedPolicy.key]
     : undefined;
-
-  // Migrate a pre-PR selection of take_all (now reference_only) back to the
-  // default. Deps are narrow (only what actually changes the decision) to
-  // avoid re-firing on every render — `capital` itself is a fresh object
-  // literal each render, and `selectablePolicies` is a fresh `.filter()`
-  // result each render, so depending on them would run this effect
-  // unnecessarily until the migration fires.
-  useEffect(() => {
-    const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
-    if (stillPicked?.reference_only) {
-      const fallback = summary.policies.find((p) => !p.reference_only);
-      if (fallback) capital.setPolicy(fallback.key);
-    }
-  }, [summary.policies, capital.policyKey, capital.setPolicy]);
 
   if (!selectedPolicy || !selectedCurve) {
     return (
@@ -676,20 +681,10 @@ function SizingGrid({
 // ---------------------------------------------------------------------------
 
 function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <Panel
-        title="Capital Efficiency — EV per Margin-Day"
-        subtitle="No ranking data available"
-      >
-        <div style={{ color: "#64748b", fontSize: 12, padding: 20, textAlign: "center" }}>
-          EV ranking unavailable — daemon may be offline.
-        </div>
-      </Panel>
-    );
-  }
-  const maxEv = Math.max(...rows.map((r) => r.ev_mg_day));
-
+  // Hooks MUST stay above any early return so React sees a consistent
+  // hook count across renders (error #310). If `rows` goes empty → non-empty
+  // between renders, the `useMemo` count changing would blow up the tree.
+  const maxEv = rows.length > 0 ? Math.max(...rows.map((r) => r.ev_mg_day)) : 0;
   const chartOption = useMemo(
     () => ({
       grid: { left: 90, right: 40, top: 20, bottom: 20 },
@@ -731,6 +726,19 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
     }),
     [rows, maxEv],
   );
+
+  if (rows.length === 0) {
+    return (
+      <Panel
+        title="Capital Efficiency — EV per Margin-Day"
+        subtitle="No ranking data available"
+      >
+        <div style={{ color: "#64748b", fontSize: 12, padding: 20, textAlign: "center" }}>
+          EV ranking unavailable — daemon may be offline.
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel
