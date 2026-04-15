@@ -8,7 +8,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { hashSeed, mulberry32, samplePath, samplePaths } from "./dcPathSim";
+import {
+  hashSeed,
+  mulberry32,
+  samplePath,
+  samplePathLinear,
+  samplePaths,
+  samplePathsLinear,
+} from "./dcPathSim";
 
 describe("mulberry32 — seeded PRNG", () => {
   it("is deterministic for a given seed", () => {
@@ -150,6 +157,122 @@ describe("samplePaths — batch", () => {
       horizonMonths: 46,
       terminalMultiplier: 102,
       maxDdPct: 9.0,
+    });
+    expect(a).toEqual(b);
+  });
+});
+
+describe("samplePathLinear — additive growth with Gaussian jitter", () => {
+  const opts = {
+    horizonMonths: 46,
+    startEquity: 100_000,
+    monthlyPL: 7_222,       // ~$87K/year
+    monthlySigma: 2_500,
+    seed: 999,
+  };
+
+  it("starts at startEquity", () => {
+    const p = samplePathLinear(opts);
+    expect(p[0]).toBe(100_000);
+  });
+
+  it("has length = horizonMonths + 1", () => {
+    expect(samplePathLinear(opts).length).toBe(47);
+  });
+
+  it("is deterministic for a given seed", () => {
+    expect(samplePathLinear(opts)).toEqual(samplePathLinear(opts));
+  });
+
+  it("different seeds produce different paths", () => {
+    expect(samplePathLinear({ ...opts, seed: 1 }))
+      .not.toEqual(samplePathLinear({ ...opts, seed: 2 }));
+  });
+
+  it("terminal is near startEquity + monthlyPL × horizon (within a few σ)", () => {
+    // Expected terminal ≈ $100K + 46×$7222 = $432,212
+    // Cumulative σ over 46 months ≈ √46 × $2500 ≈ $16,956
+    // Allow ±4σ for safety (virtually always inside)
+    const p = samplePathLinear(opts);
+    const terminal = p[p.length - 1];
+    const expected = 100_000 + 46 * 7_222;
+    const cumSigma = Math.sqrt(46) * 2_500;
+    expect(terminal).toBeGreaterThan(expected - 4 * cumSigma);
+    expect(terminal).toBeLessThan(expected + 4 * cumSigma);
+  });
+
+  it("flat deterministic line when monthlySigma = 0", () => {
+    const p = samplePathLinear({ ...opts, monthlySigma: 0 });
+    for (let t = 0; t <= opts.horizonMonths; t++) {
+      expect(p[t]).toBeCloseTo(opts.startEquity + t * opts.monthlyPL, 6);
+    }
+  });
+
+  it("never drops below $1 (log-scale safety)", () => {
+    // Pathological: tiny start, huge sigma, no drift → many paths would
+    // otherwise go negative.
+    const p = samplePathLinear({
+      horizonMonths: 46,
+      startEquity: 1_000,
+      monthlyPL: 0,
+      monthlySigma: 5_000,
+      seed: 42,
+    });
+    for (const v of p) expect(v).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns [startEquity] for zero horizon", () => {
+    expect(samplePathLinear({ ...opts, horizonMonths: 0 })).toEqual([100_000]);
+  });
+});
+
+describe("samplePathsLinear — batch", () => {
+  it("generates N paths, all starting at startEquity", () => {
+    const paths = samplePathsLinear("static_1ct", 8, {
+      horizonMonths: 46,
+      startEquity: 100_000,
+      monthlyPL: 7_222,
+      monthlySigma: 2_500,
+    });
+    expect(paths).toHaveLength(8);
+    for (const p of paths) {
+      expect(p.length).toBe(47);
+      expect(p[0]).toBe(100_000);
+    }
+  });
+
+  it("per-index seeds differ from the compounding-variant per-index seeds", () => {
+    // samplePaths and samplePathsLinear should NOT produce identical paths
+    // for the same policy key — they share the PRNG but the seed-prefix
+    // ("policy:0" vs "policy:linear:0") differentiates them.
+    const compounding = samplePaths("static_1ct", 1, {
+      horizonMonths: 46,
+      terminalMultiplier: 1,
+      maxDdPct: 0,
+    });
+    const linear = samplePathsLinear("static_1ct", 1, {
+      horizonMonths: 46,
+      startEquity: 100_000,
+      monthlyPL: 7_222,
+      monthlySigma: 2_500,
+    });
+    // Even ignoring values, the shapes differ (1.0-based vs equity-based).
+    expect(compounding[0][0]).toBe(1.0);
+    expect(linear[0][0]).toBe(100_000);
+  });
+
+  it("is stable across invocations", () => {
+    const a = samplePathsLinear("static_1ct", 3, {
+      horizonMonths: 46,
+      startEquity: 100_000,
+      monthlyPL: 7_222,
+      monthlySigma: 2_500,
+    });
+    const b = samplePathsLinear("static_1ct", 3, {
+      horizonMonths: 46,
+      startEquity: 100_000,
+      monthlyPL: 7_222,
+      monthlySigma: 2_500,
     });
     expect(a).toEqual(b);
   });

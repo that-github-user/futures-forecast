@@ -198,6 +198,12 @@ export interface DCPolicyMonteCarlo {
   p95: number;
 }
 
+export interface DCLinearGrowth {
+  monthly_pl: number;
+  monthly_sigma: number;
+  source: string;
+}
+
 export interface DCAllocationPolicy {
   key: PolicyKey;
   name: string;
@@ -210,11 +216,18 @@ export interface DCAllocationPolicy {
   hard_cap: number;
   copeland_mode: CopelandMode;
   recommended: boolean;
+  // Reference-only policies render as an overlay on the compounding chart
+  // but don't appear in the picker (used for take_all, which isn't
+  // executable on a real broker).
+  reference_only: boolean;
   // Null for the static_1ct baseline (no vega-prime research behind it);
   // populated for every other policy.
   backtest: DCPolicyBacktest | null;
   // Only populated for the rec_60_10 policy — see CAPITAL_ALLOCATION.md §10.
   monte_carlo: DCPolicyMonteCarlo | null;
+  // Set only for non-compounding policies (static_1ct). Enables linear
+  // median + Gaussian-noise sample-path rendering.
+  linear_growth: DCLinearGrowth | null;
 }
 
 export interface DCEVRankingRow {

@@ -91,8 +91,10 @@ function makePolicy(key: string, p: FixtureCase["input"]["policy"]): DCAllocatio
     hard_cap: p.hard_cap,
     copeland_mode: "aggressive",
     recommended: key === "rec_60_10",
+    reference_only: false,
     backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 3.8, trades_skipped: 0 },
     monte_carlo: { median: 0, p5: 0, p95: 0 },
+    linear_growth: null,
   };
 }
 
@@ -186,8 +188,10 @@ describe("computeSuggestedContracts — defensive edge cases", () => {
     hard_cap: 50,
     copeland_mode: "aggressive",
     recommended: true,
+    reference_only: false,
     backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 3.8, trades_skipped: 0 },
     monte_carlo: null,
+    linear_growth: null,
   };
   const baseSpec: DCStrategySpec = {
     name: "TEST",
