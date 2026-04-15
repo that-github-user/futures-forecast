@@ -1,11 +1,11 @@
 /**
  * CapitalAllocationTab — dashboards the vega-prime research (CAPITAL_ALLOCATION.md).
  *
- * Four panels:
- *   A. PolicyPicker      — four validated policies with backtest + MC stats
+ * Four panels (order matters — reactive panels up top, static reference at bottom):
+ *   A. PolicyPicker      — 4 validated policies + static_1ct baseline
  *   B. SizingGrid        — per-strategy contract counts at the user's capital
- *   C. EVRankingPanel    — §4 EV/margin-day capital efficiency
- *   D. CompoundingChart  — §10 Monte Carlo growth projection
+ *   C. CompoundingChart  — §10 Monte Carlo growth projection + jittered sample paths
+ *   D. EVRankingPanel    — §4 EV/margin-day capital efficiency (reference, static)
  *
  * The allocation math is the same ``lib/dcSizing.ts`` used by StrategyMonitorCard's
  * Suggested row, so the Sizing Grid shows the exact numbers a live entry would
@@ -27,6 +27,7 @@ import { useCapitalAllocation } from "../../hooks/useCapitalAllocation";
 import { useCapitalSummary } from "../../hooks/useCapitalSummary";
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { computeSuggestedContracts, SPX_MULTIPLIER } from "../../lib/dcSizing";
+import { samplePaths } from "../../lib/dcPathSim";
 
 interface Props {
   positions: DCPosition[];
@@ -66,14 +67,17 @@ export function CapitalAllocationTab({ positions }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Sticky header: portfolio input (drives every panel below) */}
+      {/* Sticky header: portfolio input + Apply-to-Signals toggle (drives every panel below) */}
       <HeaderBand
         portfolioSize={capital.portfolioSize}
         onPortfolioChange={capital.setPortfolioSize}
         policyKey={capital.policyKey}
+        useCapitalForSignals={capital.useCapitalForSignals}
+        onToggleUseForSignals={capital.setUseCapitalForSignals}
         source={summary.source}
       />
 
+      {/* Panel A — pick a policy (reactive) */}
       <PolicyPicker
         policies={summary.policies}
         selectedKey={capital.policyKey}
@@ -81,6 +85,7 @@ export function CapitalAllocationTab({ positions }: Props) {
         portfolioSize={capital.portfolioSize}
       />
 
+      {/* Panel B — per-strategy sizing grid (reactive to policy + portfolio size) */}
       <SizingGrid
         specs={specs ?? []}
         policy={selectedPolicy}
@@ -88,13 +93,15 @@ export function CapitalAllocationTab({ positions }: Props) {
         positions={positions}
       />
 
-      <EVRankingPanel rows={summary.ev_ranking} />
-
+      {/* Panel C — compounding projection (reactive to policy + portfolio size + jittered paths) */}
       <CompoundingChart
         curve={selectedCurve}
         policy={selectedPolicy}
         portfolioSize={capital.portfolioSize}
       />
+
+      {/* Panel D — static EV reference (not affected by user's choice; parked at bottom) */}
+      <EVRankingPanel rows={summary.ev_ranking} />
     </div>
   );
 }
@@ -107,11 +114,15 @@ function HeaderBand({
   portfolioSize,
   onPortfolioChange,
   policyKey,
+  useCapitalForSignals,
+  onToggleUseForSignals,
   source,
 }: {
   portfolioSize: number;
   onPortfolioChange: (v: number) => void;
   policyKey: PolicyKey;
+  useCapitalForSignals: boolean;
+  onToggleUseForSignals: (v: boolean) => void;
   source: string;
 }) {
   return (
@@ -156,10 +167,88 @@ function HeaderBand({
       <span style={{ fontSize: 11, color: "#64748b" }}>
         Policy: <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{POLICY_SHORT[policyKey]}</span>
       </span>
+
+      {/* Type II opt-in: the user deliberately enables policy-driven sizing on the
+          Signals tab. Default off — Signals stays in "raw-signal" display mode
+          until the user makes a conscious choice here. */}
+      <ApplyToSignalsToggle
+        value={useCapitalForSignals}
+        onChange={onToggleUseForSignals}
+      />
+
       <span style={{ fontSize: 10, color: "#475569", marginLeft: "auto", fontStyle: "italic" }}>
         Source: {source}
       </span>
     </div>
+  );
+}
+
+function ApplyToSignalsToggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const track = value ? "#10b981" : "#334155";
+  const knob = value ? "translateX(16px)" : "translateX(0)";
+  const subtitle = value
+    ? "Signals cards will show Suggested: N cts based on the selected policy"
+    : "Signals cards show the daemon's raw signals only";
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      title={subtitle}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        background: "transparent",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        fontFamily: "Inter, sans-serif",
+      }}
+      aria-pressed={value}
+    >
+      <span style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Apply to Signals</span>
+      <span
+        style={{
+          position: "relative",
+          display: "inline-block",
+          width: 34,
+          height: 18,
+          borderRadius: 9,
+          background: track,
+          transition: "background 150ms",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: 2,
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            background: "#f8fafc",
+            transform: knob,
+            transition: "transform 150ms",
+          }}
+        />
+      </span>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          color: value ? "#10b981" : "#64748b",
+          letterSpacing: 0.5,
+        }}
+      >
+        {value ? "ON" : "OFF"}
+      </span>
+    </button>
   );
 }
 
@@ -168,6 +257,7 @@ const POLICY_SHORT: Record<PolicyKey, string> = {
   rec_60_10: "Recommended 60/10",
   cons_40_8: "Stricter 40/8",
   cop_cons_60_10: "Cop-Con 60/10",
+  static_1ct: "Static 1 ct (baseline)",
 };
 
 // ---------------------------------------------------------------------------
@@ -219,9 +309,8 @@ function PolicyCard({
   onClick: () => void;
   portfolioSize: number;
 }) {
-  const scale = portfolioSize / policy.backtest.start_equity;
-  const terminalScaled = policy.backtest.terminal_equity * scale;
   const color = selected ? "#3b82f6" : policy.recommended ? "#10b981" : "#334155";
+  const isBaseline = policy.backtest === null;
   return (
     <button
       onClick={onClick}
@@ -256,27 +345,68 @@ function PolicyCard({
             REC
           </span>
         )}
+        {isBaseline && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: "#64748b",
+              background: "#1e293b",
+              border: "1px solid #334155",
+              borderRadius: 4,
+              padding: "1px 5px",
+              letterSpacing: 0.5,
+            }}
+          >
+            BASELINE
+          </span>
+        )}
       </div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 6,
-          fontFamily: "JetBrains Mono, monospace",
-          fontSize: 11,
-          marginTop: 4,
-        }}
-      >
-        <Stat label="Terminal" value={`$${formatCompact(terminalScaled)}`} color="#e2e8f0" />
-        <Stat label="PF" value={policy.backtest.pf.toFixed(2)} />
-        <Stat label="MaxDD" value={`${policy.backtest.max_dd_pct.toFixed(1)}%`} />
-      </div>
-      <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-        {policy.monte_carlo
-          ? `MC median $${formatCompact(policy.monte_carlo.median * scale)} (${policy.backtest.years}y from $${formatCompact(portfolioSize)})`
-          : `${policy.backtest.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
-      </div>
+      {isBaseline ? (
+        <>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#64748b",
+              fontStyle: "italic",
+              fontFamily: "JetBrains Mono, monospace",
+              marginTop: 4,
+            }}
+          >
+            Baseline — no backtest applies
+          </div>
+          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+            Every entry: 1 contract regardless of capital or streak
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 6,
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 11,
+              marginTop: 4,
+            }}
+          >
+            <Stat
+              label="Terminal"
+              value={`$${formatCompact(policy.backtest!.terminal_equity * (portfolioSize / policy.backtest!.start_equity))}`}
+              color="#e2e8f0"
+            />
+            <Stat label="PF" value={policy.backtest!.pf.toFixed(2)} />
+            <Stat label="MaxDD" value={`${policy.backtest!.max_dd_pct.toFixed(1)}%`} />
+          </div>
+          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+            {policy.monte_carlo
+              ? `MC median $${formatCompact(policy.monte_carlo.median * (portfolioSize / policy.backtest!.start_equity))} (${policy.backtest!.years}y from $${formatCompact(portfolioSize)})`
+              : `${policy.backtest!.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
+          </div>
+        </>
+      )}
     </button>
   );
 }
@@ -515,6 +645,8 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
 // Panel D — Compounding Chart
 // ---------------------------------------------------------------------------
 
+const N_SAMPLE_PATHS = 8;
+
 function CompoundingChart({
   curve,
   policy,
@@ -534,7 +666,39 @@ function CompoundingChart({
     const p5 = hasBand ? curve.p5_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
     const p95 = hasBand ? curve.p95_multiplier.map((m) => Math.max(m * portfolioSize, 1)) : [];
 
-    const series: Array<Record<string, unknown>> = [
+    // Client-side illustrative sample paths. Skip for the static_1ct baseline
+    // (flat curve, no variance) and any policy missing backtest data.
+    const showSamplePaths = policy.backtest !== null;
+    const terminalMult = policy.backtest
+      ? policy.backtest.terminal_equity / policy.backtest.start_equity
+      : 1;
+    const maxDdPct = policy.backtest?.max_dd_pct ?? 0;
+    const horizonMonths = months.length - 1;
+    const jitteredPaths = showSamplePaths
+      ? samplePaths(policy.key, N_SAMPLE_PATHS, {
+          horizonMonths,
+          terminalMultiplier: terminalMult,
+          maxDdPct,
+        })
+      : [];
+
+    const series: Array<Record<string, unknown>> = [];
+
+    // Jittered sample paths first (lowest z-index — behind the median + bands).
+    for (const [idx, path] of jitteredPaths.entries()) {
+      series.push({
+        name: `Illustrative path ${idx + 1}`,
+        type: "line",
+        data: path.map((m) => Math.max(m * portfolioSize, 1)),
+        lineStyle: { color: "#10b98128", width: 1 },
+        symbol: "none",
+        showInLegend: false,
+        tooltip: { show: false },
+        z: 0,
+      });
+    }
+
+    series.push(
       {
         name: "Median",
         type: "line",
@@ -551,7 +715,7 @@ function CompoundingChart({
         symbol: "none",
         z: 0,
       },
-    ];
+    );
     if (hasBand) {
       series.push(
         {
@@ -560,7 +724,7 @@ function CompoundingChart({
           data: p95,
           lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
           symbol: "none",
-          z: 1,
+          z: 2,
         },
         {
           name: "p5",
@@ -568,7 +732,7 @@ function CompoundingChart({
           data: p5,
           lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
           symbol: "none",
-          z: 1,
+          z: 2,
         },
       );
     }
@@ -583,10 +747,14 @@ function CompoundingChart({
         formatter: (params: Array<{ axisValue: number; seriesName: string; value: number }> | { axisValue: number; seriesName: string; value: number }) => {
           const arr = Array.isArray(params) ? params : [params];
           if (!arr.length) return "";
-          const month = arr[0].axisValue;
+          // Skip the "Illustrative path N" series in the tooltip — there are 8
+          // of them and they'd swamp the real signal (Median / p5 / p95).
+          const filtered = arr.filter((p) => !p.seriesName.startsWith("Illustrative path"));
+          if (!filtered.length) return "";
+          const month = filtered[0].axisValue;
           const lines = [
             `<b>Month ${month}</b> (${(month / 12).toFixed(1)}y)`,
-            ...arr.map((p) => `${p.seriesName}: $${formatCompact(p.value)}`),
+            ...filtered.map((p) => `${p.seriesName}: $${formatCompact(p.value)}`),
           ];
           return lines.join("<br/>");
         },
@@ -612,9 +780,9 @@ function CompoundingChart({
       },
       series,
     };
-  }, [curve, portfolioSize]);
+  }, [curve, policy, portfolioSize]);
 
-  // Milestone annotations (read directly off the computed median curve)
+  // Milestone annotations (read directly off the computed median curve).
   const milestone = (m: number) => {
     const idx = curve.months.indexOf(m);
     if (idx < 0) return null;
@@ -622,17 +790,17 @@ function CompoundingChart({
   };
   const y1 = milestone(12);
   const y3 = milestone(36);
-  const y5 = milestone(60);
 
+  const isBaseline = policy.backtest === null;
   const hasBand = curve.p5_multiplier.length === curve.months.length;
-  const subtitle = hasBand
-    ? `Monte Carlo trajectory for ${policy.name}. Scaled from §10's $100K baseline.`
-    : `Backtest compounding curve for ${policy.name} — §5 only (no Monte Carlo documented).`;
+  const subtitle = isBaseline
+    ? "Flat baseline — 1 contract per entry, no compounding."
+    : hasBand
+    ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM).`
+    : `${policy.name}: deterministic median curve from §5 backtest + ${N_SAMPLE_PATHS} illustrative paths (no documented Monte Carlo).`;
+
   return (
-    <Panel
-      title="Compounding Growth Projection"
-      subtitle={subtitle}
-    >
+    <Panel title="Compounding Growth Projection" subtitle={subtitle}>
       <div style={{ height: 360 }}>
         <ReactECharts option={option} style={{ height: "100%", width: "100%" }} notMerge />
       </div>
@@ -647,16 +815,20 @@ function CompoundingChart({
       >
         <Milestone label="1y median" value={y1} />
         <Milestone label="3y median" value={y3} />
-        <Milestone label="5y median" value={y5} />
         <Milestone
-          label="Historical 3.8y"
-          value={policy.backtest.terminal_equity * (portfolioSize / policy.backtest.start_equity)}
+          label={policy.backtest ? `Historical ${policy.backtest.years}y` : "Baseline"}
+          value={
+            policy.backtest
+              ? policy.backtest.terminal_equity * (portfolioSize / policy.backtest.start_equity)
+              : portfolioSize
+          }
           color="#3b82f6"
         />
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: "#64748b", fontStyle: "italic" }}>
-        Based on {policy.copeland_mode} Copeland gating + {policy.global_pct}/{policy.per_strat_pct} margin budget.
-        Hard contract cap: {policy.hard_cap}. SPX multiplier: {SPX_MULTIPLIER}. Past performance ≠ future results.
+        {isBaseline
+          ? "Static 1-contract baseline. No research model — included as a comparison anchor."
+          : `Based on ${policy.copeland_mode} Copeland gating + ${policy.global_pct}/${policy.per_strat_pct} margin budget. Hard contract cap: ${policy.hard_cap}. SPX multiplier: ${SPX_MULTIPLIER}. Past performance ≠ future results.`}
       </div>
     </Panel>
   );

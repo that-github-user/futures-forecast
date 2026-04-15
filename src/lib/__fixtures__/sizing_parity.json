@@ -280,6 +280,36 @@
         "strategy": "FM Mon"
       },
       "label": "FM Mon @ $100K GO cop_cons_60_10"
+    },
+    {
+      "expected": {
+        "final_contracts": 1,
+        "global_cap": 100000.0,
+        "global_used": 0.0,
+        "max_affordable": 147,
+        "sized_before_margin_trim": 1,
+        "strat_cap": 100000.0,
+        "strat_used": 0.0
+      },
+      "input": {
+        "avg_margin": 677.0,
+        "current_mult": 2.0,
+        "open_positions": [],
+        "policy": {
+          "base_pct": 0.0,
+          "dal_cap": 1.0,
+          "global_pct": 100,
+          "go_plus_mult": 1.0,
+          "hard_cap": 1,
+          "per_strat_pct": 100
+        },
+        "policy_key": "static_1ct",
+        "portfolio_value": 100000,
+        "signal": "GO_PLUS",
+        "spx_multiplier": 100,
+        "strategy": "FM Mon"
+      },
+      "label": "FM Mon @ $100K GO+ DAl=2 static_1ct"
     }
   ],
   "source": "tests/test_frontend_sizing_parity.py"
