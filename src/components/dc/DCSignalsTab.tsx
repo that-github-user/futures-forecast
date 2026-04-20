@@ -293,16 +293,24 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         <div className="panel" style={{ padding: 12, marginTop: 8 }}>
           <div className="panel-header" style={{ marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
             <span className="panel-title">Market Features</span>
-            {signals.features.feature_date && (
+            {(signals.features.computed_date || signals.features.feature_date) && (
               <span
                 style={{
                   fontSize: 11,
                   fontFamily: "JetBrains Mono, monospace",
                   color: featuresStale ? "#f59e0b" : "#64748b",
                 }}
+                // The prior-day bar date is the causal-lag input — not a
+                // staleness indicator. Surface it in the tooltip so the
+                // context is available without cluttering the header.
+                title={
+                  signals.features.feature_date
+                    ? `Causal features computed from ${signals.features.feature_date} close`
+                    : undefined
+                }
               >
-                {featuresStale ? "STALE " : ""}
-                {signals.features.feature_date}
+                {featuresStale ? "STALE " : "As of "}
+                {signals.features.computed_date || signals.features.feature_date}
               </span>
             )}
           </div>
