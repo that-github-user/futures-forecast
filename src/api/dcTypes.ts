@@ -10,6 +10,9 @@ export interface DCHealthResponse {
 
 export interface DCPosition {
   id: number;
+  // Human-readable natural key: "{strategy-slug}_{iso-entry-time}".
+  // Null on legacy rows created before the column existed.
+  position_uid: string | null;
   strategy_name: string;
   signal: string;
   entry_time: string;

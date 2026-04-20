@@ -101,6 +101,7 @@ function makePolicy(key: string, p: FixtureCase["input"]["policy"]): DCAllocatio
 function makePosition(p: { strategy_name: string; entry_debit: number; quantity: number }): DCPosition {
   return {
     id: 0,
+    position_uid: null,
     strategy_name: p.strategy_name,
     signal: "GO",
     entry_time: "",
@@ -310,6 +311,7 @@ describe("computeSuggestedContracts — defensive edge cases", () => {
 function makeZeroPos(): DCPosition {
   return {
     id: 0,
+    position_uid: null,
     strategy_name: "TEST",
     signal: "GO",
     entry_time: "",
