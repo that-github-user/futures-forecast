@@ -104,7 +104,10 @@ export interface DCFeatures {
   trend_score: number | null;
   price_vs_sma50_pct: number | null;
   consecutive_days: number | null;
+  // Prior-day bar date the causal features are computed against (Friday on Monday).
   feature_date: string | null;
+  // The trading session these features are for — the real "as-of" date.
+  computed_date: string | null;
 }
 
 export interface DCSignalsResponse {
