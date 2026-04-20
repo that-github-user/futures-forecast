@@ -30,6 +30,7 @@ export function DCEventsTab() {
   const [date, setDate] = useState<string>(todayET());
   const [strategyFilter, setStrategyFilter] = useState<string>("");
 
+  const today = todayET();
   const effectiveDate = date === "all" ? "all" : date;
   const { events, loading, error } = useDCSignalEvents({
     date: effectiveDate || undefined,
@@ -55,13 +56,20 @@ export function DCEventsTab() {
           <input
             type="date"
             value={date === "all" ? "" : date}
-            onChange={(e) => setDate(e.target.value || todayET())}
+            // Empty changes (native clear-X, or the empty state after
+            // "All history" is picked) are a no-op. The chip buttons are
+            // the only way to enter/leave the "all" mode — otherwise the
+            // browser clear button would silently snap back to today and
+            // fight with the All-history toggle.
+            onChange={(e) => {
+              if (e.target.value) setDate(e.target.value);
+            }}
             style={inputStyle}
           />
         </label>
         <button
-          onClick={() => setDate(todayET())}
-          style={chipButtonStyle(date === todayET())}
+          onClick={() => setDate(today)}
+          style={chipButtonStyle(date === today)}
         >
           Today
         </button>

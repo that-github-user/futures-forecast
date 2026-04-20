@@ -3,9 +3,12 @@
  *
  * Defaults to today ET. Pass date="all" to disable the date filter. Polls
  * every 30s while mounted; strategy/date changes re-fetch immediately.
+ *
+ * All setState calls are guarded by a per-effect `cancelled` flag so filter
+ * changes and unmount can't resurrect stale fetches.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { dcApi } from "../api/dcClient";
 import type { DCSignalEvent } from "../api/dcTypes";
@@ -23,33 +26,31 @@ export function useDCSignalEvents({ date, strategy, limit = 500 }: Options = {})
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const fetchOnce = useCallback(async () => {
-    const result = await dcApi.signalEvents({ date, strategy, limit });
-    if (result === null) {
-      setError(true);
-      setEvents([]);
-    } else {
-      setError(false);
-      setEvents(result);
-    }
-    setLoading(false);
-  }, [date, strategy, limit]);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
 
-    fetchOnce();
+    const run = async () => {
+      const result = await dcApi.signalEvents({ date, strategy, limit });
+      if (cancelled) return;
+      if (result === null) {
+        setError(true);
+        setEvents([]);
+      } else {
+        setError(false);
+        setEvents(result);
+      }
+      setLoading(false);
+    };
 
-    const timer = window.setInterval(() => {
-      if (!cancelled) void fetchOnce();
-    }, POLL_INTERVAL_MS);
+    void run();
+    const timer = window.setInterval(run, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [fetchOnce]);
+  }, [date, strategy, limit]);
 
-  return { events, loading, error, refetch: fetchOnce };
+  return { events, loading, error };
 }
