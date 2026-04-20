@@ -8,6 +8,7 @@ import type {
   DCHealthResponse,
   DCPosition,
   DCRiskStatus,
+  DCSignalEvent,
   DCSignalsResponse,
   DCStrategySpec,
   DCStrategyStats,
@@ -42,4 +43,18 @@ export const dcApi = {
   risk: () => dcGet<DCRiskStatus>("/dc-api/v1/risk"),
   summary: () => dcGet<DCSummary>("/dc-api/v1/summary"),
   capitalSummary: () => dcGet<DCCapitalSummary>("/dc-api/v1/capital/summary"),
+  signalEvents: (opts: {
+    date?: string | null;  // YYYY-MM-DD, "all", or null/undefined for today
+    strategy?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.date !== undefined && opts.date !== null) params.set("date", opts.date);
+    if (opts.strategy) params.set("strategy", opts.strategy);
+    if (opts.limit != null) params.set("limit", String(opts.limit));
+    if (opts.offset != null) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return dcGet<DCSignalEvent[]>(`/dc-api/v1/signal-events${qs ? `?${qs}` : ""}`);
+  },
 };

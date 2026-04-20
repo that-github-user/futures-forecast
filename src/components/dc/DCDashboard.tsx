@@ -9,16 +9,18 @@ import { DCPositionsTab } from "./DCPositionsTab";
 import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
 import { DCSignalsTab } from "./DCSignalsTab";
+import { DCEventsTab } from "./DCEventsTab";
 import { DCArmedBanner } from "./DCArmedBanner";
 import { CapitalAllocationTab } from "./CapitalAllocationTab";
 
-type DCTab = "positions" | "history" | "strategies" | "signals" | "capital";
+type DCTab = "positions" | "history" | "strategies" | "signals" | "capital" | "events";
 
 const TABS: { value: DCTab; label: string }[] = [
   { value: "signals", label: "Signals" },
   { value: "strategies", label: "Strategies" },
   { value: "positions", label: "Positions" },
   { value: "history", label: "History" },
+  { value: "events", label: "Events" },
   { value: "capital", label: "Capital" },
 ];
 
@@ -121,6 +123,7 @@ export function DCDashboard() {
             positions={data.positions}
           />
         )}
+        {tab === "events" && <DCEventsTab />}
         {tab === "capital" && (
           <CapitalAllocationTab positions={data.positions} />
         )}
