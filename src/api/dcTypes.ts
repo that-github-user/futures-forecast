@@ -123,6 +123,23 @@ export interface DCRiskStatus {
   paused: boolean;
 }
 
+export interface DCSignalEvent {
+  id: number;
+  strategy_name: string;
+  entry_time: string;
+  entry_date: string;
+  signal: string;
+  outcome: string;
+  outcome_reason: string | null;
+  features_snapshot: Record<string, unknown> | null;
+  sl_ratio: number | null;
+  entry_debit: number | null;
+  quantity: number | null;
+  position_id: number | null;
+  spx_at_event: number | null;
+  created_at: string | null;
+}
+
 export interface DCSummary {
   open_positions: number;
   today_trades: number;
