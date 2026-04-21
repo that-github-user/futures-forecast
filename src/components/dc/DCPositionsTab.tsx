@@ -118,13 +118,17 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
   );
 }
 
-// Drift thresholds per spread. IBKR's avg_cost folds in commissions /
-// rebates, so cents-level drift is expected noise. Dime-scale drift
-// is still plausible on wide spreads. Beyond that something's off —
-// manual intervention, a daemon bookkeeping bug, or a ladder blend
-// that didn't match the broker's actual fills.
-const DRIFT_WARN = 0.02;
-const DRIFT_ERROR = 0.10;
+// Drift thresholds per spread. IBKR's avg_cost folds in commissions
+// and exchange fees — IBKR option commission is ~$0.65/contract × 4
+// legs ≈ $2.60 per spread of baseline commission, which on a 30-lot
+// is ~$0.03/share before any exchange/regulatory fee. So cents-scale
+// drift is expected noise on every position; only dime-and-up drift
+// is an interesting signal (manual intervention, bookkeeping bug,
+// or a ladder blend that didn't match the broker's actual fills).
+// Thresholds may be re-tuned after a few weeks of live data — the
+// right answer depends on observed spread of commission accounting.
+const DRIFT_WARN = 0.05;
+const DRIFT_ERROR = 0.15;
 
 function formatDrift(d: number | null): string {
   if (d === null || d === undefined) return "—";
