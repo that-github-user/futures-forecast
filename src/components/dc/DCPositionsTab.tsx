@@ -54,7 +54,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
+            <table style={tableStyle} aria-label="Daemon-tracked positions">
               <thead>
                 <tr>
                   <th style={thStyle}>Strategy</th>
@@ -217,6 +217,16 @@ function BrokerRealityPanel({
   const posCount = brokerState.positions.length;
   const orderCount = brokerState.open_orders.length;
 
+  // Precompute the daemon-conid set once so the same match computation
+  // is shared between the drift-banner check below and the table
+  // rendering. Single-account invariant — see BrokerPositionsTable for
+  // multi-account caveat.
+  const daemonConids = buildDaemonConidSet(daemonPositions);
+  const matchedCount = brokerState.positions.filter(
+    (p) => daemonConids.has(p.contract.conId),
+  ).length;
+  const allUnmatched = posCount > 0 && matchedCount === 0;
+
   return (
     <div className="panel" style={{ padding: 12 }}>
       <div className="panel-header"
@@ -238,6 +248,26 @@ function BrokerRealityPanel({
           snapshot {formatSnapshotAge(brokerState.snapshot_at)}
         </span>
       </div>
+      {allUnmatched && (
+        <div role="alert"
+             style={{
+               background: "rgba(239, 68, 68, 0.12)",
+               border: "1px solid rgba(239, 68, 68, 0.45)",
+               borderRadius: 4,
+               padding: "8px 12px",
+               marginBottom: 8,
+               fontSize: 12,
+               color: "#fecaca",
+               fontFamily: "Inter, sans-serif",
+             }}>
+          <strong style={{ color: "#ef4444" }}>Full daemon–broker drift:</strong>{" "}
+          IBKR reports {posCount} SPX position{posCount !== 1 ? "s" : ""}, none
+          of which any open daemon position references. Either the
+          daemon's SQLite view is completely out of sync (restart mid-fill,
+          crashed before persistence) or every leg is a manual entry.
+          Reconcile before the next entry fires.
+        </div>
+      )}
       {posCount === 0 && orderCount === 0 ? (
         <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
           IBKR reports no SPX positions or open orders.
@@ -247,7 +277,7 @@ function BrokerRealityPanel({
           {posCount > 0 && (
             <BrokerPositionsTable
               positions={brokerState.positions}
-              daemonPositions={daemonPositions}
+              daemonConids={daemonConids}
             />
           )}
           {orderCount > 0 && (
@@ -262,33 +292,36 @@ function BrokerRealityPanel({
 }
 
 
-function BrokerPositionsTable({
-  positions,
-  daemonPositions,
-}: {
-  positions: DCBrokerPosition[];
-  daemonPositions: DCPosition[];
-}) {
-  // Reconciliation: a broker leg matches daemon if any open daemon
-  // position references that same conId on any of its four legs.
-  // Anything unmatched gets a ⚠️ — operator needs to check if it's
-  // a ghost, a manual entry, or a real drift.
-  //
-  // Single-account invariant: the daemon connects to exactly one IBKR
-  // account, so conId alone is a sufficient key. If we ever grow to
-  // multi-account (daemon + a mirror account on the same host), this
-  // Set must become keyed on (account, conId) tuples.
-  const daemonConids = new Set<number>();
+/** Union of all four per-leg conids across every open daemon position.
+ *  Single-account invariant: the daemon connects to exactly one IBKR
+ *  account, so conId alone is a sufficient match key. If we ever grow
+ *  to multi-account, this Set must become keyed on (account, conId). */
+function buildDaemonConidSet(daemonPositions: DCPosition[]): Set<number> {
+  const out = new Set<number>();
   for (const p of daemonPositions) {
     for (const conid of [p.front_put_conid, p.front_call_conid,
                          p.back_put_conid, p.back_call_conid]) {
-      if (conid != null && conid > 0) daemonConids.add(conid);
+      if (conid != null && conid > 0) out.add(conid);
     }
   }
+  return out;
+}
 
+
+function BrokerPositionsTable({
+  positions,
+  daemonConids,
+}: {
+  positions: DCBrokerPosition[];
+  daemonConids: Set<number>;
+}) {
+  // Reconciliation is precomputed by the parent (BrokerRealityPanel)
+  // so the drift banner and the per-row match icon agree. A broker leg
+  // matches daemon if any open daemon position references that same
+  // conId on any of its four legs; anything unmatched gets a ⚠️.
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle}>
+      <table style={tableStyle} aria-label="Broker-reported SPX positions">
         <thead>
           <tr>
             <th style={thStyle}>Match</th>
@@ -306,7 +339,9 @@ function BrokerPositionsTable({
             return (
               <tr key={`${p.account}-${p.contract.conId}`}>
                 <td style={tdStyle}>
-                  <span title={matched
+                  <span role="img"
+                        aria-label={matched ? "matches daemon" : "unmatched by daemon"}
+                        title={matched
                     ? "Matches a daemon-tracked position"
                     : "No daemon position references this contract — could be manual, a ghost, or drift"}>
                     {matched ? "✓" : "⚠️"}
@@ -340,7 +375,7 @@ function BrokerPositionsTable({
 function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle}>
+      <table style={tableStyle} aria-label="Broker-reported open orders">
         <thead>
           <tr>
             <th style={thStyle}>OrderId</th>
