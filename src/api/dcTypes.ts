@@ -24,6 +24,13 @@ export interface DCPosition {
   entry_debit: number;
   quantity: number;
   original_quantity: number;
+  // IBKR conIds — used by the Positions tab's Broker Reality panel
+  // to reconcile daemon-tracked positions against ib.positions() by
+  // contract identity. Null on legacy rows.
+  front_put_conid: number | null;
+  front_call_conid: number | null;
+  back_put_conid: number | null;
+  back_call_conid: number | null;
   spx_at_entry: number | null;
   status: string;
   close_reason: string | null;

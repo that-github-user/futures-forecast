@@ -215,22 +215,15 @@ function BrokerPositionsTable({
   daemonPositions: DCPosition[];
 }) {
   // Reconciliation: a broker leg matches daemon if any open daemon
-  // position has that (conId or strike+expiry+right) on any of its
-  // four legs. Anything unmatched gets a ⚠️ — operator needs to check
-  // if it's a ghost, a manual entry, or a real drift.
+  // position references that same conId on any of its four legs.
+  // Anything unmatched gets a ⚠️ — operator needs to check if it's
+  // a ghost, a manual entry, or a real drift.
   const daemonConids = new Set<number>();
   for (const p of daemonPositions) {
-    // DCPosition carries the four conids as columns on the row —
-    // we added these when PR #44 landed signal_events. Fall back to
-    // strike+right+expiry matching if conids aren't populated.
-    // (Using any-cast because the existing DCPosition type predates
-    // the conid columns being universally populated.)
-    const row = p as unknown as Record<string, number | undefined>;
-    ['front_put_conid', 'front_call_conid', 'back_put_conid', 'back_call_conid']
-      .forEach((k) => {
-        const v = row[k];
-        if (typeof v === "number" && v > 0) daemonConids.add(v);
-      });
+    for (const conid of [p.front_put_conid, p.front_call_conid,
+                         p.back_put_conid, p.back_call_conid]) {
+      if (conid != null && conid > 0) daemonConids.add(conid);
+    }
   }
 
   return (
