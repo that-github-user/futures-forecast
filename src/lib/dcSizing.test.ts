@@ -122,6 +122,8 @@ function makePosition(p: { strategy_name: string; entry_debit: number; quantity:
     close_reason: null,
     close_time: null,
     close_pnl: null,
+    broker_entry_debit: null,
+    debit_drift: null,
   };
 }
 
@@ -336,5 +338,7 @@ function makeZeroPos(): DCPosition {
     close_reason: null,
     close_time: null,
     close_pnl: null,
+    broker_entry_debit: null,
+    debit_drift: null,
   };
 }

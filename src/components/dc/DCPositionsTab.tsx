@@ -65,6 +65,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                   <th style={thStyle}>Front Exp</th>
                   <th style={thStyle}>Back Exp</th>
                   <th style={thStyle}>Debit</th>
+                  <th style={thStyle}>Broker Δ</th>
                   <th style={thStyle}>Qty</th>
                   <th style={thStyle}>SPX@Entry</th>
                   <th style={thStyle}>Status</th>
@@ -81,6 +82,10 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                     <td style={tdStyle}>{p.front_exp}</td>
                     <td style={tdStyle}>{p.back_exp}</td>
                     <td style={tdMono}>${p.entry_debit.toFixed(2)}</td>
+                    <td style={driftCellStyle(p.debit_drift)}
+                        title={driftTooltip(p)}>
+                      {formatDrift(p.debit_drift)}
+                    </td>
                     <td style={tdMono}>{p.quantity}</td>
                     <td style={tdMono}>{p.spx_at_entry?.toFixed(2) ?? "—"}</td>
                     <td style={tdStyle}>{p.status}</td>
@@ -111,6 +116,45 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
       </div>
     </div>
   );
+}
+
+// Drift thresholds per spread. IBKR's avg_cost folds in commissions /
+// rebates, so cents-level drift is expected noise. Dime-scale drift
+// is still plausible on wide spreads. Beyond that something's off —
+// manual intervention, a daemon bookkeeping bug, or a ladder blend
+// that didn't match the broker's actual fills.
+const DRIFT_WARN = 0.02;
+const DRIFT_ERROR = 0.10;
+
+function formatDrift(d: number | null): string {
+  if (d === null || d === undefined) return "—";
+  const sign = d >= 0 ? "+" : "−";
+  return `${sign}$${Math.abs(d).toFixed(3)}`;
+}
+
+function driftCellStyle(d: number | null): React.CSSProperties {
+  const base = tdMono;
+  if (d === null || d === undefined) return { ...base, color: "#64748b" };
+  const mag = Math.abs(d);
+  if (mag < DRIFT_WARN) return { ...base, color: "#10b981" };    // green
+  if (mag < DRIFT_ERROR) return { ...base, color: "#f59e0b" };   // amber
+  return { ...base, color: "#ef4444" };                          // red
+}
+
+function driftTooltip(p: DCPosition): string {
+  if (p.debit_drift === null || p.broker_entry_debit === null) {
+    return "Not reconciled — either legacy row without conids, or at " +
+      "least one leg is missing from the latest broker-state snapshot.";
+  }
+  const daemon = p.entry_debit.toFixed(4);
+  const broker = p.broker_entry_debit.toFixed(4);
+  const drift = p.debit_drift.toFixed(4);
+  return `Daemon entry_debit: $${daemon}\n` +
+         `Broker reconstructed: $${broker}\n` +
+         `Δ = broker − daemon = $${drift}\n\n` +
+         `Green < $${DRIFT_WARN.toFixed(2)} (commission noise)\n` +
+         `Amber < $${DRIFT_ERROR.toFixed(2)} (wider spread, acceptable)\n` +
+         `Red ≥ $${DRIFT_ERROR.toFixed(2)} (investigate)`;
 }
 
 function formatTime(iso: string): string {

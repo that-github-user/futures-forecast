@@ -36,6 +36,16 @@ export interface DCPosition {
   close_reason: string | null;
   close_time: string | null;
   close_pnl: number | null;
+  // Broker-reality debit reconstructed from IBKR's per-leg avg_cost
+  // (server-side join of positions ↔ broker_state by conId). Null
+  // when any of the four legs is missing from the latest snapshot,
+  // or when the daemon-tracked position is a legacy row without
+  // conids. Surfaces on the dashboard as the "Broker Δ" column.
+  broker_entry_debit: number | null;
+  // Signed drift: broker_entry_debit − entry_debit. Positive = broker
+  // charged more than daemon recorded. Null when broker_entry_debit
+  // is null.
+  debit_drift: number | null;
 }
 
 export interface DCTrade {
