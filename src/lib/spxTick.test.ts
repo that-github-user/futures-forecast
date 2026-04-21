@@ -27,6 +27,12 @@ describe("roundToSpxTick — large prices (≥$3)", () => {
     [9.40, 9.40],     // on-grid
     [9.42, 9.40],     // non-tick cost basis from partial fills
     [9.46, 9.50],
+    // Banker's-rounding ties. A future refactor that replaces the
+    // manual frac==0.5 → round-to-even with Math.round(scaled)*tick
+    // would silently diverge from the Python backend on these cases.
+    // Lock the contract: 9.45 → 9.40 (not 9.50), 15.75 → 15.80.
+    [9.45, 9.40],
+    [15.75, 15.80],
     [12.22, 12.20],   // ← the case the user noticed: 9.40 × 1.30
     [12.87, 12.90],   // e.g. 9.90 × 1.30
     [15.73, 15.70],
