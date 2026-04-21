@@ -225,7 +225,15 @@ function BrokerRealityPanel({
   const matchedCount = brokerState.positions.filter(
     (p) => daemonConids.has(p.contract.conId),
   ).length;
-  const allUnmatched = posCount > 0 && matchedCount === 0;
+  // Review N1: gate on daemon having open rows too. Zero-daemon + some-
+  // broker is a different condition ("you have positions the daemon
+  // doesn't know about" — possibly cold start or pre-market) whose
+  // severity doesn't fit the "full drift" narrative. The per-row ⚠️
+  // already flags each unmatched leg; the banner is specifically for
+  // the "daemon thinks it has N open but broker disagrees on all of
+  // them" case that signals post-crash bookkeeping divergence.
+  const allUnmatched =
+    posCount > 0 && daemonPositions.length > 0 && matchedCount === 0;
 
   return (
     <div className="panel" style={{ padding: 12 }}>
@@ -249,7 +257,13 @@ function BrokerRealityPanel({
         </span>
       </div>
       {allUnmatched && (
-        <div role="alert"
+        // role="status" + aria-live=polite is right for a persistent
+        // condition banner — it's announced once when it appears and
+        // doesn't re-announce on every re-render. role="alert" would
+        // interrupt on mount if the page loaded during a drift state,
+        // which is too aggressive for a signal the operator is already
+        // seeing in the table.
+        <div role="status" aria-live="polite"
              style={{
                background: "rgba(239, 68, 68, 0.12)",
                border: "1px solid rgba(239, 68, 68, 0.45)",
@@ -340,7 +354,9 @@ function BrokerPositionsTable({
               <tr key={`${p.account}-${p.contract.conId}`}>
                 <td style={tdStyle}>
                   <span role="img"
-                        aria-label={matched ? "matches daemon" : "unmatched by daemon"}
+                        aria-label={matched
+                          ? "matches a daemon-tracked position"
+                          : "no matching daemon position"}
                         title={matched
                     ? "Matches a daemon-tracked position"
                     : "No daemon position references this contract — could be manual, a ghost, or drift"}>
