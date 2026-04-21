@@ -52,7 +52,19 @@ export function useDCData(): DCData {
     if (st) setStrategies(st);
     if (sig) setSignals(sig);
     if (r) setRisk(r);
-    if (bs) setBrokerState(bs);
+    // brokerState staleness matters differently from the other fields:
+    // the whole Broker Reality panel is a freshness signal (snapshot_at
+    // drives the age-color indicator). Holding a minutes-old cached
+    // value while the API is offline renders the safety net silently
+    // untrue. Clear it when the API drops so the "no snapshot" empty
+    // state shows instead of lying with stale data. Positions/trades
+    // etc. can tolerate transient blips — blanking the dashboard on
+    // every poll hiccup would be worse UX.
+    if (bs) {
+      setBrokerState(bs);
+    } else if (!online) {
+      setBrokerState(null);
+    }
     setLoading(false);
   }, []);
 
