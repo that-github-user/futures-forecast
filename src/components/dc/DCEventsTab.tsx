@@ -106,7 +106,7 @@ export function DCEventsTab() {
         {(["entered", "skipped_signal", "blocked_sl", "blocked_margin",
            "blocked_risk", "blocked_strike", "blocked_legs", "blocked_conn",
            "blocked_data", "blocked_vix", "blocked_size", "blocked_order",
-           "blocked_duplicate"] as const).map((k) => {
+           "blocked_duplicate", "blocked_deconflict"] as const).map((k) => {
           const n = counts[k] ?? 0;
           if (n === 0) return null;
           const color = outcomeColor(k);
@@ -211,7 +211,8 @@ function outcomeColor(outcome: string): string {
   if (outcome === "skipped_signal") return "#64748b";
   if (outcome === "blocked_sl" || outcome === "blocked_vix") return "#eab308";
   if (outcome === "blocked_margin" || outcome === "blocked_risk"
-      || outcome === "blocked_duplicate" || outcome === "blocked_size") return "#f97316";
+      || outcome === "blocked_duplicate" || outcome === "blocked_size"
+      || outcome === "blocked_deconflict") return "#f97316";
   if (outcome === "blocked_strike" || outcome === "blocked_legs"
       || outcome === "blocked_conn" || outcome === "blocked_data"
       || outcome === "blocked_order") return "#ef4444";
