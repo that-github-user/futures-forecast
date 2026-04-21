@@ -1,12 +1,19 @@
-import type { DCPosition, DCRiskStatus } from "../../api/dcTypes";
+import type {
+  DCBrokerOrder,
+  DCBrokerPosition,
+  DCBrokerState,
+  DCPosition,
+  DCRiskStatus,
+} from "../../api/dcTypes";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
   positions: DCPosition[];
   risk: DCRiskStatus | null;
+  brokerState: DCBrokerState | null;
 }
 
-export function DCPositionsTab({ positions, risk }: Props) {
+export function DCPositionsTab({ positions, risk, brokerState }: Props) {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Risk status cards */}
@@ -27,10 +34,19 @@ export function DCPositionsTab({ positions, risk }: Props) {
         </div>
       )}
 
+      {/* Broker-reality panel. Shows what IBKR reports right now —
+          independent of the daemon's SQLite view below — so the
+          operator can reconcile without logging in and contending for
+          the session. Only SPX-universe positions are included
+          (symbol='SPX', covering SPX monthly + SPXW dailies + BAG
+          combos). Non-SPX holdings in the paper account (e.g. BULL)
+          are filtered server-side. */}
+      <BrokerRealityPanel brokerState={brokerState} daemonPositions={positions} />
+
       {/* Open positions table */}
       <div className="panel" style={{ padding: 12 }}>
         <div className="panel-header" style={{ marginBottom: 8 }}>
-          <span className="panel-title">Open Positions ({positions.length})</span>
+          <span className="panel-title">Daemon Tracked Positions ({positions.length})</span>
         </div>
         {positions.length === 0 ? (
           <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>
@@ -119,3 +135,228 @@ const tdStyle: React.CSSProperties = {
 const tdMono: React.CSSProperties = {
   ...tdStyle, fontFamily: "JetBrains Mono, monospace",
 };
+
+
+/**
+ * Broker reality panel. Renders the daemon's most recent snapshot of
+ * what IBKR reports — positions + open orders, SPX-universe only.
+ *
+ * Why: the Daemon Tracked Positions table below shows the daemon's
+ * SQLite view, which can drift from broker reality (crash mid-entry,
+ * manual intervention, etc.). This panel is the independent second
+ * source of truth — operator can see at a glance if the two agree.
+ */
+function BrokerRealityPanel({
+  brokerState,
+  daemonPositions,
+}: {
+  brokerState: DCBrokerState | null;
+  daemonPositions: DCPosition[];
+}) {
+  if (!brokerState || brokerState.snapshot_at === null) {
+    return (
+      <div className="panel" style={{ padding: 12 }}>
+        <div className="panel-header" style={{ marginBottom: 4 }}>
+          <span className="panel-title">Broker Reality (IBKR)</span>
+        </div>
+        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+          No snapshot available — daemon hasn't written state/broker_state.json yet.
+        </div>
+      </div>
+    );
+  }
+
+  const posCount = brokerState.positions.length;
+  const orderCount = brokerState.open_orders.length;
+
+  return (
+    <div className="panel" style={{ padding: 12 }}>
+      <div className="panel-header"
+           style={{ marginBottom: 8, display: "flex",
+                    justifyContent: "space-between", alignItems: "baseline" }}>
+        <span className="panel-title">
+          Broker Reality — {posCount} SPX position{posCount !== 1 ? "s" : ""},{" "}
+          {orderCount} open order{orderCount !== 1 ? "s" : ""}
+        </span>
+        <span style={{ fontSize: 10,
+                       color: snapshotAgeColor(brokerState.snapshot_at),
+                       fontFamily: "JetBrains Mono, monospace" }}
+              title={
+                snapshotAgeSec(brokerState.snapshot_at) !== null &&
+                snapshotAgeSec(brokerState.snapshot_at)! >= STALE_WARN_SEC
+                  ? "Snapshot is older than expected (1-min RTH / 5-min off-hours cadence). Daemon may be wedged."
+                  : "Daemon-reported broker snapshot age"
+              }>
+          snapshot {formatSnapshotAge(brokerState.snapshot_at)}
+        </span>
+      </div>
+      {posCount === 0 && orderCount === 0 ? (
+        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+          IBKR reports no SPX positions or open orders.
+        </div>
+      ) : (
+        <>
+          {posCount > 0 && (
+            <BrokerPositionsTable
+              positions={brokerState.positions}
+              daemonPositions={daemonPositions}
+            />
+          )}
+          {orderCount > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <BrokerOrdersTable orders={brokerState.open_orders} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
+function BrokerPositionsTable({
+  positions,
+  daemonPositions,
+}: {
+  positions: DCBrokerPosition[];
+  daemonPositions: DCPosition[];
+}) {
+  // Reconciliation: a broker leg matches daemon if any open daemon
+  // position references that same conId on any of its four legs.
+  // Anything unmatched gets a ⚠️ — operator needs to check if it's
+  // a ghost, a manual entry, or a real drift.
+  //
+  // Single-account invariant: the daemon connects to exactly one IBKR
+  // account, so conId alone is a sufficient key. If we ever grow to
+  // multi-account (daemon + a mirror account on the same host), this
+  // Set must become keyed on (account, conId) tuples.
+  const daemonConids = new Set<number>();
+  for (const p of daemonPositions) {
+    for (const conid of [p.front_put_conid, p.front_call_conid,
+                         p.back_put_conid, p.back_call_conid]) {
+      if (conid != null && conid > 0) daemonConids.add(conid);
+    }
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>Match</th>
+            <th style={thStyle}>Class</th>
+            <th style={thStyle}>Expiry</th>
+            <th style={thStyle}>K</th>
+            <th style={thStyle}>Right</th>
+            <th style={thStyle}>Qty</th>
+            <th style={thStyle}>Avg Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((p) => {
+            const matched = daemonConids.has(p.contract.conId);
+            return (
+              <tr key={`${p.account}-${p.contract.conId}`}>
+                <td style={tdStyle}>
+                  <span title={matched
+                    ? "Matches a daemon-tracked position"
+                    : "No daemon position references this contract — could be manual, a ghost, or drift"}>
+                    {matched ? "✓" : "⚠️"}
+                  </span>
+                </td>
+                <td style={tdStyle}>{p.contract.tradingClass || "—"}</td>
+                <td style={tdStyle}>{p.contract.expiry || "—"}</td>
+                <td style={tdMono}>
+                  {p.contract.strike > 0 ? p.contract.strike.toFixed(0) : "—"}
+                </td>
+                <td style={tdStyle}>{p.contract.right || "—"}</td>
+                <td style={{
+                  ...tdMono,
+                  color: p.position < 0 ? "#ef4444" : "#10b981",
+                }}>
+                  {p.position}
+                </td>
+                <td style={tdMono}>
+                  {p.avg_cost > 0 ? `$${p.avg_cost.toFixed(2)}` : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>OrderId</th>
+            <th style={thStyle}>Action</th>
+            <th style={thStyle}>Qty</th>
+            <th style={thStyle}>Filled</th>
+            <th style={thStyle}>Limit</th>
+            <th style={thStyle}>TIF</th>
+            <th style={thStyle}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.orderId}>
+              <td style={tdMono}>{o.orderId}</td>
+              <td style={tdStyle}>{o.action}</td>
+              <td style={tdMono}>{o.totalQuantity}</td>
+              <td style={tdMono}>
+                {o.filled > 0 ? `${o.filled}/${o.totalQuantity}` : "0"}
+              </td>
+              <td style={tdMono}>${o.lmtPrice.toFixed(2)}</td>
+              <td style={tdStyle}>{o.tif}</td>
+              <td style={{
+                ...tdStyle,
+                color: o.status === "Filled" ? "#10b981"
+                  : o.status === "Inactive" ? "#f97316"
+                  : o.status === "Cancelled" ? "#64748b"
+                  : "#e2e8f0",
+              }}>
+                {o.status}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+// Staleness color cut-offs. Daemon writes 1/min during RTH, every
+// 5 min off-hours, so >10 min is "something's wrong" — the whole
+// point of this panel is catching drift, and it must loudly signal
+// when it can't see fresh data instead of silently rendering old.
+const STALE_WARN_SEC = 600;    // >10 min → amber
+const STALE_ERROR_SEC = 1800;  // >30 min → red
+
+function snapshotAgeSec(iso: string): number | null {
+  const snapshot = new Date(iso).getTime();
+  if (!Number.isFinite(snapshot)) return null;
+  return Math.round((Date.now() - snapshot) / 1000);
+}
+
+function formatSnapshotAge(iso: string): string {
+  const ageSec = snapshotAgeSec(iso);
+  if (ageSec === null) return "unknown";
+  if (ageSec < 60) return `${ageSec}s ago`;
+  if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`;
+  return `${Math.round(ageSec / 3600)}h ago`;
+}
+
+function snapshotAgeColor(iso: string): string {
+  const ageSec = snapshotAgeSec(iso);
+  if (ageSec === null || ageSec >= STALE_ERROR_SEC) return "#ef4444";
+  if (ageSec >= STALE_WARN_SEC) return "#f59e0b";
+  return "#64748b";
+}

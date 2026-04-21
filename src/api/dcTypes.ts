@@ -24,6 +24,13 @@ export interface DCPosition {
   entry_debit: number;
   quantity: number;
   original_quantity: number;
+  // IBKR conIds — used by the Positions tab's Broker Reality panel
+  // to reconcile daemon-tracked positions against ib.positions() by
+  // contract identity. Null on legacy rows.
+  front_put_conid: number | null;
+  front_call_conid: number | null;
+  back_put_conid: number | null;
+  back_call_conid: number | null;
   spx_at_entry: number | null;
   status: string;
   close_reason: string | null;
@@ -151,6 +158,49 @@ export interface DCSignalEvent {
   ideal_call_strike: number | null;
   conflicting_strategy: string | null;
   created_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Broker state (daemon snapshot of what IBKR actually reports)
+// ---------------------------------------------------------------------------
+
+export interface DCBrokerContract {
+  conId: number;
+  symbol: string;
+  secType: string;
+  expiry: string;          // YYYYMMDD
+  strike: number;
+  right: string;           // 'P' | 'C' | ''
+  tradingClass: string;    // 'SPXW' | 'SPX' | 'COMB' | ''
+  multiplier: string;
+  currency: string;
+}
+
+export interface DCBrokerPosition {
+  account: string;
+  contract: DCBrokerContract;
+  position: number;        // signed — negative = short
+  avg_cost: number;
+}
+
+export interface DCBrokerOrder {
+  orderId: number;
+  permId: number;
+  action: string;          // 'BUY' | 'SELL'
+  totalQuantity: number;
+  lmtPrice: number;
+  tif: string;
+  status: string;          // Submitted | PreSubmitted | Inactive | etc.
+  filled: number;
+  remaining: number;
+  avg_fill_price: number;
+  contract: DCBrokerContract;
+}
+
+export interface DCBrokerState {
+  snapshot_at: string | null;   // ISO ET; null if sidecar missing
+  positions: DCBrokerPosition[];
+  open_orders: DCBrokerOrder[];
 }
 
 export interface DCSummary {
