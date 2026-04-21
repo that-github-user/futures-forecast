@@ -26,6 +26,7 @@ import type {
 } from "../../api/dcTypes";
 import type { LifecycleInfo, LifecycleState } from "../../lib/dcLifecycle";
 import { dowName, formatCountdown, formatEntryDays, formatExpiry } from "../../lib/dcLifecycle";
+import { roundToSpxTick } from "../../lib/spxTick";
 import {
   computeSizingBreakdown,
   computeSuggestedContracts,
@@ -600,7 +601,12 @@ function ProfitTargetLine({
     return null;
   }
 
-  const ptTarget = basisDebit * (1 + profitTargetPct);
+  // SPX/SPXW options trade in $0.10 tick increments above $3 ($0.05
+  // below). The raw math basis × (1 + pct) usually lands off-tick —
+  // e.g. $9.40 × 1.30 = $12.22 but a TP order would submit at $12.20.
+  // Round to the tick grid the broker actually accepts so the UI shows
+  // exactly what the daemon would put on the broker ticket.
+  const ptTarget = roundToSpxTick(basisDebit * (1 + profitTargetPct));
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
   const statusLabel = entered ? "locked" : "potential";
   const statusColor = entered ? "#10b981" : "#94a3b8";

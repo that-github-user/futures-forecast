@@ -175,7 +175,10 @@ function EventRow({ event }: { event: DCSignalEvent }) {
       <td style={tdMono}>{formatET(event.entry_time)}</td>
       <td style={tdStyle}>{event.strategy_name}</td>
       <td style={tdStyle}><SignalBadge signal={event.signal} /></td>
-      <td style={tdStyle}><OutcomeBadge outcome={event.outcome} /></td>
+      <td style={tdStyle}>
+        <OutcomeBadge outcome={event.outcome} />
+        <MoveBadge event={event} />
+      </td>
       <td style={{ ...tdStyle, color: "#94a3b8", maxWidth: 360 }}>
         {event.outcome_reason ?? "—"}
       </td>
@@ -190,6 +193,45 @@ function EventRow({ event }: { event: DCSignalEvent }) {
         {event.spx_at_event != null ? event.spx_at_event.toFixed(0) : "—"}
       </td>
     </tr>
+  );
+}
+
+
+/**
+ * Inline badge shown next to the outcome when a strategy's entry had
+ * to auto-move one or both strikes to avoid a conflict with an already-
+ * open position. Renders nothing when conflicting_strategy is null
+ * (the common case).
+ *
+ * Format: MOVED (put) P7050→7055 · avoiding 2/3 DC
+ *
+ * We intentionally show ONLY the ideal_* side that was actually moved —
+ * the other leg would show "ideal==actual" and clutter the row.
+ */
+function MoveBadge({ event }: { event: DCSignalEvent }) {
+  if (!event.conflicting_strategy) return null;
+  const parts: string[] = [];
+  if (event.ideal_put_strike != null) {
+    parts.push(`P${event.ideal_put_strike.toFixed(0)}`);
+  }
+  if (event.ideal_call_strike != null) {
+    parts.push(`C${event.ideal_call_strike.toFixed(0)}`);
+  }
+  if (parts.length === 0) return null;
+  return (
+    <span
+      title={`Ideal strike ${parts.join(", ")} was held by ${event.conflicting_strategy}; auto-moved to next delta-tolerable strike`}
+      style={{
+        fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8,
+        marginLeft: 4, fontFamily: "Inter, sans-serif",
+        color: "#f97316",
+        background: "#f9731618",
+        border: "1px solid #f9731640",
+        verticalAlign: "middle",
+      }}
+    >
+      MOVED · avoid {event.conflicting_strategy}
+    </span>
   );
 }
 

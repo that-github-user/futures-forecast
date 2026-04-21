@@ -143,6 +143,13 @@ export interface DCSignalEvent {
   quantity: number | null;
   position_id: number | null;
   spx_at_event: number | null;
+  // Deconflict audit: populated on `entered` rows whose ideal strike
+  // was taken by an open position (auto-moved to the next-best
+  // delta-tolerable strike), and on `blocked_deconflict` rows where no
+  // acceptable alternative was found. NULL otherwise.
+  ideal_put_strike: number | null;
+  ideal_call_strike: number | null;
+  conflicting_strategy: string | null;
   created_at: string | null;
 }
 
