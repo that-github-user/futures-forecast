@@ -178,8 +178,15 @@ function BrokerRealityPanel({
           Broker Reality — {posCount} SPX position{posCount !== 1 ? "s" : ""},{" "}
           {orderCount} open order{orderCount !== 1 ? "s" : ""}
         </span>
-        <span style={{ fontSize: 10, color: "#64748b",
-                       fontFamily: "JetBrains Mono, monospace" }}>
+        <span style={{ fontSize: 10,
+                       color: snapshotAgeColor(brokerState.snapshot_at),
+                       fontFamily: "JetBrains Mono, monospace" }}
+              title={
+                snapshotAgeSec(brokerState.snapshot_at) !== null &&
+                snapshotAgeSec(brokerState.snapshot_at)! >= STALE_WARN_SEC
+                  ? "Snapshot is older than expected (1-min RTH / 5-min off-hours cadence). Daemon may be wedged."
+                  : "Daemon-reported broker snapshot age"
+              }>
           snapshot {formatSnapshotAge(brokerState.snapshot_at)}
         </span>
       </div>
@@ -218,6 +225,11 @@ function BrokerPositionsTable({
   // position references that same conId on any of its four legs.
   // Anything unmatched gets a ⚠️ — operator needs to check if it's
   // a ghost, a manual entry, or a real drift.
+  //
+  // Single-account invariant: the daemon connects to exactly one IBKR
+  // account, so conId alone is a sufficient key. If we ever grow to
+  // multi-account (daemon + a mirror account on the same host), this
+  // Set must become keyed on (account, conId) tuples.
   const daemonConids = new Set<number>();
   for (const p of daemonPositions) {
     for (const conid of [p.front_put_conid, p.front_call_conid,
@@ -321,12 +333,30 @@ function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
 }
 
 
+// Staleness color cut-offs. Daemon writes 1/min during RTH, every
+// 5 min off-hours, so >10 min is "something's wrong" — the whole
+// point of this panel is catching drift, and it must loudly signal
+// when it can't see fresh data instead of silently rendering old.
+const STALE_WARN_SEC = 600;    // >10 min → amber
+const STALE_ERROR_SEC = 1800;  // >30 min → red
+
+function snapshotAgeSec(iso: string): number | null {
+  const snapshot = new Date(iso).getTime();
+  if (!Number.isFinite(snapshot)) return null;
+  return Math.round((Date.now() - snapshot) / 1000);
+}
+
 function formatSnapshotAge(iso: string): string {
-  try {
-    const snapshot = new Date(iso).getTime();
-    const ageSec = Math.round((Date.now() - snapshot) / 1000);
-    if (ageSec < 60) return `${ageSec}s ago`;
-    if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`;
-    return `${Math.round(ageSec / 3600)}h ago`;
-  } catch { return iso; }
+  const ageSec = snapshotAgeSec(iso);
+  if (ageSec === null) return "unknown";
+  if (ageSec < 60) return `${ageSec}s ago`;
+  if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`;
+  return `${Math.round(ageSec / 3600)}h ago`;
+}
+
+function snapshotAgeColor(iso: string): string {
+  const ageSec = snapshotAgeSec(iso);
+  if (ageSec === null || ageSec >= STALE_ERROR_SEC) return "#ef4444";
+  if (ageSec >= STALE_WARN_SEC) return "#f59e0b";
+  return "#64748b";
 }
