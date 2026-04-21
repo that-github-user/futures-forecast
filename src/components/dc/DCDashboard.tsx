@@ -113,7 +113,7 @@ export function DCDashboard() {
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: "auto", padding: "8px 12px" }}>
-        {tab === "positions" && <DCPositionsTab positions={data.positions} risk={data.risk} />}
+        {tab === "positions" && <DCPositionsTab positions={data.positions} risk={data.risk} brokerState={data.brokerState} />}
         {tab === "history" && <DCHistoryTab trades={data.trades} />}
         {tab === "strategies" && <DCStrategiesTab stats={data.strategies} signals={data.signals} />}
         {tab === "signals" && (

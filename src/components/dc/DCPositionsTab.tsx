@@ -1,12 +1,19 @@
-import type { DCPosition, DCRiskStatus } from "../../api/dcTypes";
+import type {
+  DCBrokerOrder,
+  DCBrokerPosition,
+  DCBrokerState,
+  DCPosition,
+  DCRiskStatus,
+} from "../../api/dcTypes";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
   positions: DCPosition[];
   risk: DCRiskStatus | null;
+  brokerState: DCBrokerState | null;
 }
 
-export function DCPositionsTab({ positions, risk }: Props) {
+export function DCPositionsTab({ positions, risk, brokerState }: Props) {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Risk status cards */}
@@ -27,10 +34,19 @@ export function DCPositionsTab({ positions, risk }: Props) {
         </div>
       )}
 
+      {/* Broker-reality panel. Shows what IBKR reports right now —
+          independent of the daemon's SQLite view below — so the
+          operator can reconcile without logging in and contending for
+          the session. Only SPX-universe positions are included
+          (symbol='SPX', covering SPX monthly + SPXW dailies + BAG
+          combos). Non-SPX holdings in the paper account (e.g. BULL)
+          are filtered server-side. */}
+      <BrokerRealityPanel brokerState={brokerState} daemonPositions={positions} />
+
       {/* Open positions table */}
       <div className="panel" style={{ padding: 12 }}>
         <div className="panel-header" style={{ marginBottom: 8 }}>
-          <span className="panel-title">Open Positions ({positions.length})</span>
+          <span className="panel-title">Daemon Tracked Positions ({positions.length})</span>
         </div>
         {positions.length === 0 ? (
           <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>
@@ -119,3 +135,205 @@ const tdStyle: React.CSSProperties = {
 const tdMono: React.CSSProperties = {
   ...tdStyle, fontFamily: "JetBrains Mono, monospace",
 };
+
+
+/**
+ * Broker reality panel. Renders the daemon's most recent snapshot of
+ * what IBKR reports — positions + open orders, SPX-universe only.
+ *
+ * Why: the Daemon Tracked Positions table below shows the daemon's
+ * SQLite view, which can drift from broker reality (crash mid-entry,
+ * manual intervention, etc.). This panel is the independent second
+ * source of truth — operator can see at a glance if the two agree.
+ */
+function BrokerRealityPanel({
+  brokerState,
+  daemonPositions,
+}: {
+  brokerState: DCBrokerState | null;
+  daemonPositions: DCPosition[];
+}) {
+  if (!brokerState || brokerState.snapshot_at === null) {
+    return (
+      <div className="panel" style={{ padding: 12 }}>
+        <div className="panel-header" style={{ marginBottom: 4 }}>
+          <span className="panel-title">Broker Reality (IBKR)</span>
+        </div>
+        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+          No snapshot available — daemon hasn't written state/broker_state.json yet.
+        </div>
+      </div>
+    );
+  }
+
+  const posCount = brokerState.positions.length;
+  const orderCount = brokerState.open_orders.length;
+
+  return (
+    <div className="panel" style={{ padding: 12 }}>
+      <div className="panel-header"
+           style={{ marginBottom: 8, display: "flex",
+                    justifyContent: "space-between", alignItems: "baseline" }}>
+        <span className="panel-title">
+          Broker Reality — {posCount} SPX position{posCount !== 1 ? "s" : ""},{" "}
+          {orderCount} open order{orderCount !== 1 ? "s" : ""}
+        </span>
+        <span style={{ fontSize: 10, color: "#64748b",
+                       fontFamily: "JetBrains Mono, monospace" }}>
+          snapshot {formatSnapshotAge(brokerState.snapshot_at)}
+        </span>
+      </div>
+      {posCount === 0 && orderCount === 0 ? (
+        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+          IBKR reports no SPX positions or open orders.
+        </div>
+      ) : (
+        <>
+          {posCount > 0 && (
+            <BrokerPositionsTable
+              positions={brokerState.positions}
+              daemonPositions={daemonPositions}
+            />
+          )}
+          {orderCount > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <BrokerOrdersTable orders={brokerState.open_orders} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
+function BrokerPositionsTable({
+  positions,
+  daemonPositions,
+}: {
+  positions: DCBrokerPosition[];
+  daemonPositions: DCPosition[];
+}) {
+  // Reconciliation: a broker leg matches daemon if any open daemon
+  // position has that (conId or strike+expiry+right) on any of its
+  // four legs. Anything unmatched gets a ⚠️ — operator needs to check
+  // if it's a ghost, a manual entry, or a real drift.
+  const daemonConids = new Set<number>();
+  for (const p of daemonPositions) {
+    // DCPosition carries the four conids as columns on the row —
+    // we added these when PR #44 landed signal_events. Fall back to
+    // strike+right+expiry matching if conids aren't populated.
+    // (Using any-cast because the existing DCPosition type predates
+    // the conid columns being universally populated.)
+    const row = p as unknown as Record<string, number | undefined>;
+    ['front_put_conid', 'front_call_conid', 'back_put_conid', 'back_call_conid']
+      .forEach((k) => {
+        const v = row[k];
+        if (typeof v === "number" && v > 0) daemonConids.add(v);
+      });
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>Match</th>
+            <th style={thStyle}>Class</th>
+            <th style={thStyle}>Expiry</th>
+            <th style={thStyle}>K</th>
+            <th style={thStyle}>Right</th>
+            <th style={thStyle}>Qty</th>
+            <th style={thStyle}>Avg Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((p) => {
+            const matched = daemonConids.has(p.contract.conId);
+            return (
+              <tr key={`${p.account}-${p.contract.conId}`}>
+                <td style={tdStyle}>
+                  <span title={matched
+                    ? "Matches a daemon-tracked position"
+                    : "No daemon position references this contract — could be manual, a ghost, or drift"}>
+                    {matched ? "✓" : "⚠️"}
+                  </span>
+                </td>
+                <td style={tdStyle}>{p.contract.tradingClass || "—"}</td>
+                <td style={tdStyle}>{p.contract.expiry || "—"}</td>
+                <td style={tdMono}>
+                  {p.contract.strike > 0 ? p.contract.strike.toFixed(0) : "—"}
+                </td>
+                <td style={tdStyle}>{p.contract.right || "—"}</td>
+                <td style={{
+                  ...tdMono,
+                  color: p.position < 0 ? "#ef4444" : "#10b981",
+                }}>
+                  {p.position}
+                </td>
+                <td style={tdMono}>
+                  {p.avg_cost > 0 ? `$${p.avg_cost.toFixed(2)}` : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>OrderId</th>
+            <th style={thStyle}>Action</th>
+            <th style={thStyle}>Qty</th>
+            <th style={thStyle}>Filled</th>
+            <th style={thStyle}>Limit</th>
+            <th style={thStyle}>TIF</th>
+            <th style={thStyle}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.orderId}>
+              <td style={tdMono}>{o.orderId}</td>
+              <td style={tdStyle}>{o.action}</td>
+              <td style={tdMono}>{o.totalQuantity}</td>
+              <td style={tdMono}>
+                {o.filled > 0 ? `${o.filled}/${o.totalQuantity}` : "0"}
+              </td>
+              <td style={tdMono}>${o.lmtPrice.toFixed(2)}</td>
+              <td style={tdStyle}>{o.tif}</td>
+              <td style={{
+                ...tdStyle,
+                color: o.status === "Filled" ? "#10b981"
+                  : o.status === "Inactive" ? "#f97316"
+                  : o.status === "Cancelled" ? "#64748b"
+                  : "#e2e8f0",
+              }}>
+                {o.status}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+function formatSnapshotAge(iso: string): string {
+  try {
+    const snapshot = new Date(iso).getTime();
+    const ageSec = Math.round((Date.now() - snapshot) / 1000);
+    if (ageSec < 60) return `${ageSec}s ago`;
+    if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`;
+    return `${Math.round(ageSec / 3600)}h ago`;
+  } catch { return iso; }
+}

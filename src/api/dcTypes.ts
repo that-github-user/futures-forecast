@@ -153,6 +153,49 @@ export interface DCSignalEvent {
   created_at: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Broker state (daemon snapshot of what IBKR actually reports)
+// ---------------------------------------------------------------------------
+
+export interface DCBrokerContract {
+  conId: number;
+  symbol: string;
+  secType: string;
+  expiry: string;          // YYYYMMDD
+  strike: number;
+  right: string;           // 'P' | 'C' | ''
+  tradingClass: string;    // 'SPXW' | 'SPX' | 'COMB' | ''
+  multiplier: string;
+  currency: string;
+}
+
+export interface DCBrokerPosition {
+  account: string;
+  contract: DCBrokerContract;
+  position: number;        // signed — negative = short
+  avg_cost: number;
+}
+
+export interface DCBrokerOrder {
+  orderId: number;
+  permId: number;
+  action: string;          // 'BUY' | 'SELL'
+  totalQuantity: number;
+  lmtPrice: number;
+  tif: string;
+  status: string;          // Submitted | PreSubmitted | Inactive | etc.
+  filled: number;
+  remaining: number;
+  avg_fill_price: number;
+  contract: DCBrokerContract;
+}
+
+export interface DCBrokerState {
+  snapshot_at: string | null;   // ISO ET; null if sidecar missing
+  positions: DCBrokerPosition[];
+  open_orders: DCBrokerOrder[];
+}
+
 export interface DCSummary {
   open_positions: number;
   today_trades: number;
