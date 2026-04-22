@@ -166,14 +166,24 @@ function driftTooltip(p: DCPosition): string {
       "least one leg is missing from the latest broker-state snapshot.";
   }
   const daemon = p.entry_debit.toFixed(4);
-  const broker = (p.broker_entry_debit ?? 0).toFixed(4);
+  // Defense in depth (review N3): backend always sets broker_entry_debit
+  // + debit_drift together, but if that invariant ever breaks, render
+  // "n/a" instead of a misleading $0.0000 that would look like a real
+  // cost basis.
+  const broker = p.broker_entry_debit == null
+    ? "n/a"
+    : `$${p.broker_entry_debit.toFixed(4)}`;
   const drift = p.debit_drift!.toFixed(4);
+  // Tooltip uses the pretty glyphs (Δ, ≥) — rendered in a browser
+  // `title` attribute, no HTML escaping concerns. The ASCII-minus swap
+  // in formatDrift above is the grep-visible one (cell text); tooltip
+  // text isn't a grep target, so we don't sacrifice typography here.
   return `Daemon entry_debit: $${daemon}\n` +
-         `Broker reconstructed: $${broker}\n` +
-         `Delta = broker - daemon = $${drift}\n\n` +
+         `Broker reconstructed: ${broker}\n` +
+         `Δ = broker − daemon = $${drift}\n\n` +
          `Green < $${DRIFT_WARN.toFixed(2)} (commission noise)\n` +
          `Amber < $${DRIFT_ERROR.toFixed(2)} (wider spread, acceptable)\n` +
-         `Red >= $${DRIFT_ERROR.toFixed(2)} (investigate)`;
+         `Red ≥ $${DRIFT_ERROR.toFixed(2)} (investigate)`;
 }
 
 function formatTime(iso: string): string {
