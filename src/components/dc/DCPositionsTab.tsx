@@ -5,6 +5,11 @@ import type {
   DCPosition,
   DCRiskStatus,
 } from "../../api/dcTypes";
+import {
+  type BrokerDcGroup,
+  brokerDebitPerSpread,
+  groupBrokerLegs,
+} from "../../lib/brokerGrouping";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
@@ -217,23 +222,27 @@ function BrokerRealityPanel({
   const posCount = brokerState.positions.length;
   const orderCount = brokerState.open_orders.length;
 
-  // Precompute the daemon-conid set once so the same match computation
-  // is shared between the drift-banner check below and the table
-  // rendering. Single-account invariant — see BrokerPositionsTable for
-  // multi-account caveat.
-  const daemonConids = buildDaemonConidSet(daemonPositions);
-  const matchedCount = brokerState.positions.filter(
-    (p) => daemonConids.has(p.contract.conId),
-  ).length;
+  // Partition the flat list of broker legs into DC-sized groups
+  // (all four legs of one daemon position) and orphan legs that
+  // don't map to any open daemon row. Each broker position is
+  // placed in exactly one bucket — sum preserves posCount.
+  // `collisions` is populated when two daemon rows claim the same
+  // conId (deconflict bug, or daemon double-booked) — always empty
+  // in healthy state; non-empty is a hard signal the operator
+  // needs to see.
+  const { groups, unmatched, collisions } = groupBrokerLegs(
+    brokerState.positions, daemonPositions,
+  );
   // Review N1: gate on daemon having open rows too. Zero-daemon + some-
   // broker is a different condition ("you have positions the daemon
   // doesn't know about" — possibly cold start or pre-market) whose
-  // severity doesn't fit the "full drift" narrative. The per-row ⚠️
-  // already flags each unmatched leg; the banner is specifically for
-  // the "daemon thinks it has N open but broker disagrees on all of
-  // them" case that signals post-crash bookkeeping divergence.
+  // severity doesn't fit the "full drift" narrative. The per-leg ⚠️
+  // in the Unmatched table already flags each orphan; the banner is
+  // specifically for the "daemon thinks it has N open but broker
+  // disagrees on all of them" case that signals post-crash bookkeeping
+  // divergence.
   const allUnmatched =
-    posCount > 0 && daemonPositions.length > 0 && matchedCount === 0;
+    posCount > 0 && daemonPositions.length > 0 && groups.length === 0;
 
   return (
     <div className="panel" style={{ padding: 12 }}>
@@ -256,6 +265,29 @@ function BrokerRealityPanel({
           snapshot {formatSnapshotAge(brokerState.snapshot_at)}
         </span>
       </div>
+      {collisions.length > 0 && (
+        // Two open daemon rows claim the same conId. Broker leg lands
+        // in whichever row registered first — the second's group will
+        // show incomplete. Upstream bug in deconflict / double-book.
+        <div role="status" aria-live="polite"
+             style={{
+               background: "rgba(239, 68, 68, 0.12)",
+               border: "1px solid rgba(239, 68, 68, 0.45)",
+               borderRadius: 4,
+               padding: "8px 12px",
+               marginBottom: 8,
+               fontSize: 12,
+               color: "#fecaca",
+               fontFamily: "Inter, sans-serif",
+             }}>
+          <strong style={{ color: "#ef4444" }}>conId collision:</strong>{" "}
+          {collisions.length} contract{collisions.length !== 1 ? "s" : ""}{" "}
+          ({collisions.join(", ")}) claimed by more than one open daemon
+          position. Grouping below shows first-claimer's DC only; the
+          other DC will render with missing legs. Investigate deconflict
+          or a double-book.
+        </div>
+      )}
       {allUnmatched && (
         // role="status" + aria-live=polite is right for a persistent
         // condition banner — it's announced once when it appears and
@@ -288,11 +320,27 @@ function BrokerRealityPanel({
         </div>
       ) : (
         <>
-          {posCount > 0 && (
-            <BrokerPositionsTable
-              positions={brokerState.positions}
-              daemonConids={daemonConids}
-            />
+          {groups.length > 0 && (
+            <BrokerGroupedTable groups={groups} />
+          )}
+          {unmatched.length > 0 && (
+            <div style={{ marginTop: groups.length > 0 ? 16 : 0 }}>
+              <div style={{
+                fontSize: 11, color: "#f59e0b",
+                fontFamily: "Inter, sans-serif", textTransform: "uppercase",
+                letterSpacing: 0.5, marginBottom: 4,
+              }}>
+                Unmatched legs ({unmatched.length})
+              </div>
+              <div style={{ fontSize: 11, color: "#94a3b8",
+                            fontFamily: "Inter, sans-serif",
+                            marginBottom: 8 }}>
+                No open daemon position references these contracts —
+                manual entries, ghost positions from cleared DB rows,
+                or a reconciliation drift to investigate.
+              </div>
+              <BrokerPositionsTable positions={unmatched} />
+            </div>
           )}
           {orderCount > 0 && (
             <div style={{ marginTop: 12 }}>
@@ -306,36 +354,81 @@ function BrokerRealityPanel({
 }
 
 
-/** Union of all four per-leg conids across every open daemon position.
- *  Single-account invariant: the daemon connects to exactly one IBKR
- *  account, so conId alone is a sufficient match key. If we ever grow
- *  to multi-account, this Set must become keyed on (account, conId). */
-function buildDaemonConidSet(daemonPositions: DCPosition[]): Set<number> {
-  const out = new Set<number>();
-  for (const p of daemonPositions) {
-    for (const conid of [p.front_put_conid, p.front_call_conid,
-                         p.back_put_conid, p.back_call_conid]) {
-      if (conid != null && conid > 0) out.add(conid);
-    }
-  }
-  return out;
+/** Summarized DC-level view of the broker's position. One row per
+ *  open daemon position, collapsing 4 broker legs into strategy /
+ *  structure / qty / broker-computed debit + drift-vs-daemon. */
+function BrokerGroupedTable({ groups }: { groups: BrokerDcGroup[] }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={tableStyle}
+             aria-label="Broker-reported SPX positions, grouped by daemon DC">
+        <thead>
+          <tr>
+            <th style={thStyle}>Match</th>
+            <th style={thStyle}>Strategy</th>
+            <th style={thStyle}>Structure</th>
+            <th style={thStyle}>Front Exp</th>
+            <th style={thStyle}>Back Exp</th>
+            <th style={thStyle}>Qty</th>
+            <th style={thStyle}>Broker Debit</th>
+            <th style={thStyle}>Δ vs Daemon</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => {
+            const brokerDebit = brokerDebitPerSpread(g);
+            const drift = brokerDebit !== null
+              ? brokerDebit - g.daemon.entry_debit
+              : null;
+            // Qty: every leg of a valid DC carries the same absolute
+            // position size. Read from the first leg; fall back to
+            // daemon.quantity if no legs populated (shouldn't happen
+            // since a group exists only with ≥1 leg).
+            const qty = g.legs[0] ? Math.abs(g.legs[0].position) : g.daemon.quantity;
+            const matchLabel = g.complete
+              ? "all 4 legs match daemon"
+              : `only ${g.legs.length} of 4 legs matched — partial close or fill`;
+            return (
+              <tr key={g.daemon.id}>
+                <td style={tdStyle}>
+                  <span role="img" aria-label={matchLabel} title={matchLabel}>
+                    {g.complete ? "✓" : "⚠️"}
+                  </span>
+                </td>
+                <td style={tdStyle}>{g.daemon.strategy_name}</td>
+                <td style={tdMono}>
+                  P{g.daemon.put_strike}/C{g.daemon.call_strike}
+                </td>
+                <td style={tdStyle}>{g.daemon.front_exp}</td>
+                <td style={tdStyle}>{g.daemon.back_exp}</td>
+                <td style={tdMono}>{qty}</td>
+                <td style={tdMono}>
+                  {brokerDebit !== null ? `$${brokerDebit.toFixed(2)}` : "—"}
+                </td>
+                <td style={driftCellStyle(drift)}
+                    title={brokerDebit !== null
+                      ? driftTooltip(g.daemon)
+                      : "Partial group — fewer than 4 broker legs match this daemon DC, so no broker debit can be reconstructed."}>
+                  {formatDrift(drift)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 
-function BrokerPositionsTable({
-  positions,
-  daemonConids,
-}: {
-  positions: DCBrokerPosition[];
-  daemonConids: Set<number>;
-}) {
-  // Reconciliation is precomputed by the parent (BrokerRealityPanel)
-  // so the drift banner and the per-row match icon agree. A broker leg
-  // matches daemon if any open daemon position references that same
-  // conId on any of its four legs; anything unmatched gets a ⚠️.
+function BrokerPositionsTable({ positions }: { positions: DCBrokerPosition[] }) {
+  // Rendered only for legs that don't map to any open daemon position —
+  // the parent (BrokerRealityPanel) has already partitioned. Every row
+  // here gets the ⚠️ icon by definition; no need for the daemon-conid
+  // set argument the pre-grouping version carried.
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle} aria-label="Broker-reported SPX positions">
+      <table style={tableStyle} aria-label="Broker-reported orphan legs">
         <thead>
           <tr>
             <th style={thStyle}>Match</th>
@@ -349,18 +442,13 @@ function BrokerPositionsTable({
         </thead>
         <tbody>
           {positions.map((p) => {
-            const matched = daemonConids.has(p.contract.conId);
             return (
               <tr key={`${p.account}-${p.contract.conId}`}>
                 <td style={tdStyle}>
                   <span role="img"
-                        aria-label={matched
-                          ? "matches a daemon-tracked position"
-                          : "no matching daemon position"}
-                        title={matched
-                    ? "Matches a daemon-tracked position"
-                    : "No daemon position references this contract — could be manual, a ghost, or drift"}>
-                    {matched ? "✓" : "⚠️"}
+                        aria-label="no matching daemon position"
+                        title="No daemon position references this contract — could be manual, a ghost, or drift">
+                    ⚠️
                   </span>
                 </td>
                 <td style={tdStyle}>{p.contract.tradingClass || "—"}</td>
