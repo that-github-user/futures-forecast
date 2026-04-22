@@ -166,22 +166,37 @@ function driftTooltip(p: DCPosition): string {
     // cases. Permanent (legacy row) vs transient/investigate-worthy
     // (unmatched snapshot) read very differently to an operator, so
     // we spell each out rather than give the old catch-all.
-    if (p.drift_reason === "legacy") {
-      return "Not reconciled — this position predates conid tracking " +
-        "(the daemon row was created before the four conid fields " +
-        "were captured). No broker-side join is possible; this is " +
-        "permanent for legacy rows.";
+    switch (p.drift_reason) {
+      case "legacy":
+        return "Not reconciled — this position predates conid " +
+          "tracking (the daemon row was created before the four " +
+          "conid fields were captured). No broker-side join is " +
+          "possible; this is permanent for legacy rows.";
+      case "unmatched":
+        return "Not reconciled — daemon conids are populated but " +
+          "at least one leg is missing from the latest broker-state " +
+          "snapshot. Usually transient (snapshot stale, mid-rotation), " +
+          "but a persistent unmatched signals real drift — investigate.";
+      case null:
+      case undefined:
+        // Null/missing + drift unset: backend didn't run
+        // reconciliation (sidecar missing, daemon newly started),
+        // or frontend is hitting a pre-drift_reason backend build
+        // where the field arrives as undefined.
+        return "Not reconciled — broker-state sidecar is not " +
+          "available yet; the daemon writes a fresh snapshot every " +
+          "minute during RTH.";
+      default: {
+        // Future backend enum value this frontend doesn't know about —
+        // fall back gracefully but surface a console warning so
+        // protocol skew is visible before a user reports confusion.
+        const unknown: never = p.drift_reason;
+        // eslint-disable-next-line no-console
+        console.warn("Unknown drift_reason from backend:", unknown);
+        return "Not reconciled — cause not recognized by this " +
+          "frontend build. Check for a backend schema change.";
+      }
     }
-    if (p.drift_reason === "unmatched") {
-      return "Not reconciled — daemon conids are populated but at " +
-        "least one leg is missing from the latest broker-state " +
-        "snapshot. Usually transient (snapshot stale, mid-rotation), " +
-        "but a persistent unmatched signals real drift — investigate.";
-    }
-    // drift_reason null and drift_unset: backend didn't run
-    // reconciliation at all (sidecar missing, daemon newly started).
-    return "Not reconciled — broker-state sidecar is not available " +
-      "yet; the daemon writes a fresh snapshot every minute during RTH.";
   }
   const daemon = p.entry_debit.toFixed(4);
   // Defense in depth (review N3): backend always sets broker_entry_debit
