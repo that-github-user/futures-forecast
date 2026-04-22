@@ -29,6 +29,7 @@ import { useCapitalSummary } from "../../hooks/useCapitalSummary";
 import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { computeSuggestedContracts, SPX_MULTIPLIER } from "../../lib/dcSizing";
 import { samplePaths, samplePathsLinear } from "../../lib/dcPathSim";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 
 interface Props {
   positions: DCPosition[];
@@ -60,16 +61,16 @@ class CapitalAllocationErrorBoundary extends Component<
           style={{
             margin: 20,
             padding: 14,
-            background: "#111827",
-            border: "1px solid #ef4444",
+            background: colors.bgPanel,
+            border: `1px solid ${colors.accentRed}`,
             borderRadius: 6,
-            color: "#fca5a5",
-            fontFamily: "Inter, sans-serif",
+            color: colors.accentRedLight,
+            fontFamily: fonts.sans,
             fontSize: 13,
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Capital tab crashed.</div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
             Likely cause: dc-api.service is running an older build than the frontend
             expects. Restart the service (`sudo systemctl restart dc-api.service`) and
             hard-reload. If it persists, the browser console has the stack trace.
@@ -77,9 +78,9 @@ class CapitalAllocationErrorBoundary extends Component<
           <div
             style={{
               fontSize: 11,
-              color: "#fca5a5",
-              fontFamily: "JetBrains Mono, monospace",
-              background: "#0f172a",
+              color: colors.accentRedLight,
+              fontFamily: fonts.mono,
+              background: colors.bgInset,
               padding: 6,
               borderRadius: 4,
             }}
@@ -127,14 +128,14 @@ function CapitalAllocationTabInner({ positions }: Props) {
 
   if (loading) {
     return (
-      <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 40 }}>
         Loading Capital Allocation research…
       </div>
     );
   }
   if (!summary) {
     return (
-      <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", padding: 40 }}>
         DC API unavailable — Capital Allocation research requires the daemon to be online.
       </div>
     );
@@ -156,7 +157,7 @@ function CapitalAllocationTabInner({ positions }: Props) {
 
   if (!selectedPolicy || !selectedCurve) {
     return (
-      <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", padding: 40 }}>
         Capital Allocation payload is missing policy or curve data. Check the DC API's /capital/summary endpoint.
       </div>
     );
@@ -231,20 +232,20 @@ function HeaderBand({
   return (
     <div
       style={{
-        background: "#0f172a",
-        border: "1px solid #1e293b",
+        background: colors.bgInset,
+        border: `1px solid ${colors.borderDim}`,
         borderRadius: 6,
         padding: "10px 14px",
         display: "flex",
         alignItems: "center",
         gap: 16,
         flexWrap: "wrap",
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
       }}
     >
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textSecondary }}>
         Portfolio size
-        <span style={{ color: "#64748b" }}>$</span>
+        <span style={{ color: colors.textMuted }}>$</span>
         <input
           type="number"
           min={1000}
@@ -257,18 +258,18 @@ function HeaderBand({
           }}
           style={{
             fontSize: 13,
-            fontFamily: "JetBrains Mono, monospace",
-            color: "#e2e8f0",
-            background: "#1e293b",
-            border: "1px solid #334155",
+            fontFamily: fonts.mono,
+            color: colors.textPrimary,
+            background: colors.borderDim,
+            border: `1px solid ${colors.borderMid}`,
             borderRadius: 4,
             padding: "4px 8px",
             width: 120,
           }}
         />
       </label>
-      <span style={{ fontSize: 11, color: "#64748b" }}>
-        Policy: <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{POLICY_SHORT[policyKey]}</span>
+      <span style={{ fontSize: 11, color: colors.textMuted }}>
+        Policy: <span style={{ color: colors.textPrimary, fontWeight: 600 }}>{POLICY_SHORT[policyKey]}</span>
       </span>
 
       {/* Type II opt-in: the user deliberately enables policy-driven sizing on the
@@ -279,7 +280,7 @@ function HeaderBand({
         onChange={onToggleUseForSignals}
       />
 
-      <span style={{ fontSize: 10, color: "#475569", marginLeft: "auto", fontStyle: "italic" }}>
+      <span style={{ fontSize: 10, color: colors.textDim, marginLeft: "auto", fontStyle: "italic" }}>
         Source: {source}
       </span>
     </div>
@@ -293,7 +294,7 @@ function ApplyToSignalsToggle({
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
-  const track = value ? "#10b981" : "#334155";
+  const track = value ? colors.accentGreen : colors.borderMid;
   const knob = value ? "translateX(16px)" : "translateX(0)";
   const subtitle = value
     ? "Signals cards will show Suggested: N cts based on the selected policy"
@@ -311,11 +312,11 @@ function ApplyToSignalsToggle({
         border: "none",
         padding: 0,
         cursor: "pointer",
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
       }}
       aria-pressed={value}
     >
-      <span style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Apply to Signals</span>
+      <span style={{ fontSize: 11, color: colors.textSecondary, whiteSpace: "nowrap" }}>Apply to Signals</span>
       <span
         style={{
           position: "relative",
@@ -335,7 +336,7 @@ function ApplyToSignalsToggle({
             width: 14,
             height: 14,
             borderRadius: "50%",
-            background: "#f8fafc",
+            background: colors.textBright,
             transform: knob,
             transition: "transform 150ms",
           }}
@@ -345,7 +346,7 @@ function ApplyToSignalsToggle({
         style={{
           fontSize: 10,
           fontWeight: 600,
-          color: value ? "#10b981" : "#64748b",
+          color: value ? colors.accentGreen : colors.textMuted,
           letterSpacing: 0.5,
         }}
       >
@@ -412,7 +413,7 @@ function PolicyCard({
   onClick: () => void;
   portfolioSize: number;
 }) {
-  const color = selected ? "#3b82f6" : policy.recommended ? "#10b981" : "#334155";
+  const color = selected ? colors.accentBlue : policy.recommended ? colors.accentGreen : colors.borderMid;
   // Use `== null` (loose) not `=== null` — the backend's Optional fields can
   // serialize to either `null` or be entirely absent (→ `undefined` on the
   // frontend) depending on pydantic version or a stale dc-api deploy. A
@@ -424,28 +425,28 @@ function PolicyCard({
     <button
       onClick={onClick}
       style={{
-        background: selected ? "#1e293b" : "#0f172a",
+        background: selected ? colors.borderDim : colors.bgInset,
         border: `2px solid ${color}`,
         borderRadius: 8,
         padding: 12,
         textAlign: "left",
         cursor: "pointer",
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         display: "flex",
         flexDirection: "column",
         gap: 6,
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{policy.name}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>{policy.name}</span>
         {policy.recommended && (
           <span
             style={{
               fontSize: 9,
               fontWeight: 700,
-              color: "#10b981",
-              background: "#10b98118",
-              border: "1px solid #10b98140",
+              color: colors.accentGreen,
+              background: withAlphaByte(colors.accentGreen, 0x18),
+              border: `1px solid ${withAlpha(colors.accentGreen, 0.25)}`,
               borderRadius: 4,
               padding: "1px 5px",
               letterSpacing: 0.5,
@@ -459,9 +460,9 @@ function PolicyCard({
             style={{
               fontSize: 9,
               fontWeight: 700,
-              color: "#64748b",
-              background: "#1e293b",
-              border: "1px solid #334155",
+              color: colors.textMuted,
+              background: colors.borderDim,
+              border: `1px solid ${colors.borderMid}`,
               borderRadius: 4,
               padding: "1px 5px",
               letterSpacing: 0.5,
@@ -471,7 +472,7 @@ function PolicyCard({
           </span>
         )}
       </div>
-      <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{policy.description}</div>
+      <div style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 1.4 }}>{policy.description}</div>
       {policy.backtest == null ? (
         (() => {
           // static_1ct carries linear_growth parameters. These numbers are
@@ -490,7 +491,7 @@ function PolicyCard({
                   display: "grid",
                   gridTemplateColumns: "repeat(2, 1fr)",
                   gap: 6,
-                  fontFamily: "JetBrains Mono, monospace",
+                  fontFamily: fonts.mono,
                   fontSize: 11,
                   marginTop: 4,
                 }}
@@ -498,14 +499,14 @@ function PolicyCard({
                 <Stat
                   label="~Annual P/L"
                   value={`$${formatCompact(annualPL)}`}
-                  color="#e2e8f0"
+                  color={colors.textPrimary}
                 />
                 <Stat
                   label="3.8y terminal"
                   value={`$${formatCompact(terminal38)}`}
                 />
               </div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+              <div style={{ fontSize: 10, color: colors.textDim, marginTop: 2 }}>
                 1 contract per entry · linear growth (no compounding)
               </div>
             </>
@@ -525,7 +526,7 @@ function PolicyCard({
                   display: "grid",
                   gridTemplateColumns: "repeat(3, 1fr)",
                   gap: 6,
-                  fontFamily: "JetBrains Mono, monospace",
+                  fontFamily: fonts.mono,
                   fontSize: 11,
                   marginTop: 4,
                 }}
@@ -533,12 +534,12 @@ function PolicyCard({
                 <Stat
                   label="Terminal"
                   value={`$${formatCompact(bt.terminal_equity * scale)}`}
-                  color="#e2e8f0"
+                  color={colors.textPrimary}
                 />
                 <Stat label="PF" value={bt.pf.toFixed(2)} />
                 <Stat label="MaxDD" value={`${bt.max_dd_pct.toFixed(1)}%`} />
               </div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+              <div style={{ fontSize: 10, color: colors.textDim, marginTop: 2 }}>
                 {policy.monte_carlo
                   ? `MC median $${formatCompact(policy.monte_carlo.median * scale)} (${bt.years}y from $${formatCompact(portfolioSize)})`
                   : `${bt.years}y from $${formatCompact(portfolioSize)} · MC not documented`}
@@ -551,10 +552,10 @@ function PolicyCard({
   );
 }
 
-function Stat({ label, value, color = "#94a3b8" }: { label: string; value: string; color?: string }) {
+function Stat({ label, value, color = colors.textSecondary }: { label: string; value: string; color?: string }) {
   return (
     <div>
-      <div style={{ fontSize: 9, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "Inter, sans-serif" }}>
+      <div style={{ fontSize: 9, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
         {label}
       </div>
       <div style={{ color, fontWeight: 600 }}>{value}</div>
@@ -627,13 +628,13 @@ function SizingGrid({
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: fonts.mono,
             fontSize: 12,
-            color: "#e2e8f0",
+            color: colors.textPrimary,
           }}
         >
           <thead>
-            <tr style={{ color: "#64748b", textAlign: "right" }}>
+            <tr style={{ color: colors.textMuted, textAlign: "right" }}>
               <th style={{ textAlign: "left", padding: 6 }}>Strategy</th>
               <th style={{ padding: 6 }}>Margin / ct</th>
               <th style={{ padding: 6 }}>Base (DAl=1)</th>
@@ -647,15 +648,15 @@ function SizingGrid({
               const maxAtCap = Math.floor(stratCap / (spec.avg_margin ?? 1));
               const capBinding = dalCap.marginTrimmed || dalCap.hardCapped;
               return (
-                <tr key={spec.name} style={{ borderTop: "1px solid #1e293b" }}>
-                  <td style={{ textAlign: "left", padding: 6, color: "#e2e8f0" }}>{spec.name}</td>
+                <tr key={spec.name} style={{ borderTop: `1px solid ${colors.borderDim}` }}>
+                  <td style={{ textAlign: "left", padding: 6, color: colors.textPrimary }}>{spec.name}</td>
                   <td style={{ textAlign: "right", padding: 6 }}>${spec.avg_margin?.toFixed(0)}</td>
                   <td style={{ textAlign: "right", padding: 6 }}>{go.finalContracts}</td>
-                  <td style={{ textAlign: "right", padding: 6, color: capBinding ? "#f59e0b" : "#e2e8f0" }}>
+                  <td style={{ textAlign: "right", padding: 6, color: capBinding ? colors.accentAmber : colors.textPrimary }}>
                     {dalCap.finalContracts}
                   </td>
-                  <td style={{ textAlign: "right", padding: 6, color: "#10b981" }}>{goPlus.finalContracts}</td>
-                  <td style={{ textAlign: "right", padding: 6, color: "#64748b" }}>
+                  <td style={{ textAlign: "right", padding: 6, color: colors.accentGreen }}>{goPlus.finalContracts}</td>
+                  <td style={{ textAlign: "right", padding: 6, color: colors.textMuted }}>
                     {maxAtCap} cts (${formatCompact(maxAtCap * (spec.avg_margin ?? 0))})
                   </td>
                 </tr>
@@ -663,7 +664,7 @@ function SizingGrid({
             })}
           </tbody>
           <tfoot>
-            <tr style={{ borderTop: "1px solid #334155", color: "#64748b" }}>
+            <tr style={{ borderTop: `1px solid ${colors.borderMid}`, color: colors.textMuted }}>
               <td colSpan={6} style={{ padding: 8 }}>
                 Global cap: ${formatCompact(globalCap)} ({policy.global_pct}% of ${formatCompact(portfolioSize)})
                 &middot; hard cap {policy.hard_cap} contracts/entry
@@ -691,33 +692,33 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
-        backgroundColor: "#0f172a",
-        borderColor: "#1e293b",
-        textStyle: { color: "#e2e8f0", fontSize: 11 },
+        backgroundColor: colors.bgInset,
+        borderColor: colors.borderDim,
+        textStyle: { color: colors.textPrimary, fontSize: 11 },
       },
       xAxis: {
         type: "value",
-        axisLabel: { color: "#64748b", fontSize: 10, formatter: (v: number) => `$${v.toFixed(3)}` },
-        splitLine: { lineStyle: { color: "#1e293b" } },
+        axisLabel: { color: colors.textMuted, fontSize: 10, formatter: (v: number) => `$${v.toFixed(3)}` },
+        splitLine: { lineStyle: { color: colors.borderDim } },
       },
       yAxis: {
         type: "category",
         data: [...rows].reverse().map((r) => r.strategy),
-        axisLabel: { color: "#94a3b8", fontSize: 11, fontFamily: "JetBrains Mono, monospace" },
-        axisLine: { lineStyle: { color: "#334155" } },
+        axisLabel: { color: colors.textSecondary, fontSize: 11, fontFamily: fonts.mono },
+        axisLine: { lineStyle: { color: colors.borderMid } },
       },
       series: [
         {
           type: "bar",
           data: [...rows].reverse().map((r) => ({
             value: r.ev_mg_day,
-            itemStyle: { color: r.ev_mg_day > maxEv / 2 ? "#10b981" : "#3b82f6" },
+            itemStyle: { color: r.ev_mg_day > maxEv / 2 ? colors.accentGreen : colors.accentBlue },
           })),
           barWidth: "65%",
           label: {
             show: true,
             position: "right",
-            color: "#e2e8f0",
+            color: colors.textPrimary,
             fontSize: 10,
             formatter: (p: { value: number }) => `$${p.value.toFixed(4)}`,
           },
@@ -733,7 +734,7 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
         title="Capital Efficiency — EV per Margin-Day"
         subtitle="No ranking data available"
       >
-        <div style={{ color: "#64748b", fontSize: 12, padding: 20, textAlign: "center" }}>
+        <div style={{ color: colors.textMuted, fontSize: 12, padding: 20, textAlign: "center" }}>
           EV ranking unavailable — daemon may be offline.
         </div>
       </Panel>
@@ -748,9 +749,9 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
         {/* Table */}
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e2e8f0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fonts.mono, fontSize: 12, color: colors.textPrimary }}>
             <thead>
-              <tr style={{ color: "#64748b", textAlign: "right" }}>
+              <tr style={{ color: colors.textMuted, textAlign: "right" }}>
                 <th style={{ textAlign: "left", padding: 4 }}>#</th>
                 <th style={{ textAlign: "left", padding: 4 }}>Strategy</th>
                 <th style={{ padding: 4 }}>E[P/L]</th>
@@ -762,13 +763,13 @@ function EVRankingPanel({ rows }: { rows: DCEVRankingRow[] }) {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.rank} style={{ borderTop: "1px solid #1e293b" }}>
-                  <td style={{ padding: 4, color: "#64748b" }}>{r.rank}</td>
-                  <td style={{ padding: 4, color: "#e2e8f0" }}>{r.strategy}</td>
+                <tr key={r.rank} style={{ borderTop: `1px solid ${colors.borderDim}` }}>
+                  <td style={{ padding: 4, color: colors.textMuted }}>{r.rank}</td>
+                  <td style={{ padding: 4, color: colors.textPrimary }}>{r.strategy}</td>
                   <td style={{ textAlign: "right", padding: 4 }}>${r.e_pl.toFixed(0)}</td>
                   <td style={{ textAlign: "right", padding: 4 }}>${r.margin.toFixed(0)}</td>
                   <td style={{ textAlign: "right", padding: 4 }}>{r.avg_hold.toFixed(1)}d</td>
-                  <td style={{ textAlign: "right", padding: 4, color: "#10b981" }}>${r.ev_mg_day.toFixed(4)}</td>
+                  <td style={{ textAlign: "right", padding: 4, color: colors.accentGreen }}>${r.ev_mg_day.toFixed(4)}</td>
                   <td style={{ textAlign: "right", padding: 4 }}>{r.pf.toFixed(2)}</td>
                 </tr>
               ))}
@@ -881,7 +882,7 @@ function CompoundingChart({
         name: `Illustrative path ${idx + 1}`,
         type: "line",
         data: path,
-        lineStyle: { color: "#10b98128", width: 1 },
+        lineStyle: { color: withAlphaByte(colors.accentGreen, 0x28), width: 1 },
         symbol: "none",
         showInLegend: false,
         tooltip: { show: false },
@@ -898,7 +899,7 @@ function CompoundingChart({
         name: `${refPolicy.name} (reference)`,
         type: "line",
         data: refCurve.median_multiplier.map((m) => Math.max(m * portfolioSize, 1)),
-        lineStyle: { color: "#94a3b8", width: 1.5, type: "dashed" },
+        lineStyle: { color: colors.textSecondary, width: 1.5, type: "dashed" },
         symbol: "none",
         z: 1,
       });
@@ -909,7 +910,7 @@ function CompoundingChart({
         name: "Median",
         type: "line",
         data: median,
-        lineStyle: { color: "#10b981", width: 2 },
+        lineStyle: { color: colors.accentGreen, width: 2 },
         symbol: "none",
         z: 3,
       },
@@ -917,7 +918,7 @@ function CompoundingChart({
         name: "Start",
         type: "line",
         data: months.map(() => portfolioSize),
-        lineStyle: { color: "#475569", type: "dotted", width: 1 },
+        lineStyle: { color: colors.textDim, type: "dotted", width: 1 },
         symbol: "none",
         z: 0,
       },
@@ -928,7 +929,7 @@ function CompoundingChart({
           name: "p95",
           type: "line",
           data: p95,
-          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
+          lineStyle: { color: withAlpha(colors.accentGreen, 0.375), type: "dashed", width: 1 },
           symbol: "none",
           z: 2,
         },
@@ -936,7 +937,7 @@ function CompoundingChart({
           name: "p5",
           type: "line",
           data: p5,
-          lineStyle: { color: "#10b98160", type: "dashed", width: 1 },
+          lineStyle: { color: withAlpha(colors.accentGreen, 0.375), type: "dashed", width: 1 },
           symbol: "none",
           z: 2,
         },
@@ -947,9 +948,9 @@ function CompoundingChart({
       grid: { left: 70, right: 40, top: 30, bottom: 40 },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#0f172a",
-        borderColor: "#1e293b",
-        textStyle: { color: "#e2e8f0", fontSize: 11 },
+        backgroundColor: colors.bgInset,
+        borderColor: colors.borderDim,
+        textStyle: { color: colors.textPrimary, fontSize: 11 },
         formatter: (params: Array<{ axisValue: number; seriesName: string; value: number }> | { axisValue: number; seriesName: string; value: number }) => {
           const arr = Array.isArray(params) ? params : [params];
           if (!arr.length) return "";
@@ -971,18 +972,18 @@ function CompoundingChart({
         name: "Months",
         nameLocation: "middle",
         nameGap: 25,
-        nameTextStyle: { color: "#64748b", fontSize: 11 },
-        axisLabel: { color: "#64748b", fontSize: 10, interval: 5 },
-        axisLine: { lineStyle: { color: "#334155" } },
+        nameTextStyle: { color: colors.textMuted, fontSize: 11 },
+        axisLabel: { color: colors.textMuted, fontSize: 10, interval: 5 },
+        axisLine: { lineStyle: { color: colors.borderMid } },
       },
       yAxis: {
         type: "log",
         name: "Equity ($)",
         nameLocation: "middle",
         nameGap: 55,
-        nameTextStyle: { color: "#64748b", fontSize: 11 },
-        axisLabel: { color: "#64748b", fontSize: 10, formatter: (v: number) => `$${formatCompact(v)}` },
-        splitLine: { lineStyle: { color: "#1e293b" } },
+        nameTextStyle: { color: colors.textMuted, fontSize: 11 },
+        axisLabel: { color: colors.textMuted, fontSize: 10, formatter: (v: number) => `$${formatCompact(v)}` },
+        splitLine: { lineStyle: { color: colors.borderDim } },
       },
       series,
     };
@@ -1023,7 +1024,7 @@ function CompoundingChart({
           gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
           gap: 8,
           marginTop: 10,
-          fontFamily: "JetBrains Mono, monospace",
+          fontFamily: fonts.mono,
         }}
       >
         <Milestone label="1y median" value={y1} />
@@ -1046,10 +1047,10 @@ function CompoundingChart({
                 portfolioSize + policy.linear_growth.monthly_pl * 46
               : portfolioSize
           }
-          color="#3b82f6"
+          color={colors.accentBlue}
         />
       </div>
-      <div style={{ marginTop: 8, fontSize: 10, color: "#64748b", fontStyle: "italic" }}>
+      <div style={{ marginTop: 8, fontSize: 10, color: colors.textMuted, fontStyle: "italic" }}>
         {isLinear
           ? `Static 1-contract sizing. Growth numbers are back-of-envelope from CAPITAL_ALLOCATION.md §4 EV × §8 schedule × §3 fire rate — replace with a vega-prime static-sizing backtest when available. Past performance ≠ future results.`
           : `Based on ${policy.copeland_mode} Copeland gating + ${policy.global_pct}/${policy.per_strat_pct} margin budget. Hard contract cap: ${policy.hard_cap}. SPX multiplier: ${SPX_MULTIPLIER}. Past performance ≠ future results.`}
@@ -1058,13 +1059,13 @@ function CompoundingChart({
   );
 }
 
-function Milestone({ label, value, color = "#10b981" }: { label: string; value: number | null; color?: string }) {
+function Milestone({ label, value, color = colors.accentGreen }: { label: string; value: number | null; color?: string }) {
   return (
-    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "6px 10px" }}>
-      <div style={{ fontSize: 9, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "Inter, sans-serif" }}>
+    <div style={{ background: colors.bgPanel, border: `1px solid ${colors.borderDim}`, borderRadius: 6, padding: "6px 10px" }}>
+      <div style={{ fontSize: 9, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
         {label}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: value != null ? color : "#475569" }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: value != null ? color : colors.textDim }}>
         {value != null ? `$${formatCompact(value)}` : "—"}
       </div>
     </div>
@@ -1079,16 +1080,16 @@ function Panel({ title, subtitle, children }: { title: string; subtitle?: string
   return (
     <div
       style={{
-        background: "#0f172a",
-        border: "1px solid #1e293b",
+        background: colors.bgInset,
+        border: `1px solid ${colors.borderDim}`,
         borderRadius: 8,
         padding: 14,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
       }}
     >
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>}
+        <div style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>{subtitle}</div>}
       </div>
       {children}
     </div>
