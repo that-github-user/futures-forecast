@@ -79,7 +79,12 @@ export function usePrediction() {
       },
       () => {
         setConnected(false);
-        // Start polling as fallback
+        // Close the errored EventSource before starting polling. Otherwise
+        // the browser keeps auto-reconnecting it in the background and a
+        // recovered SSE stream would race against the polling interval
+        // (double-fetch on every reconnect). cleanup() is idempotent —
+        // unmount will still call it safely.
+        cleanup();
         if (!pollRef.current) {
           pollRef.current = setInterval(fetchLatest, POLL_INTERVAL);
         }
@@ -98,5 +103,5 @@ export function usePrediction() {
     };
   }, [fetchLatest, demoMode, retryConnection]);
 
-  return { prediction, connected, demoMode, error, refetch: fetchLatest, retryConnection };
+  return { prediction, connected, demoMode, error, retryConnection };
 }

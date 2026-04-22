@@ -11,6 +11,12 @@ import { useMemo, useState } from "react";
 import { useDCSignalEvents } from "../../hooks/useDCSignalEvents";
 import type { DCSignalEvent } from "../../api/dcTypes";
 import { SignalBadge } from "./SignalBadge";
+import {
+  tableStyle,
+  thStickyStyle as thStyle,
+  tdStyle,
+  tdMono,
+} from "./tableStyles";
 
 const ET_TIME = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
@@ -327,14 +333,3 @@ const chipButtonStyle = (active: boolean): React.CSSProperties => ({
   fontSize: 11, fontFamily: "Inter, sans-serif", cursor: "pointer",
   alignSelf: "flex-end",
 });
-const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 12 };
-const thStyle: React.CSSProperties = {
-  textAlign: "left", padding: "6px 8px", color: "#64748b", fontSize: 10,
-  fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5,
-  borderBottom: "1px solid #1e293b", position: "sticky", top: 0, background: "#0f1520",
-};
-const tdStyle: React.CSSProperties = {
-  padding: "6px 8px", color: "#e2e8f0", fontSize: 12,
-  fontFamily: "Inter, sans-serif", borderBottom: "1px solid #111827",
-};
-const tdMono: React.CSSProperties = { ...tdStyle, fontFamily: "JetBrains Mono, monospace" };
