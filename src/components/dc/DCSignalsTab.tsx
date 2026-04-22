@@ -92,6 +92,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         netDebit: s.net_debit ?? null,
         entryNetDebit: s.entry_net_debit ?? null,
         snapshot: (s.snapshot ?? null) as DCSnapshotInfo | null,
+        ivSource: s.iv_source ?? null,
       });
     }
     return m;
@@ -125,6 +126,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         snapshot: base?.snapshot ?? null,
         profitTargetPct: spec.profit_target_pct,
         usesSlRatio: spec.sl_ratio_min != null || spec.sl_ratio_exit != null,
+        ivSource: base?.ivSource ?? null,
       };
       list.push({ spec, signal, info, legData });
     }

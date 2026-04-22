@@ -115,6 +115,13 @@ export interface DCSignalStatus {
   net_debit: number | null;
   entry_net_debit: number | null;
   snapshot: DCSnapshotInfo | null;
+  // Which IV anchor the resolver's BS inverter used this cycle:
+  //   "chain"   — fetch_atm_iv sampled live option IVs (good)
+  //   "vix"     — fallback to VIX-scaled estimate (the pre-fix path
+  //               that caused the 21/28 strike incident)
+  //   "default" — cold-start, no VIX or chain IV available
+  //   null      — strategy not yet resolved, or pre-observability row
+  iv_source: "chain" | "vix" | "default" | null;
 }
 
 export interface DCFeatures {
@@ -175,6 +182,11 @@ export interface DCSignalEvent {
   ideal_put_strike: number | null;
   ideal_call_strike: number | null;
   conflicting_strategy: string | null;
+  // Which IV anchor the BS inverter used for this resolve cycle.
+  // Null on pre-observability rows (schema migration didn't backfill)
+  // and on pre-fetch event paths (blocked_signal, blocked_features,
+  // blocked_vix, blocked_canTrade) where no resolve happened.
+  iv_source: "chain" | "vix" | "default" | null;
   created_at: string | null;
 }
 
