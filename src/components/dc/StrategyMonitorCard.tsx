@@ -44,6 +44,11 @@ export interface LegData {
   snapshot: DCSnapshotInfo | null;
   profitTargetPct: number;  // from strategy spec — used to compute $ TP from net debit
   usesSlRatio: boolean;     // true if the daemon gates entry or exit on S/L — hides ratio display when false
+  // Which IV anchor the daemon's last resolve used. Badge surfaces
+  // near the Net Debit header so a silent fallback to VIX (the
+  // pre-fix path that caused the 21/28 strike incident) is visible
+  // without digging through logs. Null when no resolve has happened.
+  ivSource: "chain" | "vix" | "default" | null;
 }
 
 interface Props {
@@ -479,7 +484,7 @@ const LEG_LABELS: Record<LegName, string> = {
 };
 
 function LegDetailBlock({ legData }: { legData: LegData }) {
-  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio } = legData;
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio, ivSource } = legData;
 
   // No leg data yet (worker hasn't polled or this strategy isn't eligible).
   // Fall back to just the S/L line for strategies that use it; otherwise render nothing.
@@ -490,7 +495,12 @@ function LegDetailBlock({ legData }: { legData: LegData }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {/* Net debit header + profit target line */}
-      <NetDebitHeader netDebit={netDebit} entryNetDebit={entryNetDebit} snapshotTime={snapshot?.entry_time ?? null} />
+      <NetDebitHeader
+        netDebit={netDebit}
+        entryNetDebit={entryNetDebit}
+        snapshotTime={snapshot?.entry_time ?? null}
+        ivSource={ivSource}
+      />
       <ProfitTargetLine
         netDebit={netDebit}
         entryNetDebit={entryNetDebit}
@@ -532,15 +542,25 @@ function NetDebitHeader({
   netDebit,
   entryNetDebit,
   snapshotTime,
+  ivSource,
 }: {
   netDebit: number | null;
   entryNetDebit: number | null;
   snapshotTime: string | null;
+  ivSource: "chain" | "vix" | "default" | null;
 }) {
   if (netDebit == null) {
+    // Review N1: after a daemon restart the SL worker resolves legs
+    // (ivSource populated) before the first ratio poll produces
+    // netDebit. Render a minimal header anyway so the IV-anchor
+    // badge is visible during that window — exactly when an operator
+    // may be watching for the fix to engage after a restart.
     return (
-      <div style={{ fontSize: 12, color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>
-        Debit: --
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10,
+                    fontSize: 12, color: "#64748b",
+                    fontFamily: "JetBrains Mono, monospace" }}>
+        <span>Debit: --</span>
+        <IVSourceBadge source={ivSource} />
       </div>
     );
   }
@@ -573,7 +593,72 @@ function NetDebitHeader({
           <span style={{ color: deltaColor, fontWeight: 700 }}>({deltaStr})</span>
         </div>
       )}
+      <IVSourceBadge source={ivSource} />
     </div>
+  );
+}
+
+
+/** Small indicator showing which IV anchor seeded the resolver's
+ *  BS inverter this cycle. Green = chain (good), amber = vix
+ *  (pre-fix fallback; silent fallbacks here caused the 21/28 strike
+ *  incident), red = default (cold-start). Null renders nothing. */
+function IVSourceBadge({
+  source,
+}: {
+  source: "chain" | "vix" | "default" | null;
+}) {
+  if (source === null) return null;
+  const { label, bg, border, color, title } = (() => {
+    switch (source) {
+      case "chain":
+        return {
+          label: "IV chain",
+          bg: "rgba(16, 185, 129, 0.12)",
+          border: "rgba(16, 185, 129, 0.45)",
+          color: "#10b981",
+          title: "BS inverter is using live chain-sampled ATM IV — the fix is engaged for this strategy.",
+        };
+      case "vix":
+        return {
+          label: "IV vix",
+          bg: "rgba(245, 158, 11, 0.14)",
+          border: "rgba(245, 158, 11, 0.45)",
+          color: "#f59e0b",
+          title: "BS inverter fell back to VIX-scaled IV — the chain sample failed. Strikes may drift from market 20Δ; investigate if persistent.",
+        };
+      case "default":
+        return {
+          label: "IV default",
+          bg: "rgba(239, 68, 68, 0.14)",
+          border: "rgba(239, 68, 68, 0.45)",
+          color: "#ef4444",
+          title: "BS inverter has neither a chain sample nor VIX — using hardcoded 20% default. Cold-start or feature-refresh failure.",
+        };
+    }
+  })();
+
+  return (
+    <span
+      role="img"
+      aria-label={`IV source: ${source}`}
+      title={title}
+      style={{
+        fontSize: 9,
+        fontFamily: "Inter, sans-serif",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        padding: "1px 6px",
+        borderRadius: 3,
+        background: bg,
+        border: `1px solid ${border}`,
+        color,
+        fontWeight: 600,
+        marginLeft: "auto",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 

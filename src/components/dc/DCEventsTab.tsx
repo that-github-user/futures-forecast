@@ -154,6 +154,14 @@ export function DCEventsTab() {
                   <th style={thStyle}>Debit</th>
                   <th style={thStyle}>Qty</th>
                   <th style={thStyle}>SPX</th>
+                  <th
+                    scope="col"
+                    aria-label="IV anchor source — chain, vix, or default"
+                    style={thStyle}
+                    title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)"
+                  >
+                    IV
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -192,8 +200,32 @@ function EventRow({ event }: { event: DCSignalEvent }) {
       <td style={tdMono}>
         {event.spx_at_event != null ? event.spx_at_event.toFixed(0) : "—"}
       </td>
+      <td style={ivSourceCellStyle(event.iv_source)} title={ivSourceTitle(event.iv_source)}>
+        {event.iv_source ?? "—"}
+      </td>
     </tr>
   );
+}
+
+
+export function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSSProperties {
+  const base = { ...tdMono, fontSize: 10, textTransform: "uppercase" as const, letterSpacing: 0.5 };
+  switch (source) {
+    case "chain":   return { ...base, color: "#10b981" };
+    case "vix":     return { ...base, color: "#f59e0b" };
+    case "default": return { ...base, color: "#ef4444" };
+    default:        return { ...base, color: "#64748b" };
+  }
+}
+
+
+export function ivSourceTitle(source: DCSignalEvent["iv_source"]): string {
+  switch (source) {
+    case "chain":   return "Live chain-sampled ATM IV fed the BS inverter (good path).";
+    case "vix":     return "Fell back to VIX-scaled IV — chain sample failed. This was the pre-fix path that caused the 21/28 strike incident.";
+    case "default": return "Neither chain nor VIX available — hardcoded 20% default. Cold-start or feature-refresh failure.";
+    default:        return "Event fired before any resolve happened (blocked_signal / blocked_features / blocked_vix / blocked_canTrade) or predates iv_source tracking.";
+  }
 }
 
 
