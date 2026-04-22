@@ -6,6 +6,21 @@
     <meta name="description" content="Real-time probabilistic ensemble forecasts for ES futures with fan charts, trading signals, and live performance tracking." />
     <meta name="theme-color" content="#0a0e17" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA: lets iOS Safari treat the site as installable. Once the
+         user taps "Add to Home Screen" and launches from the icon,
+         Safari unlocks the Notification API in standalone mode —
+         that's the whole point of this file for iOS users. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS-specific meta: standalone launch behaviour, title override
+         for the home-screen icon, and the apple-touch-icon fallback
+         (Safari doesn't read the SVG icon out of the webmanifest). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ES Forecast" />
+    <!-- iOS does NOT render SVG apple-touch-icons (home-screen tile
+         falls back to blank/screenshot). Must be a raster PNG;
+         180x180 is Apple's current recommended size. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>ES Futures Forecast</title>
     <style>
       /* Prevent flash of white background */

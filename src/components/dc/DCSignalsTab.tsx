@@ -427,6 +427,30 @@ function NotificationControl({
       </span>
     );
   }
+  if (permission === "needs-install") {
+    // Safari iOS in a regular tab. The Notification API doesn't exist
+    // here, but iOS exposes it once the site is installed as a PWA.
+    // Surface the exact 3-tap path rather than dead-ending on a
+    // generic "not supported" that would leave iPhone users stuck.
+    return (
+      <span
+        title={
+          "On iPhone/iPad Safari, tap the Share button (square with up-arrow), " +
+          "scroll to 'Add to Home Screen', then launch this site from the new " +
+          "Home Screen icon. Notifications will be available once you re-open " +
+          "it that way."
+        }
+        style={{
+          fontSize: 11,
+          color: "#f59e0b",
+          cursor: "help",
+          borderBottom: "1px dashed #f59e0b60",
+        }}
+      >
+        Tap Share → Add to Home Screen to enable alerts
+      </span>
+    );
+  }
   if (permission === "granted") {
     return (
       <span style={{ fontSize: 11, color: "#10b981" }}>
