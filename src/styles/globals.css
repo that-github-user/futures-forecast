@@ -11,6 +11,7 @@
   --border-dim: #1e293b;
   --border-mid: #334155;
   --border-bright: #475569;
+  --text-bright: #f8fafc;
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
@@ -18,6 +19,7 @@
   --accent-blue: #3b82f6;
   --accent-green: #10b981;
   --accent-red: #ef4444;
+  --accent-red-light: #fca5a5;
   --accent-amber: #f59e0b;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;

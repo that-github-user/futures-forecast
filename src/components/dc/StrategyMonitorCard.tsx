@@ -17,6 +17,7 @@
  */
 
 import { memo, type ReactNode } from "react";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import type {
   DCAllocationPolicy,
   DCLegDetail,
@@ -75,64 +76,70 @@ interface StyleSet {
   glow: string;
 }
 
+// STATE_STYLES' `background` values are intentionally off-palette —
+// they're lifecycle-state tints (very dark accent-tinted panels) that
+// are specific to this one component's visual logic, not part of the
+// shared palette. Borders and glows derive from shared accent colors
+// via withAlpha / withAlphaByte so a palette-wide restyle propagates.
 const STATE_STYLES: Record<LifecycleState, StyleSet> = {
   inactive: {
-    border: "#1e293b",
+    border: colors.borderDim,
     background: "#0d1320",
     opacity: 0.4,
     glow: "none",
   },
   pre_features: {
-    border: "#1e293b",
-    background: "#111827",
+    border: colors.borderDim,
+    background: colors.bgPanel,
     opacity: 0.85,
     glow: "none",
   },
   primed: {
-    border: "#3b82f680",
-    background: "#111827",
+    border: withAlpha(colors.accentBlue, 0.5),
+    background: colors.bgPanel,
     opacity: 1,
-    glow: "0 0 0 1px #3b82f640",
+    glow: `0 0 0 1px ${withAlpha(colors.accentBlue, 0.25)}`,
   },
   imminent: {
-    border: "#f59e0b",
+    border: colors.accentAmber,
     background: "#1c1607",
     opacity: 1,
-    glow: "0 0 12px #f59e0b66, 0 0 0 1px #f59e0b80",
+    glow: `0 0 12px ${withAlpha(colors.accentAmber, 0.4)}, 0 0 0 1px ${withAlpha(colors.accentAmber, 0.5)}`,
   },
   firing: {
-    border: "#10b981",
+    border: colors.accentGreen,
     background: "#062019",
     opacity: 1,
-    glow: "0 0 18px #10b98199, 0 0 0 2px #10b981cc",
+    glow: `0 0 18px ${withAlpha(colors.accentGreen, 0.6)}, 0 0 0 2px ${withAlpha(colors.accentGreen, 0.8)}`,
   },
   recently_fired: {
-    border: "#10b98180",
+    border: withAlpha(colors.accentGreen, 0.5),
     background: "#0a1814",
     opacity: 0.95,
-    glow: "0 0 8px #10b98144",
+    // 0x44 (68) — preserved exactly for visual parity with the old literal.
+    glow: `0 0 8px ${withAlphaByte(colors.accentGreen, 0x44)}`,
   },
   passed_will_fire: {
-    border: "#10b98140",
+    border: withAlpha(colors.accentGreen, 0.25),
     background: "#0c1612",
     opacity: 0.7,
     glow: "none",
   },
   passed_skipped: {
-    border: "#1e293b",
+    border: colors.borderDim,
     background: "#10131c",
     opacity: 0.55,
     glow: "none",
   },
   not_fired_yet: {
-    border: "#1e293b",
-    background: "#111827",
+    border: colors.borderDim,
+    background: colors.bgPanel,
     opacity: 0.85,
     glow: "none",
   },
   closed: {
-    border: "#1e293b",
-    background: "#0a0e17",
+    border: colors.borderDim,
+    background: colors.bgBase,
     opacity: 0.25,
     glow: "none",
   },
@@ -230,8 +237,8 @@ function StrategyMonitorCardImpl({
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: "#e2e8f0",
-              fontFamily: "Inter, sans-serif",
+              color: colors.textPrimary,
+              fontFamily: fonts.sans,
             }}
           >
             {spec.name}
@@ -242,11 +249,11 @@ function StrategyMonitorCardImpl({
           style={{
             fontSize: 9,
             fontWeight: 600,
-            color: style.border === "#1e293b" ? "#64748b" : style.border,
+            color: style.border === colors.borderDim ? colors.textMuted : style.border,
             border: `1px solid ${style.border}`,
             padding: "2px 6px",
             borderRadius: 6,
-            fontFamily: "Inter, sans-serif",
+            fontFamily: fonts.sans,
             letterSpacing: 0.5,
             textTransform: "uppercase",
           }}
@@ -283,9 +290,9 @@ function StrategyMonitorCardImpl({
       <div
         style={{
           fontSize: 10,
-          color: "#64748b",
-          fontFamily: "JetBrains Mono, monospace",
-          borderTop: "1px solid #1e293b",
+          color: colors.textMuted,
+          fontFamily: fonts.mono,
+          borderTop: `1px solid ${colors.borderDim}`,
           paddingTop: 6,
           display: "flex",
           justifyContent: "space-between",
@@ -323,7 +330,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
           subline={
             info.nextEntryHHMM ? <>in <LiveCountdown targetHHMM={info.nextEntryHHMM} mode="until" /></> : ""
           }
-          accent="#3b82f6"
+          accent={colors.accentBlue}
         />
       );
     case "imminent":
@@ -333,18 +340,18 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
           subline={
             info.nextEntryHHMM ? <LiveCountdown targetHHMM={info.nextEntryHHMM} mode="until" /> : ""
           }
-          accent="#f59e0b"
+          accent={colors.accentAmber}
           large
         />
       );
     case "firing":
-      return <Body headline="FIRING NOW" subline={formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)} accent="#10b981" large />;
+      return <Body headline="FIRING NOW" subline={formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)} accent={colors.accentGreen} large />;
     case "recently_fired":
       return gateSkipped ? (
         <Body
           headline={info.lastEntryHHMM ? `Skipped at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Skipped"}
           subline="S/L gate failed — daemon did not enter"
-          accent="#ef4444"
+          accent={colors.accentRed}
         />
       ) : (
         <Body
@@ -356,7 +363,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
               ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
               : ""
           }
-          accent="#10b981"
+          accent={colors.accentGreen}
         />
       );
     case "passed_will_fire":
@@ -368,7 +375,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
               ? `Entry was at ${formatTime(info.lastEntryHHMM)} ${tzLabel} but gate was not met`
               : "S/L gate was not met at entry time"
           }
-          accent="#ef4444"
+          accent={colors.accentRed}
         />
       ) : (
         <Body
@@ -378,7 +385,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
               ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
               : `Signal was ${formatSignal(signal)} at fire time`
           }
-          accent="#10b981"
+          accent={colors.accentGreen}
         />
       );
     case "passed_skipped":
@@ -425,8 +432,8 @@ function Body({
         style={{
           fontSize: large ? 18 : 13,
           fontWeight: large ? 700 : 600,
-          color: accent ?? "#e2e8f0",
-          fontFamily: "Inter, sans-serif",
+          color: accent ?? colors.textPrimary,
+          fontFamily: fonts.sans,
           letterSpacing: large ? 0.5 : 0,
         }}
       >
@@ -436,8 +443,8 @@ function Body({
         <div
           style={{
             fontSize: large ? 13 : 11,
-            color: "#94a3b8",
-            fontFamily: "JetBrains Mono, monospace",
+            color: colors.textSecondary,
+            fontFamily: fonts.mono,
           }}
         >
           {subline}
@@ -455,7 +462,7 @@ function formatSignal(signal: string | null): string {
 function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: boolean | null }) {
   if (slRatio == null) {
     return (
-      <div style={{ fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: "#475569" }}>
+      <div style={{ fontSize: 11, fontFamily: fonts.mono, color: colors.textDim }}>
         S/L: --
       </div>
     );
@@ -464,17 +471,17 @@ function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: 
   let color: string;
   let suffix = "";
   if (meetsMin === true) {
-    color = "#10b981";
+    color = colors.accentGreen;
     suffix = " PASS";
   } else if (meetsMin === false) {
-    color = "#ef4444";
+    color = colors.accentRed;
     suffix = " FAIL";
   } else {
-    color = "#94a3b8"; // no gate for this strategy
+    color = colors.textSecondary; // no gate for this strategy
   }
 
   return (
-    <div style={{ fontSize: 12, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color }}>
+    <div style={{ fontSize: 12, fontFamily: fonts.mono, fontWeight: 600, color }}>
       S/L: {slRatio.toFixed(3)}
       {suffix && (
         <span
@@ -549,7 +556,7 @@ function LegDetailBlock({ legData }: { legData: LegData }) {
           gridTemplateColumns: "auto auto 1fr 1fr 1fr",
           gap: "3px 8px",
           fontSize: 11,
-          fontFamily: "JetBrains Mono, monospace",
+          fontFamily: fonts.mono,
           alignItems: "center",
         }}
       >
@@ -592,8 +599,8 @@ function NetDebitHeader({
     // may be watching for the fix to engage after a restart.
     return (
       <div style={{ display: "flex", alignItems: "baseline", gap: 10,
-                    fontSize: 12, color: "#64748b",
-                    fontFamily: "JetBrains Mono, monospace" }}>
+                    fontSize: 12, color: colors.textMuted,
+                    fontFamily: fonts.mono }}>
         <span>Debit: --</span>
         <IVSourceBadge source={ivSource} />
       </div>
@@ -603,7 +610,7 @@ function NetDebitHeader({
   const hasSnapshot = entryNetDebit != null;
   const delta = hasSnapshot ? netDebit - entryNetDebit : null;
   // Net debit: positive delta = more expensive → red. Negative delta = cheaper → green.
-  const deltaColor = delta == null ? "#94a3b8" : delta > 0 ? "#ef4444" : delta < 0 ? "#10b981" : "#94a3b8";
+  const deltaColor = delta == null ? colors.textSecondary : delta > 0 ? colors.accentRed : delta < 0 ? colors.accentGreen : colors.textSecondary;
   const deltaStr = delta == null ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
 
   return (
@@ -613,17 +620,17 @@ function NetDebitHeader({
         alignItems: "baseline",
         gap: 10,
         flexWrap: "wrap",
-        fontFamily: "JetBrains Mono, monospace",
+        fontFamily: fonts.mono,
       }}
     >
-      <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "Inter, sans-serif" }}>
+      <div style={{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
         Net Debit
       </div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>
+      <div style={{ fontSize: 17, fontWeight: 700, color: colors.textPrimary }}>
         ${netDebit.toFixed(2)}
       </div>
       {hasSnapshot && (
-        <div style={{ fontSize: 10, color: "#64748b", display: "flex", alignItems: "baseline", gap: 4 }}>
+        <div style={{ fontSize: 10, color: colors.textMuted, display: "flex", alignItems: "baseline", gap: 4 }}>
           <span>entry {snapshotTime} ${entryNetDebit!.toFixed(2)}</span>
           <span style={{ color: deltaColor, fontWeight: 700 }}>({deltaStr})</span>
         </div>
@@ -651,7 +658,7 @@ function IVSourceBadge({
           label: "IV chain",
           bg: "rgba(16, 185, 129, 0.12)",
           border: "rgba(16, 185, 129, 0.45)",
-          color: "#10b981",
+          color: colors.accentGreen,
           title: "BS inverter is using live chain-sampled ATM IV — the fix is engaged for this strategy.",
         };
       case "vix":
@@ -659,7 +666,7 @@ function IVSourceBadge({
           label: "IV vix",
           bg: "rgba(245, 158, 11, 0.14)",
           border: "rgba(245, 158, 11, 0.45)",
-          color: "#f59e0b",
+          color: colors.accentAmber,
           title: "BS inverter fell back to VIX-scaled IV — the chain sample failed. Strikes may drift from market 20Δ; investigate if persistent.",
         };
       case "default":
@@ -667,7 +674,7 @@ function IVSourceBadge({
           label: "IV default",
           bg: "rgba(239, 68, 68, 0.14)",
           border: "rgba(239, 68, 68, 0.45)",
-          color: "#ef4444",
+          color: colors.accentRed,
           title: "BS inverter has neither a chain sample nor VIX — using hardcoded 20% default. Cold-start or feature-refresh failure.",
         };
     }
@@ -680,7 +687,7 @@ function IVSourceBadge({
       title={title}
       style={{
         fontSize: 9,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         textTransform: "uppercase",
         letterSpacing: 0.5,
         padding: "1px 6px",
@@ -729,7 +736,7 @@ function ProfitTargetLine({
   const ptTarget = roundToSpxTick(basisDebit * (1 + profitTargetPct));
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
   const statusLabel = entered ? "locked" : "potential";
-  const statusColor = entered ? "#10b981" : "#94a3b8";
+  const statusColor = entered ? colors.accentGreen : colors.textSecondary;
 
   return (
     <div
@@ -738,22 +745,22 @@ function ProfitTargetLine({
         alignItems: "baseline",
         gap: 10,
         flexWrap: "wrap",
-        fontFamily: "JetBrains Mono, monospace",
+        fontFamily: fonts.mono,
         marginTop: -4,
       }}
     >
       <div
         style={{
           fontSize: 10,
-          color: "#64748b",
+          color: colors.textMuted,
           textTransform: "uppercase",
           letterSpacing: 0.5,
-          fontFamily: "Inter, sans-serif",
+          fontFamily: fonts.sans,
         }}
       >
         TP {pctLabel} close
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
         ${ptTarget.toFixed(2)}
       </div>
       <div
@@ -767,7 +774,7 @@ function ProfitTargetLine({
           borderRadius: 4,
           letterSpacing: 0.5,
           textTransform: "uppercase",
-          fontFamily: "Inter, sans-serif",
+          fontFamily: fonts.sans,
         }}
       >
         {statusLabel}
@@ -781,12 +788,12 @@ function TableHeader({ text, align }: { text: string; align: "left" | "right" })
     <div
       style={{
         fontSize: 9,
-        color: "#64748b",
+        color: colors.textMuted,
         textTransform: "uppercase",
         letterSpacing: 0.5,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         textAlign: align,
-        borderBottom: "1px solid #1e293b",
+        borderBottom: `1px solid ${colors.borderDim}`,
         paddingBottom: 2,
       }}
     >
@@ -796,7 +803,7 @@ function TableHeader({ text, align }: { text: string; align: "left" | "right" })
 }
 
 function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
-  const actionColor = leg.action === "STO" ? "#10b981" : "#ef4444"; // green = credit side, red = debit side
+  const actionColor = leg.action === "STO" ? colors.accentGreen : colors.accentRed; // green = credit side, red = debit side
   const currentStr = leg.mid != null ? leg.mid.toFixed(2) : "--";
   const entryStr = leg.entry_mid != null ? leg.entry_mid.toFixed(2) : "";
   const hasBoth = leg.mid != null && leg.entry_mid != null;
@@ -804,24 +811,24 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
 
   // STO legs: positive delta = more credit = BETTER → green
   // BTO legs: positive delta = more debit = WORSE → red
-  let deltaColor = "#94a3b8";
+  let deltaColor: string = colors.textSecondary;
   let deltaStr = "";
   if (delta != null) {
     if (delta === 0) {
-      deltaColor = "#94a3b8";
+      deltaColor = colors.textSecondary;
       deltaStr = "0.00";
     } else if (leg.action === "STO") {
-      deltaColor = delta > 0 ? "#10b981" : "#ef4444";
+      deltaColor = delta > 0 ? colors.accentGreen : colors.accentRed;
       deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
     } else {
-      deltaColor = delta > 0 ? "#ef4444" : "#10b981";
+      deltaColor = delta > 0 ? colors.accentRed : colors.accentGreen;
       deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
     }
   }
 
   return (
     <>
-      <div style={{ color: "#e2e8f0", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+      <div style={{ color: colors.textPrimary, display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
         <span>{label}</span>
         <span
           style={{
@@ -836,11 +843,11 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
         >
           {leg.action}
         </span>
-        <span style={{ color: "#64748b" }}>{leg.strike}</span>
+        <span style={{ color: colors.textMuted }}>{leg.strike}</span>
       </div>
-      <div style={{ color: "#94a3b8", fontSize: 10 }}>{formatExpiry(leg.expiry)}</div>
-      <div style={{ color: leg.mid != null ? "#e2e8f0" : "#475569", textAlign: "right" }}>{currentStr}</div>
-      <div style={{ color: leg.entry_mid != null ? "#94a3b8" : "#475569", textAlign: "right" }}>
+      <div style={{ color: colors.textSecondary, fontSize: 10 }}>{formatExpiry(leg.expiry)}</div>
+      <div style={{ color: leg.mid != null ? colors.textPrimary : colors.textDim, textAlign: "right" }}>{currentStr}</div>
+      <div style={{ color: leg.entry_mid != null ? colors.textSecondary : colors.textDim, textAlign: "right" }}>
         {entryStr || "—"}
       </div>
       <div style={{ color: deltaColor, textAlign: "right", fontWeight: 600 }}>{deltaStr}</div>
@@ -906,7 +913,7 @@ function SuggestedRow({
   //   red    — skipped
   const zero = result.finalContracts === 0;
   const trimmed = !zero && (result.marginTrimmed || result.hardCapped);
-  const color = zero ? "#ef4444" : trimmed ? "#f59e0b" : "#10b981";
+  const color = zero ? colors.accentRed : trimmed ? colors.accentAmber : colors.accentGreen;
   const bg = color + "14";
   const border = color + "40";
 
@@ -920,7 +927,7 @@ function SuggestedRow({
         border: `1px solid ${border}`,
         borderRadius: 6,
         padding: "6px 8px",
-        fontFamily: "JetBrains Mono, monospace",
+        fontFamily: fonts.mono,
         fontSize: 11,
         display: "flex",
         flexDirection: "column",
@@ -934,13 +941,13 @@ function SuggestedRow({
             : `Suggested: ${result.finalContracts} cts`}
         </span>
         {!zero && (
-          <span style={{ color: "#64748b", fontSize: 10 }}>{breakdown}</span>
+          <span style={{ color: colors.textMuted, fontSize: 10 }}>{breakdown}</span>
         )}
       </div>
       {!zero && (
-        <div style={{ color: "#64748b", fontSize: 10 }}>
+        <div style={{ color: colors.textMuted, fontSize: 10 }}>
           {trimmed && (
-            <span style={{ color: "#f59e0b", marginRight: 6 }}>
+            <span style={{ color: colors.accentAmber, marginRight: 6 }}>
               {result.marginTrimmed
                 ? `trimmed from ${result.goPlusContracts} (margin cap)`
                 : `capped from ${result.goPlusContracts} (hard cap)`}
