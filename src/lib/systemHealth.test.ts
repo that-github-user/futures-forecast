@@ -154,6 +154,52 @@ describe("computeBrokerHealth", () => {
     expect(h.ageSec).toBeNull();
     expect(h.level).toBe("unknown");
   });
+
+  it("collision with fresh snap → error (collision trumps age-ok)", () => {
+    // Two daemon positions claim the same conId 101 → collision.
+    // Sidecar is fresh (1min old) so age alone would be "ok"; the
+    // collision has to promote level to error independently.
+    const snap = new Date(NOW.getTime() - 60_000).toISOString();
+    const dcPos = (id: number, conid: number): DCPosition =>
+      ({
+        id,
+        front_put_conid: conid,
+        front_call_conid: 0,
+        back_put_conid: 0,
+        back_call_conid: 0,
+      }) as unknown as DCPosition;
+    const h = computeBrokerHealth(
+      { snapshot_at: snap, positions: [], open_orders: [] },
+      [dcPos(1, 101), dcPos(2, 101)],
+      NOW,
+    );
+    expect(h.level).toBe("error");
+    expect(h.collisions).toBe(1);
+  });
+
+  it("orphan-only with fresh snap → still ok (orphans don't escalate)", () => {
+    // Broker has a leg the daemon never claimed (unmatched / orphan).
+    // No collisions. Sidecar fresh. Level stays "ok" — the orphan count
+    // is surfaced as copy, not as a severity lever.
+    const snap = new Date(NOW.getTime() - 60_000).toISOString();
+    const brokerLeg = {
+      account: "U123",
+      contract: {
+        conId: 999, symbol: "SPXW", secType: "OPT", expiry: "20260425",
+        strike: 6900, right: "P", tradingClass: "SPXW", multiplier: "100",
+        currency: "USD",
+      },
+      position: -1, avg_cost: 0.50,
+    };
+    const h = computeBrokerHealth(
+      { snapshot_at: snap, positions: [brokerLeg], open_orders: [] },
+      [],
+      NOW,
+    );
+    expect(h.level).toBe("ok");
+    expect(h.orphans).toBe(1);
+    expect(h.collisions).toBe(0);
+  });
 });
 
 // ---- Drift ----------------------------------------------------------------

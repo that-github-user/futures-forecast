@@ -109,8 +109,12 @@ export function DCSystemHealthStrip({
 }: Props) {
   return (
     <div
-      role="status"
+      role="group"
       aria-label="System health"
+      // role="group" rather than role="status" (which implicitly has
+      // aria-live="polite"): pill labels tick every poll ("9m ago" →
+      // "10m ago") and a live region would announce the entire strip
+      // to screen readers every 30s even when nothing is actually wrong.
       style={{
         display: "flex",
         gap: 8,
