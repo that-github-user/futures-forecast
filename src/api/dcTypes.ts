@@ -46,6 +46,14 @@ export interface DCPosition {
   // charged more than daemon recorded. Null when broker_entry_debit
   // is null.
   debit_drift: number | null;
+  // Populated when drift couldn't be computed:
+  //   "legacy"    → row predates conid tracking; no join possible
+  //   "unmatched" → conids present but at least one leg isn't in
+  //                 the latest broker snapshot (transient stale
+  //                 snapshot or real drift to investigate)
+  //   null        → drift computed cleanly, OR sidecar missing
+  // Used by the tooltip to distinguish the two null-drift cases.
+  drift_reason: "legacy" | "unmatched" | null;
 }
 
 export interface DCTrade {
