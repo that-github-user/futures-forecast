@@ -135,31 +135,51 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
 const DRIFT_WARN = 0.05;
 const DRIFT_ERROR = 0.15;
 
+// Null predicate: all three helpers agree on the same nullish check
+// (`d == null`). Backend always sets broker_entry_debit + debit_drift
+// together; checking just one would catch any accidental desync between
+// the two fields, but callers should never hit that state.
+function isDriftUnset(d: number | null | undefined): boolean {
+  return d == null;
+}
+
 function formatDrift(d: number | null): string {
-  if (d === null || d === undefined) return "—";
-  const sign = d >= 0 ? "+" : "−";
-  return `${sign}$${Math.abs(d).toFixed(3)}`;
+  if (isDriftUnset(d)) return "—";
+  // ASCII hyphen-minus (not U+2212): keeps UI strings grep-friendly
+  // with terminal commands and CI text searches.
+  const sign = d! >= 0 ? "+" : "-";
+  return `${sign}$${Math.abs(d!).toFixed(3)}`;
 }
 
 function driftCellStyle(d: number | null): React.CSSProperties {
   const base = tdMono;
-  if (d === null || d === undefined) return { ...base, color: "#64748b" };
-  const mag = Math.abs(d);
+  if (isDriftUnset(d)) return { ...base, color: "#64748b" };
+  const mag = Math.abs(d!);
   if (mag < DRIFT_WARN) return { ...base, color: "#10b981" };    // green
   if (mag < DRIFT_ERROR) return { ...base, color: "#f59e0b" };   // amber
   return { ...base, color: "#ef4444" };                          // red
 }
 
 function driftTooltip(p: DCPosition): string {
-  if (p.debit_drift === null || p.broker_entry_debit === null) {
+  if (isDriftUnset(p.debit_drift)) {
     return "Not reconciled — either legacy row without conids, or at " +
       "least one leg is missing from the latest broker-state snapshot.";
   }
   const daemon = p.entry_debit.toFixed(4);
-  const broker = p.broker_entry_debit.toFixed(4);
-  const drift = p.debit_drift.toFixed(4);
+  // Defense in depth (review N3): backend always sets broker_entry_debit
+  // + debit_drift together, but if that invariant ever breaks, render
+  // "n/a" instead of a misleading $0.0000 that would look like a real
+  // cost basis.
+  const broker = p.broker_entry_debit == null
+    ? "n/a"
+    : `$${p.broker_entry_debit.toFixed(4)}`;
+  const drift = p.debit_drift!.toFixed(4);
+  // Tooltip uses the pretty glyphs (Δ, ≥) — rendered in a browser
+  // `title` attribute, no HTML escaping concerns. The ASCII-minus swap
+  // in formatDrift above is the grep-visible one (cell text); tooltip
+  // text isn't a grep target, so we don't sacrifice typography here.
   return `Daemon entry_debit: $${daemon}\n` +
-         `Broker reconstructed: $${broker}\n` +
+         `Broker reconstructed: ${broker}\n` +
          `Δ = broker − daemon = $${drift}\n\n` +
          `Green < $${DRIFT_WARN.toFixed(2)} (commission noise)\n` +
          `Amber < $${DRIFT_ERROR.toFixed(2)} (wider spread, acceptable)\n` +
@@ -324,23 +344,29 @@ function BrokerRealityPanel({
             <BrokerGroupedTable groups={groups} />
           )}
           {unmatched.length > 0 && (
-            <div style={{ marginTop: groups.length > 0 ? 16 : 0 }}>
-              <div style={{
-                fontSize: 11, color: "#f59e0b",
-                fontFamily: "Inter, sans-serif", textTransform: "uppercase",
-                letterSpacing: 0.5, marginBottom: 4,
-              }}>
+            // Section landmark so screen readers announce the heading
+            // and group the explanation + table as a named region.
+            // sighted operators see the same styling as before.
+            <section aria-labelledby="broker-orphan-heading"
+                     style={{ marginTop: groups.length > 0 ? 16 : 0 }}>
+              <h3 id="broker-orphan-heading"
+                  style={{
+                    fontSize: 11, color: "#f59e0b",
+                    fontFamily: "Inter, sans-serif", textTransform: "uppercase",
+                    letterSpacing: 0.5, marginBottom: 4,
+                    fontWeight: 600, margin: 0,
+                  }}>
                 Unmatched legs ({unmatched.length})
-              </div>
+              </h3>
               <div style={{ fontSize: 11, color: "#94a3b8",
                             fontFamily: "Inter, sans-serif",
-                            marginBottom: 8 }}>
+                            marginTop: 4, marginBottom: 8 }}>
                 No open daemon position references these contracts —
                 manual entries, ghost positions from cleared DB rows,
                 or a reconciliation drift to investigate.
               </div>
               <BrokerPositionsTable positions={unmatched} />
-            </div>
+            </section>
           )}
           {orderCount > 0 && (
             <div style={{ marginTop: 12 }}>

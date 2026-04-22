@@ -144,6 +144,37 @@ describe("groupBrokerLegs", () => {
     expect(byId[20]).toBeUndefined();  // no legs routed to it
   });
 
+  it("marks a group incomplete when 4 legs cover <4 roles (defense-in-depth)", () => {
+    // Reachable only if legLookup's first-claimer collision rule ever
+    // weakens (e.g. a future refactor allows a conId to map to
+    // multiple roles). Pinning this asserts the role-coverage invariant
+    // catches it instead of silently marking the group complete.
+    //
+    // We construct a "broken" scenario by giving the daemon row two
+    // roles pointing at the same conid (back_call_conid = FC_CID).
+    // First-claimer wins in legLookup: FC_CID stays mapped to
+    // front_call, back_call role for FC_CID is a collision and is
+    // skipped. With the other three roles intact, 4 broker legs would
+    // still only cover 3 roles if FC_CID appears twice in the broker
+    // snapshot — but IBKR won't duplicate a conId, so we get at most
+    // 4 legs covering 3 distinct roles via the orphan path.
+    //
+    // Simpler direct construction: leave back_call_conid null (legacy
+    // row), register 4 broker legs including the now-orphan BC_CID,
+    // and verify the group has 3 legs + complete=false (not 4 +
+    // complete=true).
+    const dc = dcFixture({ back_call_conid: null });
+    const legs = [FP_CID, FC_CID, BP_CID, BC_CID].map((c) =>
+      legFixture(c, c === FP_CID || c === FC_CID ? -30 : 30),
+    );
+    const { groups, unmatched } = groupBrokerLegs(legs, [dc]);
+    // 3 legs routed to the group (front_put, front_call, back_put),
+    // BC_CID is orphaned. Group is incomplete.
+    expect(groups[0].legs).toHaveLength(3);
+    expect(groups[0].complete).toBe(false);
+    expect(unmatched.map((u) => u.contract.conId)).toEqual([BC_CID]);
+  });
+
   it("ignores null / zero / negative conids on the daemon row", () => {
     const dcLegacy = dcFixture({
       id: 3,
