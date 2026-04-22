@@ -10,8 +10,8 @@
  *   inactive → not entry day
  *   pre_features → entry day but features not ready
  *   primed → entry day, GO/GO+, >10min before next entry time
- *   imminent → within ±10min of an entry time
- *   firing → within ±30s of an entry time
+ *   imminent → within 10min before an entry time (until it fires)
+ *   firing → within 30s AFTER an entry time (daemon is actively processing)
  *   recently_fired → 30s..10min after an entry time
  *   passed_will_fire → all entries past, signal was GO/GO+, before RTH close
  *   passed_skipped → all entries past, signal was SKIP, before RTH close
@@ -314,21 +314,20 @@ export function deriveLifecycle(
   }
 
   // Look ahead to the next entry time, if any.
+  //
+  // Note: we deliberately do NOT show "firing" in the 30s BEFORE the entry
+  // time. The daemon's cron fires at HH:MM:00 and then takes ~10-20s of
+  // work (SPX fetch → expiry resolve → IV fetch → strike resolve → S/L
+  // snapshot → gates → order submit) before the order actually goes out.
+  // Previously the UI showed "FIRING NOW" from HH:MM-00:30 through
+  // HH:MM+00:30 — which meant the countdown flipped to "firing" up to
+  // 25s before the daemon had even received its cron tick, let alone
+  // submitted. Users reasonably interpreted this as "an order is going
+  // out right now." The post-entry firing branch above still catches the
+  // 0-30s window after the cron fires, which is when the daemon is
+  // actually processing. Before the entry time we stay in `imminent`.
   if (nextSec != null) {
     const delta = nextSec - secondsOfDay;
-    if (delta <= FIRING_WINDOW_SECONDS) {
-      // Same gate as above: SKIP-signal strategies don't fire.
-      return baseInfo({ ...todayBase,
-        state: armedSignal ? "firing" : "not_fired_yet",
-        windowKind,
-        nextEntryHHMM: nextHHMM,
-        secondsUntilNext: delta,
-        lastEntryHHMM: lastHHMM,
-        secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
-        isArmed: armedSignal,
-        firesToday: armedSignal,
-      });
-    }
     if (delta <= IMMINENT_WINDOW_SECONDS) {
       return baseInfo({ ...todayBase,
         state: armedSignal ? "imminent" : "not_fired_yet",
