@@ -7,6 +7,26 @@ import type { Timeframe } from "../../api/timeframe";
 import { getTimeframeLabel } from "../../api/timeframe";
 import { CountdownTimer } from "../indicators/CountdownTimer";
 
+// Shared ET formatter — declaring this at module scope so the loop
+// below doesn't rebuild it per candle. Intl.DateTimeFormat is the
+// authoritative way to resolve a UTC instant to an America/New_York
+// wall-clock time, including the DST edge cases that a month-based
+// approximation gets wrong for ~2 weeks/year (the interval between
+// the DST-calendar cutover and the calendar month boundary).
+const ET_HM_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+function etHourMinute(d: Date): { hour: number; minute: number } {
+  const parts = ET_HM_FMT.formatToParts(d);
+  const h = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const m = parts.find((p) => p.type === "minute")?.value ?? "0";
+  return { hour: parseInt(h, 10), minute: parseInt(m, 10) };
+}
+
 interface Props {
   instrument: string;
   connected: boolean;
@@ -24,12 +44,7 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
   let refPrice = prediction.last_close;
   for (let i = ctxCandles.length - 1; i >= 0; i--) {
     const d = new Date(ctxCandles[i].time * 1000);
-    // Convert to ET hours — approximate via UTC-5 (EST) or UTC-4 (EDT)
-    // Use the month to determine DST (Mar-Nov = EDT)
-    const month = d.getUTCMonth(); // 0-indexed
-    const isDST = month >= 2 && month <= 10; // Mar(2) through Nov(10)
-    const etHour = (d.getUTCHours() + (isDST ? 20 : 19)) % 24;
-    const etMinute = d.getUTCMinutes();
+    const { hour: etHour, minute: etMinute } = etHourMinute(d);
     // RTH close = 16:00 ET. Find the candle at or just before that boundary.
     if (etHour === 15 && etMinute >= 55) {
       // Last 5-min bar of RTH (15:55-16:00)
@@ -39,7 +54,7 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
     if (etHour < 16 && i > 0) {
       // Check if the NEXT candle crosses 16:00
       const nextD = new Date(ctxCandles[i + 1]?.time * 1000);
-      const nextEtHour = (nextD.getUTCHours() + (isDST ? 20 : 19)) % 24;
+      const nextEtHour = etHourMinute(nextD).hour;
       if (nextEtHour >= 16 && etHour < 16) {
         refPrice = ctxCandles[i].close;
         break;
