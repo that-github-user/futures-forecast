@@ -1,3 +1,9 @@
+// @vitest-environment node
+//
+// Explicit: the helpers tested here are pure and don't touch window/
+// document. jsdom isn't installed as a dep so auto-detection of the
+// environment fails; force-node keeps this file lightweight.
+
 /**
  * Tests for the pure iOS-detection + PWA-standalone predicates that
  * feed `useNotifications`. These are load-bearing for distinguishing
@@ -10,6 +16,14 @@
  * The helpers are pure — they take navigator/matchMedia values as
  * parameters — so these tests run in vitest's default node
  * environment without needing jsdom/happy-dom.
+ *
+ * NOTE (future maintainer): this file is pure-only. If you need to
+ * test DOM-touching behavior (the hook wrapper, the useEffect
+ * visibilitychange listener, etc.), either add a jsdom pragma:
+ *   // @vitest-environment jsdom
+ * at the top, or put those tests in a separate file. The 5-state
+ * permission machine in the hook itself is currently untested —
+ * 3 lines of branching, verified by inspection.
  */
 
 import { describe, expect, it } from "vitest";

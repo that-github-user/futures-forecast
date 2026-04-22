@@ -17,7 +17,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ES Forecast" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- iOS does NOT render SVG apple-touch-icons (home-screen tile
+         falls back to blank/screenshot). Must be a raster PNG;
+         180x180 is Apple's current recommended size. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>ES Futures Forecast</title>
     <style>
       /* Prevent flash of white background */

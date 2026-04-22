@@ -11,7 +11,7 @@
  * policy), so callers should drive `requestPermission` from a button click.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type NotificationPermissionState =
   | "default"        // browser supports it; user hasn't been asked yet
@@ -93,6 +93,24 @@ export function useNotifications(): NotificationsApi {
   const [permission, setPermission] = useState<NotificationPermissionState>(() => currentPermission());
   const sentRef = useRef<Set<string>>(new Set());
   const currentDateRef = useRef<string>(etDateString(new Date()));
+
+  // Re-read permission on tab visibility changes. Covers the edge
+  // case where a user toggles between the installed PWA window and a
+  // regular Safari tab within the same session — without this, the
+  // hook would keep a stale "granted" from the PWA while the tab can
+  // no longer actually fire notifications (or vice versa). Cheap:
+  // one comparison per visibility change.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        const fresh = currentPermission();
+        setPermission((prev) => (prev === fresh ? prev : fresh));
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   const requestPermission = useCallback(async (): Promise<NotificationPermissionState> => {
     if (typeof Notification === "undefined") {
