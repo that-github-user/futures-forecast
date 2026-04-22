@@ -16,6 +16,7 @@
  *   closed            → fully faded, "Closed for the day"
  */
 
+import { memo, type ReactNode } from "react";
 import type {
   DCAllocationPolicy,
   DCLegDetail,
@@ -25,7 +26,7 @@ import type {
   LegName,
 } from "../../api/dcTypes";
 import type { LifecycleInfo, LifecycleState } from "../../lib/dcLifecycle";
-import { dowName, formatCountdown, formatEntryDays, formatExpiry } from "../../lib/dcLifecycle";
+import { dowName, formatEntryDays, formatExpiry } from "../../lib/dcLifecycle";
 import { roundToSpxTick } from "../../lib/spxTick";
 import {
   computeSizingBreakdown,
@@ -33,6 +34,7 @@ import {
   formatMarginUsage,
   SPX_MULTIPLIER,
 } from "../../lib/dcSizing";
+import { LiveCountdown } from "./LiveCountdown";
 import { SignalBadge } from "./SignalBadge";
 
 export interface LegData {
@@ -149,7 +151,38 @@ const STATE_LABELS: Record<LifecycleState, string> = {
   closed: "CLOSED",
 };
 
-export function StrategyMonitorCard({
+/** Card memoization — skip re-rendering when only transient time fields
+ *  (`info.secondsUntilNext`, `info.secondsSinceLast`) changed. The parent
+ *  DCSignalsTab ticks at 1Hz so those fields update every second, but the
+ *  live countdown text lives inside `<LiveCountdown>` which has its own
+ *  tick — the rest of the card only needs to reconcile on actual state
+ *  transitions or payload changes. Fields compared structurally are the
+ *  ones that actually drive styling and copy; everything else is reference
+ *  compared (spec/legData/formatTime/tzLabel/policy are memoized by
+ *  their hook owners, so reference equality is the right check). */
+function propsEqual(prev: Props, next: Props): boolean {
+  if (prev.spec !== next.spec) return false;
+  if (prev.signal !== next.signal) return false;
+  if (prev.legData !== next.legData) return false;
+  if (prev.formatTime !== next.formatTime) return false;
+  if (prev.tzLabel !== next.tzLabel) return false;
+  if (prev.policy !== next.policy) return false;
+  if (prev.portfolioSize !== next.portfolioSize) return false;
+  if (prev.currentDalMult !== next.currentDalMult) return false;
+  if (prev.openPositions !== next.openPositions) return false;
+  const a = prev.info, b = next.info;
+  if (a.state !== b.state) return false;
+  if (a.windowKind !== b.windowKind) return false;
+  if (a.nextEntryHHMM !== b.nextEntryHHMM) return false;
+  if (a.lastEntryHHMM !== b.lastEntryHHMM) return false;
+  if (a.isArmed !== b.isArmed) return false;
+  if (a.firesToday !== b.firesToday) return false;
+  if (a.nextEntryDow !== b.nextEntryDow) return false;
+  // info.secondsUntilNext / secondsSinceLast deliberately ignored.
+  return true;
+}
+
+function StrategyMonitorCardImpl({
   spec,
   signal,
   info,
@@ -265,6 +298,8 @@ export function StrategyMonitorCard({
   );
 }
 
+export const StrategyMonitorCard = memo(StrategyMonitorCardImpl, propsEqual);
+
 function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: Pick<Props, "spec" | "signal" | "info" | "formatTime" | "tzLabel"> & { gateSkipped: boolean }) {
   switch (info.state) {
     case "inactive":
@@ -286,7 +321,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
         <Body
           headline={info.nextEntryHHMM ? `Fires at ${formatTime(info.nextEntryHHMM)} ${tzLabel}` : "Fires today"}
           subline={
-            info.secondsUntilNext != null ? `in ${formatCountdown(info.secondsUntilNext)}` : ""
+            info.nextEntryHHMM ? <>in <LiveCountdown targetHHMM={info.nextEntryHHMM} mode="until" /></> : ""
           }
           accent="#3b82f6"
         />
@@ -296,7 +331,7 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
         <Body
           headline={info.nextEntryHHMM ? `FIRES AT ${formatTime(info.nextEntryHHMM)} ${tzLabel}` : "FIRES IMMINENTLY"}
           subline={
-            info.secondsUntilNext != null ? formatCountdown(info.secondsUntilNext) : ""
+            info.nextEntryHHMM ? <LiveCountdown targetHHMM={info.nextEntryHHMM} mode="until" /> : ""
           }
           accent="#f59e0b"
           large
@@ -317,8 +352,8 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
             info.lastEntryHHMM ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Just fired"
           }
           subline={
-            info.secondsSinceLast != null
-              ? `${formatCountdown(info.secondsSinceLast)} ago — signal was ${formatSignal(signal)}`
+            info.lastEntryHHMM
+              ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
               : ""
           }
           accent="#10b981"
@@ -362,8 +397,8 @@ function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: P
         <Body
           headline={`Watching — currently ${formatSignal(signal)}`}
           subline={
-            info.nextEntryHHMM && info.secondsUntilNext != null
-              ? `Next check: ${formatTime(info.nextEntryHHMM)} ${tzLabel} (${formatCountdown(info.secondsUntilNext)})`
+            info.nextEntryHHMM
+              ? <>Next check: {formatTime(info.nextEntryHHMM)} {tzLabel} (<LiveCountdown targetHHMM={info.nextEntryHHMM} mode="until" />)</>
               : "Awaiting next entry window"
           }
         />
@@ -380,7 +415,7 @@ function Body({
   large,
 }: {
   headline: string;
-  subline?: string;
+  subline?: ReactNode;
   accent?: string;
   large?: boolean;
 }) {

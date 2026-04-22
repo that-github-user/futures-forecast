@@ -157,6 +157,23 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
     return list;
   }, [specs, subs, signalByName, legDataByName, featuresStale, now]);
 
+  // Compact projection of the fields that actually drive notification
+  // transitions — (name, state). `monitors` itself gets a new reference
+  // every 1s tick (deriveLifecycle returns fresh objects), which would
+  // cause the notification effect below to run 60× per minute. Depending
+  // on this projection instead means the effect only re-runs when a
+  // strategy actually transitions into or out of a lifecycle state.
+  //
+  // The effect's body still reads `monitors` via closure for per-row
+  // details (HH:MM target, S/L ratio, legData). That's safe: when the
+  // projection changes, React reruns the effect with the freshly-rendered
+  // `monitors`; when it doesn't change, the details would be identical
+  // anyway.
+  const monitorTransitionKey = useMemo(
+    () => monitors.map((m) => `${m.spec.name}:${m.info.state}`).join("|"),
+    [monitors],
+  );
+
   // Detect lifecycle transitions to fire notifications. The first effect run
   // after mount is treated as a "seed pass" — we record the current state of
   // every subscribed strategy without firing notifications, so a tab remount
@@ -198,7 +215,14 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         last.set(spec.name, next);
       }
     }
-  }, [monitors, notifications]);
+    // `monitors` is read intentionally via closure; depending on
+    // `monitorTransitionKey` is the whole point of the projection above.
+    // (The rationale lives here as a block above the directive because
+    // `eslint-disable-next-line` targets the immediately-following line,
+    // and trailing `//` continuation lines would shield the real deps
+    // line — defeating the suppression.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monitorTransitionKey, notifications]);
 
   if (specsLoading) {
     return (
