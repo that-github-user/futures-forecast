@@ -550,9 +550,17 @@ function NetDebitHeader({
   ivSource: "chain" | "vix" | "default" | null;
 }) {
   if (netDebit == null) {
+    // Review N1: after a daemon restart the SL worker resolves legs
+    // (ivSource populated) before the first ratio poll produces
+    // netDebit. Render a minimal header anyway so the IV-anchor
+    // badge is visible during that window — exactly when an operator
+    // may be watching for the fix to engage after a restart.
     return (
-      <div style={{ fontSize: 12, color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>
-        Debit: --
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10,
+                    fontSize: 12, color: "#64748b",
+                    fontFamily: "JetBrains Mono, monospace" }}>
+        <span>Debit: --</span>
+        <IVSourceBadge source={ivSource} />
       </div>
     );
   }

@@ -154,7 +154,14 @@ export function DCEventsTab() {
                   <th style={thStyle}>Debit</th>
                   <th style={thStyle}>Qty</th>
                   <th style={thStyle}>SPX</th>
-                  <th style={thStyle} title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)">IV</th>
+                  <th
+                    scope="col"
+                    aria-label="IV anchor source — chain, vix, or default"
+                    style={thStyle}
+                    title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)"
+                  >
+                    IV
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -201,7 +208,7 @@ function EventRow({ event }: { event: DCSignalEvent }) {
 }
 
 
-function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSSProperties {
+export function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSSProperties {
   const base = { ...tdMono, fontSize: 10, textTransform: "uppercase" as const, letterSpacing: 0.5 };
   switch (source) {
     case "chain":   return { ...base, color: "#10b981" };
@@ -212,7 +219,7 @@ function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSSPropert
 }
 
 
-function ivSourceTitle(source: DCSignalEvent["iv_source"]): string {
+export function ivSourceTitle(source: DCSignalEvent["iv_source"]): string {
   switch (source) {
     case "chain":   return "Live chain-sampled ATM IV fed the BS inverter (good path).";
     case "vix":     return "Fell back to VIX-scaled IV — chain sample failed. This was the pre-fix path that caused the 21/28 strike incident.";
