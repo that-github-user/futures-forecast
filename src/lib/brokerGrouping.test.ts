@@ -55,6 +55,7 @@ function dcFixture(overrides: Partial<DCPosition> = {}): DCPosition {
     close_pnl: null,
     broker_entry_debit: null,
     debit_drift: null,
+    drift_reason: null,
     ...overrides,
   };
 }
