@@ -66,6 +66,7 @@ export function groupBrokerLegs(
   }
 
   const groupsByDcId = new Map<number, BrokerDcGroup>();
+  const rolesByDcId = new Map<number, Set<LegRole>>();
   const unmatched: DCBrokerPosition[] = [];
   for (const bl of brokerLegs) {
     const link = legLookup.get(bl.contract.conId);
@@ -78,9 +79,19 @@ export function groupBrokerLegs(
     };
     g.legs.push(bl);
     groupsByDcId.set(link.dc.id, g);
+    const roles = rolesByDcId.get(link.dc.id) ?? new Set<LegRole>();
+    roles.add(link.role);
+    rolesByDcId.set(link.dc.id, roles);
   }
+  // "complete" = all four DC roles (front_put, front_call, back_put,
+  // back_call) are covered — stricter than `legs.length === 4`. Given
+  // legLookup's first-claimer collision rule, a group with 4 legs
+  // already has 4 distinct conids → 4 distinct roles, so this is
+  // defensive / explicit; it pins the invariant in one place so
+  // future refactors of the collision rule don't silently weaken it.
   for (const g of groupsByDcId.values()) {
-    g.complete = g.legs.length === 4;
+    const roles = rolesByDcId.get(g.daemon.id);
+    g.complete = roles !== undefined && roles.size === 4;
   }
   // Deterministic ordering: by daemon id ascending. Matters because
   // the sidecar's leg-array order isn't a stable contract and Map

@@ -52,14 +52,26 @@ export function useDCData(): DCData {
     if (st) setStrategies(st);
     if (sig) setSignals(sig);
     if (r) setRisk(r);
-    // brokerState staleness matters differently from the other fields:
-    // the whole Broker Reality panel is a freshness signal (snapshot_at
-    // drives the age-color indicator). Holding a minutes-old cached
-    // value while the API is offline renders the safety net silently
-    // untrue. Clear it when the API drops so the "no snapshot" empty
-    // state shows instead of lying with stale data. Positions/trades
-    // etc. can tolerate transient blips — blanking the dashboard on
-    // every poll hiccup would be worse UX.
+    // brokerState staleness matters differently from the other fields.
+    // The Broker Reality panel's whole value is being a freshness
+    // signal — `snapshot_at` drives the age-color indicator in the
+    // header. Holding a minutes-old cached value while the API is
+    // offline makes the safety net silently untrue.
+    //
+    // Other fields (positions, trades, signals, etc.) rely on the
+    // apiOnline pill + the top-of-page offline banner to cue
+    // staleness to the operator — those surfaces already exist, so
+    // we keep the last-seen values through transient poll blips
+    // rather than blanking the dashboard on every hiccup. brokerState
+    // is the only field whose own in-panel indicator is the ONLY
+    // staleness cue, so it's the only field that has to clear.
+    //
+    // Subtle case: API online (s !== null) but broker_state fetch
+    // returned null (sidecar missing — daemon newly restarted and
+    // hasn't written yet). First branch false; second branch `!online`
+    // false; previous brokerState retained. Intentional — the
+    // BrokerRealityPanel's age-color + stale-tooltip already convey
+    // "this snapshot is old" when the sidecar regen is delayed.
     if (bs) {
       setBrokerState(bs);
     } else if (!online) {
