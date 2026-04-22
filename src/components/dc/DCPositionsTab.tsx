@@ -5,6 +5,11 @@ import type {
   DCPosition,
   DCRiskStatus,
 } from "../../api/dcTypes";
+import {
+  type BrokerDcGroup,
+  brokerDebitPerSpread,
+  groupBrokerLegs,
+} from "../../lib/brokerGrouping";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
@@ -221,7 +226,11 @@ function BrokerRealityPanel({
   // (all four legs of one daemon position) and orphan legs that
   // don't map to any open daemon row. Each broker position is
   // placed in exactly one bucket — sum preserves posCount.
-  const { groups, unmatched } = groupBrokerLegs(
+  // `collisions` is populated when two daemon rows claim the same
+  // conId (deconflict bug, or daemon double-booked) — always empty
+  // in healthy state; non-empty is a hard signal the operator
+  // needs to see.
+  const { groups, unmatched, collisions } = groupBrokerLegs(
     brokerState.positions, daemonPositions,
   );
   // Review N1: gate on daemon having open rows too. Zero-daemon + some-
@@ -256,6 +265,29 @@ function BrokerRealityPanel({
           snapshot {formatSnapshotAge(brokerState.snapshot_at)}
         </span>
       </div>
+      {collisions.length > 0 && (
+        // Two open daemon rows claim the same conId. Broker leg lands
+        // in whichever row registered first — the second's group will
+        // show incomplete. Upstream bug in deconflict / double-book.
+        <div role="status" aria-live="polite"
+             style={{
+               background: "rgba(239, 68, 68, 0.12)",
+               border: "1px solid rgba(239, 68, 68, 0.45)",
+               borderRadius: 4,
+               padding: "8px 12px",
+               marginBottom: 8,
+               fontSize: 12,
+               color: "#fecaca",
+               fontFamily: "Inter, sans-serif",
+             }}>
+          <strong style={{ color: "#ef4444" }}>conId collision:</strong>{" "}
+          {collisions.length} contract{collisions.length !== 1 ? "s" : ""}{" "}
+          ({collisions.join(", ")}) claimed by more than one open daemon
+          position. Grouping below shows first-claimer's DC only; the
+          other DC will render with missing legs. Investigate deconflict
+          or a double-book.
+        </div>
+      )}
       {allUnmatched && (
         // role="status" + aria-live=polite is right for a persistent
         // condition banner — it's announced once when it appears and
@@ -322,86 +354,6 @@ function BrokerRealityPanel({
 }
 
 
-/** One DC-level group: the daemon position plus the 1-4 broker legs
- *  that map to it by conId. A complete group has all four legs (front
- *  put/call, back put/call); a partial group is a DC that the broker
- *  has only partially closed or partially filled. */
-interface BrokerDcGroup {
-  daemon: DCPosition;
-  legs: DCBrokerPosition[];       // 1-4 elements, sorted by role
-  complete: boolean;              // all 4 legs present
-}
-
-/** Partition a flat list of broker legs into DC groups (matched to
- *  an open daemon position by conId) + orphan legs (nothing matches).
- *
- *  Single-account invariant: the daemon connects to exactly one IBKR
- *  account, so conId alone is a sufficient match key. If we ever grow
- *  to multi-account, this must become keyed on (account, conId). */
-function groupBrokerLegs(
-  brokerLegs: DCBrokerPosition[],
-  daemonPositions: DCPosition[],
-): { groups: BrokerDcGroup[]; unmatched: DCBrokerPosition[] } {
-  type LegRole = "front_put" | "front_call" | "back_put" | "back_call";
-  const legLookup = new Map<number, { dc: DCPosition; role: LegRole }>();
-  for (const dc of daemonPositions) {
-    const entries: Array<[number | null, LegRole]> = [
-      [dc.front_put_conid, "front_put"],
-      [dc.front_call_conid, "front_call"],
-      [dc.back_put_conid, "back_put"],
-      [dc.back_call_conid, "back_call"],
-    ];
-    for (const [conid, role] of entries) {
-      if (conid != null && conid > 0) legLookup.set(conid, { dc, role });
-    }
-  }
-
-  const groupsByDcId = new Map<number, BrokerDcGroup>();
-  const unmatched: DCBrokerPosition[] = [];
-  for (const bl of brokerLegs) {
-    const link = legLookup.get(bl.contract.conId);
-    if (!link) {
-      unmatched.push(bl);
-      continue;
-    }
-    const g = groupsByDcId.get(link.dc.id) ?? {
-      daemon: link.dc, legs: [], complete: false,
-    };
-    g.legs.push(bl);
-    groupsByDcId.set(link.dc.id, g);
-  }
-  for (const g of groupsByDcId.values()) {
-    g.complete = g.legs.length === 4;
-  }
-  return { groups: [...groupsByDcId.values()], unmatched };
-}
-
-
-/** Broker-side computed net debit per spread, reconstructed from the
- *  four leg avg_costs. Matches the backend formula in api/app.py.
- *  Returns null when the group is incomplete (can't build a spread
- *  from <4 legs). */
-function brokerDebitPerSpread(group: BrokerDcGroup): number | null {
-  if (!group.complete) return null;
-  const byConid = new Map<number, number>();
-  for (const l of group.legs) byConid.set(l.contract.conId, l.avg_cost);
-  const fp = group.daemon.front_put_conid;
-  const fc = group.daemon.front_call_conid;
-  const bp = group.daemon.back_put_conid;
-  const bc = group.daemon.back_call_conid;
-  if (fp == null || fc == null || bp == null || bc == null) return null;
-  const fpCost = byConid.get(fp);
-  const fcCost = byConid.get(fc);
-  const bpCost = byConid.get(bp);
-  const bcCost = byConid.get(bc);
-  if (fpCost == null || fcCost == null || bpCost == null || bcCost == null) {
-    return null;
-  }
-  // SPX multiplier; per-leg avg_cost is per-contract, we want per-spread.
-  return ((bpCost + bcCost) - (fpCost + fcCost)) / 100;
-}
-
-
 /** Summarized DC-level view of the broker's position. One row per
  *  open daemon position, collapsing 4 broker legs into strategy /
  *  structure / qty / broker-computed debit + drift-vs-daemon. */
@@ -453,7 +405,10 @@ function BrokerGroupedTable({ groups }: { groups: BrokerDcGroup[] }) {
                 <td style={tdMono}>
                   {brokerDebit !== null ? `$${brokerDebit.toFixed(2)}` : "—"}
                 </td>
-                <td style={driftCellStyle(drift)} title={driftTooltip(g.daemon)}>
+                <td style={driftCellStyle(drift)}
+                    title={brokerDebit !== null
+                      ? driftTooltip(g.daemon)
+                      : "Partial group — fewer than 4 broker legs match this daemon DC, so no broker debit can be reconstructed."}>
                   {formatDrift(drift)}
                 </td>
               </tr>
