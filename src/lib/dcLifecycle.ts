@@ -80,6 +80,20 @@ const WEEKDAY_TO_PYTHON: Record<string, number> = {
   Sun: 6,
 };
 
+/** Seconds since midnight ET for `now`. Exported so a leaf that renders
+ *  a per-second countdown can compute the delta against a fixed HH:MM
+ *  target without rebuilding an Intl.DateTimeFormat per tick. */
+export function etSecondsOfDay(now: Date): number {
+  return etPartsAt(now).secondsOfDay;
+}
+
+/** Parse "HH:MM" ET → seconds since midnight. Exported alongside
+ *  etSecondsOfDay so the countdown leaf uses the same conversion the
+ *  lifecycle state machine does. */
+export function parseHHMMToSeconds(s: string): number {
+  return parseHHMM(s);
+}
+
 function etPartsAt(now: Date): ETParts {
   // Use Intl to extract the wall-clock view of `now` in America/New_York.
   // This gracefully handles DST transitions without us needing to track
