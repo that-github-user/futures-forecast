@@ -3,14 +3,16 @@
  * Displays SPX double calendar spread trading data.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDCData } from "../../hooks/useDCData";
+import { computeSystemHealth } from "../../lib/systemHealth";
 import { DCPositionsTab } from "./DCPositionsTab";
 import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
 import { DCSignalsTab } from "./DCSignalsTab";
 import { DCEventsTab } from "./DCEventsTab";
 import { DCArmedBanner } from "./DCArmedBanner";
+import { DCSystemHealthStrip } from "./DCSystemHealthStrip";
 import { CapitalAllocationTab } from "./CapitalAllocationTab";
 
 type DCTab = "positions" | "history" | "strategies" | "signals" | "capital" | "events";
@@ -27,6 +29,15 @@ const TABS: { value: DCTab; label: string }[] = [
 export function DCDashboard() {
   const data = useDCData();
   const [tab, setTab] = useState<DCTab>("signals");
+
+  // Rebuild only when the underlying payloads change. `new Date()` is
+  // passed inside so age-driven level transitions track polling, not
+  // render. If a future feature needs second-by-second aging on the
+  // broker pill, switch to a low-rate useTick — the aggregator is pure.
+  const health = useMemo(
+    () => computeSystemHealth(data.signals, data.brokerState, data.positions),
+    [data.signals, data.brokerState, data.positions],
+  );
 
   if (data.loading) {
     return (
@@ -82,6 +93,19 @@ export function DCDashboard() {
           ES Dashboard
         </a>
       </header>
+
+      {/* System Health strip — one ambient anomaly-radar row. Neutral
+          when healthy; lights up amber/red on IV fallback, stale broker
+          sidecar, or position drift. Hidden when the API is offline
+          because every pill would be grey (unknown) and add noise. */}
+      {data.apiOnline && (
+        <DCSystemHealthStrip
+          health={health}
+          onClickIV={() => setTab("signals")}
+          onClickBroker={() => setTab("positions")}
+          onClickDrift={() => setTab("positions")}
+        />
+      )}
 
       {/* API offline banner */}
       {!data.apiOnline && (
