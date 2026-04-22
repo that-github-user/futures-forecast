@@ -215,9 +215,13 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         last.set(spec.name, next);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `monitors` is
-    // read intentionally via closure; depending on monitorTransitionKey
-    // is the whole point of the projection above.
+    // `monitors` is read intentionally via closure; depending on
+    // `monitorTransitionKey` is the whole point of the projection above.
+    // (The rationale lives here as a block above the directive because
+    // `eslint-disable-next-line` targets the immediately-following line,
+    // and trailing `//` continuation lines would shield the real deps
+    // line — defeating the suppression.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monitorTransitionKey, notifications]);
 
   if (specsLoading) {
