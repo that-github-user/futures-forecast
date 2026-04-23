@@ -15,6 +15,7 @@ import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useTimezone } from "../../hooks/useTimezone";
 import type { DCSignalsResponse, DCStrategyStats } from "../../api/dcTypes";
+import { colors, fonts, withAlphaByte } from "../../styles/tokens";
 import { StrategyCatalogCard } from "./StrategyCatalogCard";
 
 interface Props {
@@ -38,7 +39,7 @@ export function DCStrategiesTab({ stats, signals }: Props) {
 
   if (loading) {
     return (
-      <div className="fade-in" style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div className="fade-in" style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 40 }}>
         Loading strategy catalog…
       </div>
     );
@@ -46,7 +47,7 @@ export function DCStrategiesTab({ stats, signals }: Props) {
 
   if (error || !specs) {
     return (
-      <div className="fade-in" style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div className="fade-in" style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", padding: 40 }}>
         Strategy catalog unavailable. Ensure the DC API is reachable.
       </div>
     );
@@ -69,8 +70,8 @@ export function DCStrategiesTab({ stats, signals }: Props) {
       {/* Subscription controls */}
       <div
         style={{
-          background: "#0f172a",
-          border: "1px solid #1e293b",
+          background: colors.bgInset,
+          border: `1px solid ${colors.borderDim}`,
           borderRadius: 6,
           padding: "8px 12px",
           display: "flex",
@@ -78,11 +79,11 @@ export function DCStrategiesTab({ stats, signals }: Props) {
           justifyContent: "space-between",
           flexWrap: "wrap",
           gap: 8,
-          fontFamily: "Inter, sans-serif",
+          fontFamily: fonts.sans,
         }}
       >
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>
-          Subscribed to <span style={{ color: "#3b82f6", fontWeight: 600 }}>{subs.count}</span> of{" "}
+        <span style={{ fontSize: 12, color: colors.textSecondary }}>
+          Subscribed to <span style={{ color: colors.accentBlue, fontWeight: 600 }}>{subs.count}</span> of{" "}
           {specs.length} strategies.
         </span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -130,10 +131,10 @@ export function DCStrategiesTab({ stats, signals }: Props) {
                 margin: 0,
                 fontSize: 11,
                 fontWeight: 600,
-                color: "#64748b",
+                color: colors.textMuted,
                 textTransform: "uppercase",
                 letterSpacing: 0.8,
-                fontFamily: "Inter, sans-serif",
+                fontFamily: fonts.sans,
               }}
             >
               {FAMILY_HEADERS[family]} ({list.length})
@@ -176,7 +177,7 @@ function SubButton({
   active: boolean;
   muted?: boolean;
 }) {
-  const color = muted ? "#64748b" : active ? "#10b981" : "#3b82f6";
+  const color: string = muted ? colors.textMuted : active ? colors.accentGreen : colors.accentBlue;
   return (
     <button
       type="button"
@@ -185,12 +186,12 @@ function SubButton({
         fontSize: 10,
         fontWeight: 600,
         color,
-        background: active ? color + "18" : "transparent",
+        background: active ? withAlphaByte(color, 0x18) : "transparent",
         border: `1px solid ${color}${active ? "60" : "40"}`,
         borderRadius: 4,
         padding: "3px 8px",
         cursor: "pointer",
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         letterSpacing: 0.3,
       }}
     >

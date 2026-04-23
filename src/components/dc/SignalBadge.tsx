@@ -3,16 +3,18 @@
  * Single source of truth for signal name → color mapping.
  */
 
+import { colors, fonts } from "../../styles/tokens";
+
 const SIGNAL_COLORS: Record<string, string> = {
-  GO_PLUS: "#10b981",   // green — strongest signal
-  GO: "#3b82f6",        // blue — entry signal
-  READY: "#f59e0b",     // amber — conditions met but not entry day
-  SKIP: "#ef4444",      // red — no entry
+  GO_PLUS: colors.accentGreen,   // strongest signal
+  GO: colors.accentBlue,          // entry signal
+  READY: colors.accentAmber,     // conditions met but not entry day
+  SKIP: colors.accentRed,         // no entry
 };
 
 export function SignalBadge({ signal }: { signal: string | null | undefined }) {
-  if (!signal) return <span style={{ color: "#64748b" }}>—</span>;
-  const color = SIGNAL_COLORS[signal] ?? "#64748b";
+  if (!signal) return <span style={{ color: colors.textMuted }}>—</span>;
+  const color = SIGNAL_COLORS[signal] ?? colors.textMuted;
   return (
     <span
       style={{
@@ -23,7 +25,7 @@ export function SignalBadge({ signal }: { signal: string | null | undefined }) {
         border: `1px solid ${color}40`,
         padding: "2px 8px",
         borderRadius: 8,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         letterSpacing: 0.3,
       }}
     >

@@ -1,4 +1,5 @@
 import type { DCTrade } from "../../api/dcTypes";
+import { colors, fonts, withAlphaByte } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import {
   tableStyle,
@@ -29,7 +30,7 @@ export function DCHistoryTab({ trades }: Props) {
         <StatCard
           label="Total P&L"
           value={`$${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(0)}`}
-          color={totalPnl >= 0 ? "#10b981" : "#ef4444"}
+          color={totalPnl >= 0 ? colors.accentGreen : colors.accentRed}
         />
         <StatCard label="Profit Factor" value={pf ? pf.toFixed(2) : "—"} />
       </div>
@@ -40,7 +41,7 @@ export function DCHistoryTab({ trades }: Props) {
           <span className="panel-title">Trade History ({trades.length})</span>
         </div>
         {trades.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>
+          <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24 }}>
             No trades recorded yet
           </div>
         ) : (
@@ -68,7 +69,7 @@ export function DCHistoryTab({ trades }: Props) {
                     <td style={tdMono}>${t.entry_debit?.toFixed(2) ?? "—"}</td>
                     <td style={{
                       ...tdMono,
-                      color: t.pnl != null ? (t.pnl >= 0 ? "#10b981" : "#ef4444") : "#64748b",
+                      color: t.pnl != null ? (t.pnl >= 0 ? colors.accentGreen : colors.accentRed) : colors.textMuted,
                     }}>
                       {t.pnl != null ? `$${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)}` : "—"}
                     </td>
@@ -76,8 +77,8 @@ export function DCHistoryTab({ trades }: Props) {
                       {t.result && (
                         <span style={{
                           fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 8,
-                          color: t.result === "win" ? "#10b981" : "#ef4444",
-                          background: (t.result === "win" ? "#10b981" : "#ef4444") + "18",
+                          color: t.result === "win" ? colors.accentGreen : colors.accentRed,
+                          background: withAlphaByte(t.result === "win" ? colors.accentGreen : colors.accentRed, 0x18),
                         }}>
                           {t.result.toUpperCase()}
                         </span>
@@ -102,14 +103,14 @@ export function DCHistoryTab({ trades }: Props) {
 function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{
-      background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "10px 12px",
+      background: colors.bgPanel, border: `1px solid ${colors.borderDim}`, borderRadius: 6, padding: "10px 12px",
     }}>
-      <div style={{ fontSize: 10, color: "#64748b", fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 10, color: colors.textMuted, fontFamily: fonts.sans, textTransform: "uppercase", letterSpacing: 0.5 }}>
         {label}
       </div>
       <div style={{
-        fontSize: 16, fontWeight: 700, fontFamily: "JetBrains Mono, monospace",
-        color: color ?? "#e2e8f0", marginTop: 2,
+        fontSize: 16, fontWeight: 700, fontFamily: fonts.mono,
+        color: color ?? colors.textPrimary, marginTop: 2,
       }}>
         {value}
       </div>

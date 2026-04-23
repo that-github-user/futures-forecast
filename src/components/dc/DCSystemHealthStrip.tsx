@@ -13,6 +13,7 @@
 
 import type { BrokerHealth, DriftHealth, IVSourceHealth, SystemHealth } from "../../lib/systemHealth";
 import { DRIFT_ERROR, DRIFT_WARN } from "../../lib/systemHealth";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 
 interface Props {
   health: SystemHealth;
@@ -26,10 +27,18 @@ type ColorPair = { fg: string; bg: string; border: string };
 // as ambient — only lights up when something is actually off. That way
 // the eye doesn't habituate to a row of green and miss the red.
 const COLOR: Record<"ok" | "warn" | "error" | "unknown", ColorPair> = {
-  ok: { fg: "#94a3b8", bg: "transparent", border: "#1e293b" },
-  unknown: { fg: "#475569", bg: "transparent", border: "#1e293b" },
-  warn: { fg: "#f59e0b", bg: "#f59e0b18", border: "#f59e0b40" },
-  error: { fg: "#ef4444", bg: "#ef444418", border: "#ef444440" },
+  ok: { fg: colors.textSecondary, bg: "transparent", border: colors.borderDim },
+  unknown: { fg: colors.textDim, bg: "transparent", border: colors.borderDim },
+  warn: {
+    fg: colors.accentAmber,
+    bg: withAlphaByte(colors.accentAmber, 0x18),
+    border: withAlpha(colors.accentAmber, 0.25),
+  },
+  error: {
+    fg: colors.accentRed,
+    bg: withAlphaByte(colors.accentRed, 0x18),
+    border: withAlpha(colors.accentRed, 0.25),
+  },
 };
 
 function formatAge(sec: number | null): string {
@@ -91,13 +100,13 @@ function Pill({
         border: `1px solid ${c.border}`,
         background: c.bg,
         color: c.fg,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         fontSize: 11,
         cursor: "pointer",
       }}
     >
       <span style={{ fontWeight: 600, letterSpacing: 0.3 }}>{label}</span>
-      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}>
+      <span style={{ fontFamily: fonts.mono, fontSize: 11 }}>
         {value}
       </span>
     </button>
@@ -120,7 +129,7 @@ export function DCSystemHealthStrip({
         gap: 8,
         padding: "6px 16px 8px",
         alignItems: "center",
-        borderBottom: "1px solid #1e293b",
+        borderBottom: `1px solid ${colors.borderDim}`,
       }}
     >
       <Pill

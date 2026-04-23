@@ -7,6 +7,13 @@
 // Events use sticky.
 
 import type { CSSProperties } from "react";
+import { colors, fonts } from "../../styles/tokens";
+
+/** Slightly-darker-than-bgInset tone used as the background for sticky
+ *  table headers. Exported so filter-row inputs in DCEventsTab can
+ *  match the sticky-header edge above them. Not in the shared palette
+ *  — this is a DC-table-local visual detail. */
+export const STICKY_HEADER_BG = "#0f1520";
 
 export const tableStyle: CSSProperties = {
   width: "100%",
@@ -17,12 +24,12 @@ export const tableStyle: CSSProperties = {
 const thBase: CSSProperties = {
   textAlign: "left",
   padding: "6px 8px",
-  color: "#64748b",
+  color: colors.textMuted,
   fontSize: 10,
-  fontFamily: "Inter, sans-serif",
+  fontFamily: fonts.sans,
   textTransform: "uppercase",
   letterSpacing: 0.5,
-  borderBottom: "1px solid #1e293b",
+  borderBottom: `1px solid ${colors.borderDim}`,
 };
 
 export const thStyle: CSSProperties = thBase;
@@ -31,18 +38,18 @@ export const thStickyStyle: CSSProperties = {
   ...thBase,
   position: "sticky",
   top: 0,
-  background: "#0f1520",
+  background: STICKY_HEADER_BG,
 };
 
 export const tdStyle: CSSProperties = {
   padding: "6px 8px",
-  color: "#e2e8f0",
+  color: colors.textPrimary,
   fontSize: 12,
-  fontFamily: "Inter, sans-serif",
-  borderBottom: "1px solid #111827",
+  fontFamily: fonts.sans,
+  borderBottom: `1px solid ${colors.bgPanel}`,
 };
 
 export const tdMono: CSSProperties = {
   ...tdStyle,
-  fontFamily: "JetBrains Mono, monospace",
+  fontFamily: fonts.mono,
 };
