@@ -1,3 +1,10 @@
+/**
+ * Lifecycle theming maps for StrategyMonitorCard. STATE_STYLES drives
+ * the per-state border / background / glow / opacity visuals;
+ * STATE_LABELS supplies the uppercase status chip text. Siblings read
+ * these verbatim — no logic lives here.
+ */
+
 import { colors, withAlpha, withAlphaByte } from "../../../styles/tokens";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 

@@ -1,3 +1,10 @@
+/**
+ * SuggestedRow — capital-allocation sizing recommendation ("Suggested:
+ * N cts"). Rendered only when the caller supplies a policy +
+ * portfolioSize AND the lifecycle state + signal warrant a
+ * recommendation (shouldShowSuggested below).
+ */
+
 import { colors, fonts } from "../../../styles/tokens";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import type { DCAllocationPolicy, DCPosition, DCStrategySpec } from "../../../api/dcTypes";
@@ -7,7 +14,7 @@ import {
   formatMarginUsage,
   SPX_MULTIPLIER,
 } from "../../../lib/dcSizing";
-import type { LegData } from "./index";
+import type { LegData } from "./types";
 
 /** True when the lifecycle state + signal combination warrants showing
  *  a "Suggested: N cts" sizing recommendation. Hides on SKIP (no

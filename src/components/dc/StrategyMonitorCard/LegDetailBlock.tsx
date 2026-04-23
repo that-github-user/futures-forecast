@@ -1,9 +1,16 @@
+/**
+ * LegDetailBlock — net-debit header + IV-source badge + profit-target
+ * line + 4-leg table + optional S/L footer. Rendered by
+ * StrategyMonitorCard for every lifecycle state where leg data makes
+ * sense (see isActiveLifecycleState below).
+ */
+
 import { colors, fonts } from "../../../styles/tokens";
 import type { DCLegDetail, LegName } from "../../../api/dcTypes";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import { formatExpiry } from "../../../lib/dcLifecycle";
 import { roundToSpxTick } from "../../../lib/spxTick";
-import type { LegData } from "./index";
+import type { LegData } from "./types";
 
 const ACTIVE_STATES = new Set<LifecycleState>([
   "primed",

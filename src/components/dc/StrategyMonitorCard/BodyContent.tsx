@@ -1,3 +1,12 @@
+/**
+ * BodyContent — headline/subline body of a monitor card, driven by
+ * the LifecycleInfo state machine. Each state has its own copy; the
+ * shared <Body> primitive below handles layout + accent/large
+ * variants. The gateSkipped prop overrides a handful of states when
+ * S/L gate failed so the card doesn't misleadingly read "fired"
+ * when the daemon actually bailed.
+ */
+
 import type { ReactNode } from "react";
 import { colors, fonts } from "../../../styles/tokens";
 import type { LifecycleInfo } from "../../../lib/dcLifecycle";

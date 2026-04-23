@@ -26,11 +26,8 @@ import { memo } from "react";
 import { colors, fonts } from "../../../styles/tokens";
 import type {
   DCAllocationPolicy,
-  DCLegDetail,
   DCPosition,
-  DCSnapshotInfo,
   DCStrategySpec,
-  LegName,
 } from "../../../api/dcTypes";
 import type { LifecycleInfo } from "../../../lib/dcLifecycle";
 import { formatEntryDays } from "../../../lib/dcLifecycle";
@@ -39,22 +36,12 @@ import { BodyContent } from "./BodyContent";
 import { isActiveLifecycleState, LegDetailBlock } from "./LegDetailBlock";
 import { shouldShowSuggested, SuggestedRow } from "./SuggestedRow";
 import { STATE_LABELS, STATE_STYLES } from "./styles";
+import type { LegData } from "./types";
 
-export interface LegData {
-  slRatio: number | null;
-  slRatioMeetsMin: boolean | null;
-  legs: Record<LegName, DCLegDetail> | null;
-  netDebit: number | null;
-  entryNetDebit: number | null;
-  snapshot: DCSnapshotInfo | null;
-  profitTargetPct: number;  // from strategy spec — used to compute $ TP from net debit
-  usesSlRatio: boolean;     // true if the daemon gates entry or exit on S/L — hides ratio display when false
-  // Which IV anchor the daemon's last resolve used. Badge surfaces
-  // near the Net Debit header so a silent fallback to VIX (the
-  // pre-fix path that caused the 21/28 strike incident) is visible
-  // without digging through logs. Null when no resolve has happened.
-  ivSource: "chain" | "vix" | "default" | null;
-}
+// Re-export LegData so external consumers can keep importing it via
+// `from "./StrategyMonitorCard"` (resolved through this index) without
+// reaching into the internal sibling layout.
+export type { LegData };
 
 interface Props {
   spec: DCStrategySpec;
