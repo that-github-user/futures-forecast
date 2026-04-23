@@ -13,6 +13,7 @@ import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useTick } from "../../hooks/useTick";
 import { deriveLifecycle, formatCountdown } from "../../lib/dcLifecycle";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 
 interface Props {
   signals: DCSignalsResponse | null;
@@ -62,8 +63,8 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
       onClick={onClickJumpToSignals}
       aria-label={`${armed.length} subscribed strategies are armed — jump to Signals tab`}
       style={{
-        background: "linear-gradient(90deg, #f59e0b18 0%, #f59e0b08 100%)",
-        border: "1px solid #f59e0b66",
+        background: `linear-gradient(90deg, ${withAlphaByte(colors.accentAmber, 0x18)} 0%, ${withAlphaByte(colors.accentAmber, 0x08)} 100%)`,
+        border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
         borderRadius: 6,
         padding: "10px 14px",
         margin: "8px 12px 0",
@@ -72,8 +73,8 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
         justifyContent: "space-between",
         gap: 12,
         cursor: "pointer",
-        fontFamily: "Inter, sans-serif",
-        boxShadow: "0 0 12px #f59e0b22",
+        fontFamily: fonts.sans,
+        boxShadow: `0 0 12px ${withAlphaByte(colors.accentAmber, 0x22)}`,
         textAlign: "left",
         font: "inherit",
         color: "inherit",
@@ -85,9 +86,9 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#f59e0b",
-            background: "#f59e0b18",
-            border: "1px solid #f59e0b66",
+            color: colors.accentAmber,
+            background: withAlphaByte(colors.accentAmber, 0x18),
+            border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
             padding: "2px 8px",
             borderRadius: 10,
             letterSpacing: 0.8,
@@ -95,7 +96,7 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
         >
           ARMED
         </span>
-        <span style={{ fontSize: 12, color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace" }}>
+        <span style={{ fontSize: 12, color: colors.textPrimary, fontFamily: fonts.mono }}>
           {armed
             .map((r) => {
               const tail =
@@ -111,7 +112,7 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
             .join("  •  ")}
         </span>
       </div>
-      <span style={{ fontSize: 11, color: "#94a3b8" }}>View Signals →</span>
+      <span style={{ fontSize: 11, color: colors.textSecondary }}>View Signals →</span>
     </button>
   );
 }

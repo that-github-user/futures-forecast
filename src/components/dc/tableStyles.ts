@@ -7,6 +7,7 @@
 // Events use sticky.
 
 import type { CSSProperties } from "react";
+import { colors, fonts } from "../../styles/tokens";
 
 export const tableStyle: CSSProperties = {
   width: "100%",
@@ -17,12 +18,12 @@ export const tableStyle: CSSProperties = {
 const thBase: CSSProperties = {
   textAlign: "left",
   padding: "6px 8px",
-  color: "#64748b",
+  color: colors.textMuted,
   fontSize: 10,
-  fontFamily: "Inter, sans-serif",
+  fontFamily: fonts.sans,
   textTransform: "uppercase",
   letterSpacing: 0.5,
-  borderBottom: "1px solid #1e293b",
+  borderBottom: `1px solid ${colors.borderDim}`,
 };
 
 export const thStyle: CSSProperties = thBase;
@@ -31,18 +32,20 @@ export const thStickyStyle: CSSProperties = {
   ...thBase,
   position: "sticky",
   top: 0,
+  // Slightly darker-than-bgInset so the sticky header edge reads
+  // against the rows below. One-off — not in the shared palette.
   background: "#0f1520",
 };
 
 export const tdStyle: CSSProperties = {
   padding: "6px 8px",
-  color: "#e2e8f0",
+  color: colors.textPrimary,
   fontSize: 12,
-  fontFamily: "Inter, sans-serif",
-  borderBottom: "1px solid #111827",
+  fontFamily: fonts.sans,
+  borderBottom: `1px solid ${colors.bgPanel}`,
 };
 
 export const tdMono: CSSProperties = {
   ...tdStyle,
-  fontFamily: "JetBrains Mono, monospace",
+  fontFamily: fonts.mono,
 };

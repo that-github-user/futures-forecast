@@ -30,6 +30,7 @@ import { useNotifications } from "../../hooks/useNotifications";
 import { useTick } from "../../hooks/useTick";
 import { useTimezone, type TZOption } from "../../hooks/useTimezone";
 import { deriveLifecycle, daysUntilDow, type LifecycleInfo, type LifecycleState } from "../../lib/dcLifecycle";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import { StrategyMonitorCard, type LegData } from "./StrategyMonitorCard";
 
 interface Props {
@@ -226,7 +227,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
 
   if (specsLoading) {
     return (
-      <div className="fade-in" style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 40 }}>
+      <div className="fade-in" style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 40 }}>
         Loading strategy catalog…
       </div>
     );
@@ -237,8 +238,8 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
       {/* Header: subscription count + notification permission */}
       <div
         style={{
-          background: "#0f172a",
-          border: "1px solid #1e293b",
+          background: colors.bgInset,
+          border: `1px solid ${colors.borderDim}`,
           borderRadius: 6,
           padding: "8px 12px",
           display: "flex",
@@ -246,12 +247,12 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
           justifyContent: "space-between",
           gap: 12,
           flexWrap: "wrap",
-          fontFamily: "Inter, sans-serif",
+          fontFamily: fonts.sans,
         }}
       >
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+        <span style={{ fontSize: 12, color: colors.textSecondary }}>
           Monitoring{" "}
-          <span style={{ color: "#3b82f6", fontWeight: 600 }}>{monitors.length}</span> strategies
+          <span style={{ color: colors.accentBlue, fontWeight: 600 }}>{monitors.length}</span> strategies
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {/* Portfolio + policy selectors only make sense when the user has
@@ -281,10 +282,10 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
 
       {/* Monitor cards */}
       {monitors.length === 0 ? (
-        <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6 }}>
+        <div style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", padding: 40, background: colors.bgInset, border: `1px solid ${colors.borderDim}`, borderRadius: 6 }}>
           No strategies subscribed yet.
           <br />
-          <span style={{ color: "#64748b", fontSize: 12 }}>
+          <span style={{ color: colors.textMuted, fontSize: 12 }}>
             Visit the Strategies tab and check the strategies you want to monitor.
           </span>
         </div>
@@ -323,8 +324,8 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
               <span
                 style={{
                   fontSize: 11,
-                  fontFamily: "JetBrains Mono, monospace",
-                  color: featuresStale ? "#f59e0b" : "#64748b",
+                  fontFamily: fonts.mono,
+                  color: featuresStale ? colors.accentAmber : colors.textMuted,
                 }}
                 // The prior-day bar date is the causal-lag input — not a
                 // staleness indicator. Surface it in the tooltip so the
@@ -419,10 +420,10 @@ function TimezoneSelector({ tz, setTz }: { tz: TZOption; setTz: (t: TZOption) =>
       style={{
         fontSize: 10,
         fontWeight: 600,
-        fontFamily: "Inter, sans-serif",
-        color: "#94a3b8",
-        background: "#1e293b",
-        border: "1px solid #334155",
+        fontFamily: fonts.sans,
+        color: colors.textSecondary,
+        background: colors.borderDim,
+        border: `1px solid ${colors.borderMid}`,
         borderRadius: 4,
         padding: "3px 6px",
         cursor: "pointer",
@@ -446,7 +447,7 @@ function NotificationControl({
 }) {
   if (permission === "unsupported") {
     return (
-      <span style={{ fontSize: 11, color: "#64748b" }}>
+      <span style={{ fontSize: 11, color: colors.textMuted }}>
         Browser notifications not supported
       </span>
     );
@@ -466,9 +467,9 @@ function NotificationControl({
         }
         style={{
           fontSize: 11,
-          color: "#f59e0b",
+          color: colors.accentAmber,
           cursor: "help",
-          borderBottom: "1px dashed #f59e0b60",
+          borderBottom: `1px dashed ${withAlpha(colors.accentAmber, 0.4)}`,
         }}
       >
         Tap Share → Add to Home Screen to enable alerts
@@ -477,14 +478,14 @@ function NotificationControl({
   }
   if (permission === "granted") {
     return (
-      <span style={{ fontSize: 11, color: "#10b981" }}>
+      <span style={{ fontSize: 11, color: colors.accentGreen }}>
         Desktop alerts enabled
       </span>
     );
   }
   if (permission === "denied") {
     return (
-      <span style={{ fontSize: 11, color: "#ef4444" }}>
+      <span style={{ fontSize: 11, color: colors.accentRed }}>
         Desktop alerts blocked (enable in browser settings)
       </span>
     );
@@ -495,13 +496,13 @@ function NotificationControl({
       style={{
         fontSize: 11,
         fontWeight: 600,
-        color: "#3b82f6",
-        background: "#3b82f618",
-        border: "1px solid #3b82f640",
+        color: colors.accentBlue,
+        background: withAlphaByte(colors.accentBlue, 0x18),
+        border: `1px solid ${withAlpha(colors.accentBlue, 0.25)}`,
         borderRadius: 6,
         padding: "4px 10px",
         cursor: "pointer",
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
       }}
     >
       Enable desktop alerts
@@ -511,12 +512,12 @@ function NotificationControl({
 
 function FeatureCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "8px 10px" }}>
+    <div style={{ background: colors.bgPanel, border: `1px solid ${colors.borderDim}`, borderRadius: 6, padding: "8px 10px" }}>
       <div
         style={{
           fontSize: 9,
-          color: "#64748b",
-          fontFamily: "Inter, sans-serif",
+          color: colors.textMuted,
+          fontFamily: fonts.sans,
           textTransform: "uppercase",
           letterSpacing: 0.5,
         }}
@@ -527,8 +528,8 @@ function FeatureCard({ label, value }: { label: string; value: string }) {
         style={{
           fontSize: 14,
           fontWeight: 600,
-          fontFamily: "JetBrains Mono, monospace",
-          color: "#e2e8f0",
+          fontFamily: fonts.mono,
+          color: colors.textPrimary,
           marginTop: 2,
         }}
       >
@@ -551,12 +552,12 @@ function PortfolioInput({ value, onChange }: { value: number; onChange: (v: numb
         gap: 4,
         fontSize: 10,
         fontWeight: 600,
-        color: "#94a3b8",
-        fontFamily: "Inter, sans-serif",
+        color: colors.textSecondary,
+        fontFamily: fonts.sans,
       }}
     >
       Portfolio
-      <span style={{ color: "#64748b", marginLeft: 2 }}>$</span>
+      <span style={{ color: colors.textMuted, marginLeft: 2 }}>$</span>
       <input
         type="number"
         min={1000}
@@ -569,10 +570,10 @@ function PortfolioInput({ value, onChange }: { value: number; onChange: (v: numb
         }}
         style={{
           fontSize: 11,
-          fontFamily: "JetBrains Mono, monospace",
-          color: "#e2e8f0",
-          background: "#1e293b",
-          border: "1px solid #334155",
+          fontFamily: fonts.mono,
+          color: colors.textPrimary,
+          background: colors.borderDim,
+          border: `1px solid ${colors.borderMid}`,
           borderRadius: 4,
           padding: "3px 6px",
           width: 90,
@@ -613,10 +614,10 @@ function PolicySelector({
       style={{
         fontSize: 10,
         fontWeight: 600,
-        fontFamily: "Inter, sans-serif",
-        color: "#94a3b8",
-        background: "#1e293b",
-        border: "1px solid #334155",
+        fontFamily: fonts.sans,
+        color: colors.textSecondary,
+        background: colors.borderDim,
+        border: `1px solid ${colors.borderMid}`,
         borderRadius: 4,
         padding: "3px 6px",
         cursor: "pointer",

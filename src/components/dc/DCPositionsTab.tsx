@@ -10,6 +10,7 @@ import {
   brokerDebitPerSpread,
   groupBrokerLegs,
 } from "../../lib/brokerGrouping";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import { tableStyle, thStyle, tdStyle, tdMono } from "./tableStyles";
 
@@ -28,14 +29,14 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
           <RiskCard
             label="Daily P&L"
             value={`$${risk.daily_pnl >= 0 ? "+" : ""}${risk.daily_pnl.toFixed(0)}`}
-            color={risk.daily_pnl >= 0 ? "#10b981" : "#ef4444"}
+            color={risk.daily_pnl >= 0 ? colors.accentGreen : colors.accentRed}
           />
           <RiskCard label="Trades Today" value={`${risk.daily_trades}`} />
           <RiskCard label="Wins / Losses" value={`${risk.daily_wins}W / ${risk.daily_losses}L`} />
           <RiskCard
             label="Status"
             value={risk.paused ? "PAUSED" : "ACTIVE"}
-            color={risk.paused ? "#f59e0b" : "#10b981"}
+            color={risk.paused ? colors.accentAmber : colors.accentGreen}
           />
         </div>
       )}
@@ -55,7 +56,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
           <span className="panel-title">Daemon Tracked Positions ({positions.length})</span>
         </div>
         {positions.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>
+          <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24 }}>
             No open positions
           </div>
         ) : (
@@ -109,14 +110,14 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
 function RiskCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{
-      background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "10px 12px",
+      background: colors.bgPanel, border: `1px solid ${colors.borderDim}`, borderRadius: 6, padding: "10px 12px",
     }}>
-      <div style={{ fontSize: 10, color: "#64748b", fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 10, color: colors.textMuted, fontFamily: fonts.sans, textTransform: "uppercase", letterSpacing: 0.5 }}>
         {label}
       </div>
       <div style={{
-        fontSize: 16, fontWeight: 700, fontFamily: "JetBrains Mono, monospace",
-        color: color ?? "#e2e8f0", marginTop: 2,
+        fontSize: 16, fontWeight: 700, fontFamily: fonts.mono,
+        color: color ?? colors.textPrimary, marginTop: 2,
       }}>
         {value}
       </div>
@@ -154,11 +155,11 @@ function formatDrift(d: number | null): string {
 
 function driftCellStyle(d: number | null): React.CSSProperties {
   const base = tdMono;
-  if (isDriftUnset(d)) return { ...base, color: "#64748b" };
+  if (isDriftUnset(d)) return { ...base, color: colors.textMuted };
   const mag = Math.abs(d!);
-  if (mag < DRIFT_WARN) return { ...base, color: "#10b981" };    // green
-  if (mag < DRIFT_ERROR) return { ...base, color: "#f59e0b" };   // amber
-  return { ...base, color: "#ef4444" };                          // red
+  if (mag < DRIFT_WARN) return { ...base, color: colors.accentGreen };    // green
+  if (mag < DRIFT_ERROR) return { ...base, color: colors.accentAmber };   // amber
+  return { ...base, color: colors.accentRed };                          // red
 }
 
 function driftTooltip(p: DCPosition): string {
@@ -251,7 +252,7 @@ function BrokerRealityPanel({
         <div className="panel-header" style={{ marginBottom: 4 }}>
           <span className="panel-title">Broker Reality (IBKR)</span>
         </div>
-        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+        <div style={{ color: colors.textMuted, fontSize: 12, padding: 8 }}>
           No snapshot available — daemon hasn't written state/broker_state.json yet.
         </div>
       </div>
@@ -294,7 +295,7 @@ function BrokerRealityPanel({
         </span>
         <span style={{ fontSize: 10,
                        color: snapshotAgeColor(brokerState.snapshot_at),
-                       fontFamily: "JetBrains Mono, monospace" }}
+                       fontFamily: fonts.mono }}
               title={
                 snapshotAgeSec(brokerState.snapshot_at) !== null &&
                 snapshotAgeSec(brokerState.snapshot_at)! >= STALE_WARN_SEC
@@ -310,16 +311,19 @@ function BrokerRealityPanel({
         // show incomplete. Upstream bug in deconflict / double-book.
         <div role="status" aria-live="polite"
              style={{
-               background: "rgba(239, 68, 68, 0.12)",
-               border: "1px solid rgba(239, 68, 68, 0.45)",
+               background: withAlpha(colors.accentRed, 0.12),
+               border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
                borderRadius: 4,
                padding: "8px 12px",
                marginBottom: 8,
                fontSize: 12,
+               // Red-200 (softer than accentRed / accentRedLight) —
+               // used only for body text on the dark error banner, not
+               // part of the shared palette.
                color: "#fecaca",
-               fontFamily: "Inter, sans-serif",
+               fontFamily: fonts.sans,
              }}>
-          <strong style={{ color: "#ef4444" }}>conId collision:</strong>{" "}
+          <strong style={{ color: colors.accentRed }}>conId collision:</strong>{" "}
           {collisions.length} contract{collisions.length !== 1 ? "s" : ""}{" "}
           ({collisions.join(", ")}) claimed by more than one open daemon
           position. Grouping below shows first-claimer's DC only; the
@@ -336,16 +340,19 @@ function BrokerRealityPanel({
         // seeing in the table.
         <div role="status" aria-live="polite"
              style={{
-               background: "rgba(239, 68, 68, 0.12)",
-               border: "1px solid rgba(239, 68, 68, 0.45)",
+               background: withAlpha(colors.accentRed, 0.12),
+               border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
                borderRadius: 4,
                padding: "8px 12px",
                marginBottom: 8,
                fontSize: 12,
+               // Red-200 (softer than accentRed / accentRedLight) —
+               // used only for body text on the dark error banner, not
+               // part of the shared palette.
                color: "#fecaca",
-               fontFamily: "Inter, sans-serif",
+               fontFamily: fonts.sans,
              }}>
-          <strong style={{ color: "#ef4444" }}>Full daemon–broker drift:</strong>{" "}
+          <strong style={{ color: colors.accentRed }}>Full daemon–broker drift:</strong>{" "}
           IBKR reports {posCount} SPX position{posCount !== 1 ? "s" : ""}, none
           of which any open daemon position references. Either the
           daemon's SQLite view is completely out of sync (restart mid-fill,
@@ -354,7 +361,7 @@ function BrokerRealityPanel({
         </div>
       )}
       {posCount === 0 && orderCount === 0 ? (
-        <div style={{ color: "#64748b", fontSize: 12, padding: 8 }}>
+        <div style={{ color: colors.textMuted, fontSize: 12, padding: 8 }}>
           IBKR reports no SPX positions or open orders.
         </div>
       ) : (
@@ -370,15 +377,15 @@ function BrokerRealityPanel({
                      style={{ marginTop: groups.length > 0 ? 16 : 0 }}>
               <h3 id="broker-orphan-heading"
                   style={{
-                    fontSize: 11, color: "#f59e0b",
-                    fontFamily: "Inter, sans-serif", textTransform: "uppercase",
+                    fontSize: 11, color: colors.accentAmber,
+                    fontFamily: fonts.sans, textTransform: "uppercase",
                     letterSpacing: 0.5, marginBottom: 4,
                     fontWeight: 600, margin: 0,
                   }}>
                 Unmatched legs ({unmatched.length})
               </h3>
-              <div style={{ fontSize: 11, color: "#94a3b8",
-                            fontFamily: "Inter, sans-serif",
+              <div style={{ fontSize: 11, color: colors.textSecondary,
+                            fontFamily: fonts.sans,
                             marginTop: 4, marginBottom: 8 }}>
                 No open daemon position references these contracts —
                 manual entries, ghost positions from cleared DB rows,
@@ -504,7 +511,7 @@ function BrokerPositionsTable({ positions }: { positions: DCBrokerPosition[] }) 
                 <td style={tdStyle}>{p.contract.right || "—"}</td>
                 <td style={{
                   ...tdMono,
-                  color: p.position < 0 ? "#ef4444" : "#10b981",
+                  color: p.position < 0 ? colors.accentRed : colors.accentGreen,
                 }}>
                   {p.position}
                 </td>
@@ -549,10 +556,13 @@ function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
               <td style={tdStyle}>{o.tif}</td>
               <td style={{
                 ...tdStyle,
-                color: o.status === "Filled" ? "#10b981"
+                // "#f97316" (orange) is a one-off tier for Inactive
+                // order state — distinct from amber and red, not part
+                // of the shared palette.
+                color: o.status === "Filled" ? colors.accentGreen
                   : o.status === "Inactive" ? "#f97316"
-                  : o.status === "Cancelled" ? "#64748b"
-                  : "#e2e8f0",
+                  : o.status === "Cancelled" ? colors.textMuted
+                  : colors.textPrimary,
               }}>
                 {o.status}
               </td>
@@ -588,7 +598,7 @@ function formatSnapshotAge(iso: string): string {
 
 function snapshotAgeColor(iso: string): string {
   const ageSec = snapshotAgeSec(iso);
-  if (ageSec === null || ageSec >= STALE_ERROR_SEC) return "#ef4444";
-  if (ageSec >= STALE_WARN_SEC) return "#f59e0b";
-  return "#64748b";
+  if (ageSec === null || ageSec >= STALE_ERROR_SEC) return colors.accentRed;
+  if (ageSec >= STALE_WARN_SEC) return colors.accentAmber;
+  return colors.textMuted;
 }

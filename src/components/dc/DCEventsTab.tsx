@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 
 import { useDCSignalEvents } from "../../hooks/useDCSignalEvents";
 import type { DCSignalEvent } from "../../api/dcTypes";
+import { colors, fonts } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import {
   tableStyle,
@@ -86,7 +87,7 @@ export function DCEventsTab() {
           All history
         </button>
 
-        <div style={{ width: 1, alignSelf: "stretch", background: "#1e293b", margin: "0 4px" }} />
+        <div style={{ width: 1, alignSelf: "stretch", background: colors.borderDim, margin: "0 4px" }} />
 
         <label style={labelStyle}>
           Strategy
@@ -102,7 +103,7 @@ export function DCEventsTab() {
           </select>
         </label>
 
-        <div style={{ marginLeft: "auto", fontSize: 11, color: "#64748b", fontFamily: "Inter, sans-serif" }}>
+        <div style={{ marginLeft: "auto", fontSize: 11, color: colors.textMuted, fontFamily: fonts.sans }}>
           {loading ? "Loading…" : `${events.length} events`}
         </div>
       </div>
@@ -120,7 +121,7 @@ export function DCEventsTab() {
             <div key={k} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               padding: "4px 10px", borderRadius: 14, fontSize: 11,
-              fontFamily: "Inter, sans-serif", background: color + "18",
+              fontFamily: fonts.sans, background: color + "18",
               border: `1px solid ${color}40`, color,
             }}>
               <span style={{ fontWeight: 700 }}>{n}</span>
@@ -132,7 +133,7 @@ export function DCEventsTab() {
 
       {/* Error/empty */}
       {error && (
-        <div className="panel" style={{ padding: 12, color: "#ef4444", fontSize: 13 }}>
+        <div className="panel" style={{ padding: 12, color: colors.accentRed, fontSize: 13 }}>
           Failed to load signal events from the DC API.
         </div>
       )}
@@ -143,7 +144,7 @@ export function DCEventsTab() {
           <span className="panel-title">Signal Events</span>
         </div>
         {!loading && events.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>
+          <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24 }}>
             No events {date === "all" ? "recorded" : `on ${date}`}.
           </div>
         ) : (
@@ -193,7 +194,7 @@ function EventRow({ event }: { event: DCSignalEvent }) {
         <OutcomeBadge outcome={event.outcome} />
         <MoveBadge event={event} />
       </td>
-      <td style={{ ...tdStyle, color: "#94a3b8", maxWidth: 360 }}>
+      <td style={{ ...tdStyle, color: colors.textSecondary, maxWidth: 360 }}>
         {event.outcome_reason ?? "—"}
       </td>
       <td style={tdMono}>
@@ -217,10 +218,10 @@ function EventRow({ event }: { event: DCSignalEvent }) {
 export function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSSProperties {
   const base = { ...tdMono, fontSize: 10, textTransform: "uppercase" as const, letterSpacing: 0.5 };
   switch (source) {
-    case "chain":   return { ...base, color: "#10b981" };
-    case "vix":     return { ...base, color: "#f59e0b" };
-    case "default": return { ...base, color: "#ef4444" };
-    default:        return { ...base, color: "#64748b" };
+    case "chain":   return { ...base, color: colors.accentGreen };
+    case "vix":     return { ...base, color: colors.accentAmber };
+    case "default": return { ...base, color: colors.accentRed };
+    default:        return { ...base, color: colors.textMuted };
   }
 }
 
@@ -261,7 +262,10 @@ function MoveBadge({ event }: { event: DCSignalEvent }) {
       title={`Ideal strike ${parts.join(", ")} was held by ${event.conflicting_strategy}; auto-moved to next delta-tolerable strike`}
       style={{
         fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8,
-        marginLeft: 4, fontFamily: "Inter, sans-serif",
+        marginLeft: 4, fontFamily: fonts.sans,
+        // #f97316 (orange) is a one-off severity tier for blocked_* outcomes
+        // that sit between warn (amber) and error (red) — not in the shared
+        // palette. Kept inline with matching 0x18/0x40 alpha variants.
         color: "#f97316",
         background: "#f9731618",
         border: "1px solid #f9731640",
@@ -278,7 +282,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
   return (
     <span style={{
       fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 8,
-      fontFamily: "Inter, sans-serif", color,
+      fontFamily: fonts.sans, color,
       background: color + "18",
     }}>
       {labelFor(outcome).toUpperCase()}
@@ -287,16 +291,19 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
 }
 
 function outcomeColor(outcome: string): string {
-  if (outcome === "entered") return "#10b981";
-  if (outcome === "skipped_signal") return "#64748b";
+  if (outcome === "entered") return colors.accentGreen;
+  if (outcome === "skipped_signal") return colors.textMuted;
+  // #eab308 (yellow) and #f97316 (orange) are one-off severity tiers used
+  // only for blocked_* outcome badging — distinct from the shared accent
+  // palette. Kept inline.
   if (outcome === "blocked_sl" || outcome === "blocked_vix") return "#eab308";
   if (outcome === "blocked_margin" || outcome === "blocked_risk"
       || outcome === "blocked_duplicate" || outcome === "blocked_size"
       || outcome === "blocked_deconflict") return "#f97316";
   if (outcome === "blocked_strike" || outcome === "blocked_legs"
       || outcome === "blocked_conn" || outcome === "blocked_data"
-      || outcome === "blocked_order") return "#ef4444";
-  return "#94a3b8";
+      || outcome === "blocked_order") return colors.accentRed;
+  return colors.textSecondary;
 }
 
 function labelFor(outcome: string): string {
@@ -317,19 +324,24 @@ function formatET(iso: string): string {
   }
 }
 
+// Matches tableStyles.ts `thStickyStyle` background — slightly darker
+// than bgInset so sticky-header filter rows read against the content
+// below. One-off, not in the shared palette.
+const STICKY_HEADER_BG = "#0f1520";
+
 const labelStyle: React.CSSProperties = {
   display: "flex", flexDirection: "column", gap: 4, fontSize: 10,
-  color: "#64748b", fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5,
+  color: colors.textMuted, fontFamily: fonts.sans, textTransform: "uppercase", letterSpacing: 0.5,
 };
 const inputStyle: React.CSSProperties = {
-  background: "#0f1520", color: "#e2e8f0", border: "1px solid #1e293b",
-  borderRadius: 4, padding: "4px 8px", fontSize: 12, fontFamily: "JetBrains Mono, monospace",
+  background: STICKY_HEADER_BG, color: colors.textPrimary, border: `1px solid ${colors.borderDim}`,
+  borderRadius: 4, padding: "4px 8px", fontSize: 12, fontFamily: fonts.mono,
 };
 const chipButtonStyle = (active: boolean): React.CSSProperties => ({
-  background: active ? "#1e293b" : "#0f1520",
-  color: active ? "#e2e8f0" : "#94a3b8",
-  border: `1px solid ${active ? "#3b82f6" : "#1e293b"}`,
+  background: active ? colors.borderDim : STICKY_HEADER_BG,
+  color: active ? colors.textPrimary : colors.textSecondary,
+  border: `1px solid ${active ? colors.accentBlue : colors.borderDim}`,
   borderRadius: 4, padding: "5px 10px",
-  fontSize: 11, fontFamily: "Inter, sans-serif", cursor: "pointer",
+  fontSize: 11, fontFamily: fonts.sans, cursor: "pointer",
   alignSelf: "flex-end",
 });

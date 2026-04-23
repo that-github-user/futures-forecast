@@ -11,6 +11,7 @@
 
 import type { DCStrategySpec, DCStrategyStats } from "../../api/dcTypes";
 import { formatEntryDays } from "../../lib/dcLifecycle";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
@@ -31,23 +32,28 @@ const FAMILY_LABELS: Record<string, string> = {
   spy_straddles: "SPY Straddles",
 };
 
+// Family-specific accent colors. long_dte + hybrid_fm reuse shared
+// accents; short_dte (purple), spy_short_puts (cyan), spy_straddles
+// (pink) are category-specific visual tags — not in the shared
+// palette. Kept inline with this lookup so a future theme sweep sees
+// them as one block.
 const FAMILY_COLORS: Record<string, string> = {
-  long_dte: "#3b82f6",
+  long_dte: colors.accentBlue,
   short_dte: "#a855f7",
-  hybrid_fm: "#f59e0b",
+  hybrid_fm: colors.accentAmber,
   spy_short_puts: "#06b6d4",  // cyan
   spy_straddles: "#ec4899",   // pink
 };
 
 export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats, formatTime, tzLabel }: Props) {
   const familyLabel = FAMILY_LABELS[spec.family] ?? spec.family;
-  const familyColor = FAMILY_COLORS[spec.family] ?? "#64748b";
+  const familyColor = FAMILY_COLORS[spec.family] ?? colors.textMuted;
 
   return (
     <div
       style={{
-        background: "#111827",
-        border: `1px solid ${isSubscribed ? "#3b82f680" : "#1e293b"}`,
+        background: colors.bgPanel,
+        border: `1px solid ${isSubscribed ? withAlpha(colors.accentBlue, 0.5) : colors.borderDim}`,
         borderRadius: 8,
         padding: 14,
         display: "flex",
@@ -58,7 +64,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
       {/* Header: name + family + signal + subscribe */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", fontFamily: "Inter, sans-serif" }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary, fontFamily: fonts.sans }}>
             {spec.name}
           </span>
           <span
@@ -70,7 +76,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
               border: `1px solid ${familyColor}40`,
               padding: "2px 6px",
               borderRadius: 6,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
               textTransform: "uppercase",
               letterSpacing: 0.5,
             }}
@@ -86,15 +92,15 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
             gap: 6,
             cursor: "pointer",
             fontSize: 11,
-            color: "#94a3b8",
-            fontFamily: "Inter, sans-serif",
+            color: colors.textSecondary,
+            fontFamily: fonts.sans,
           }}
         >
           <input
             type="checkbox"
             checked={isSubscribed}
             onChange={onToggle}
-            style={{ cursor: "pointer", accentColor: "#3b82f6" }}
+            style={{ cursor: "pointer", accentColor: colors.accentBlue }}
           />
           {isSubscribed ? "Subscribed" : "Subscribe"}
         </label>
@@ -107,7 +113,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
           gridTemplateColumns: "1fr 1fr",
           gap: "4px 12px",
           fontSize: 11,
-          fontFamily: "JetBrains Mono, monospace",
+          fontFamily: fonts.mono,
         }}
       >
         <SpecRow label="DTE" value={`${spec.front_dte} / ${spec.back_dte}`} />
@@ -133,20 +139,20 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
 
       {/* Exit rules */}
       {(spec.delta_exits.length > 0 || spec.tested_exits.length > 0 || spec.partial_close != null) && (
-        <div style={{ borderTop: "1px solid #1e293b", paddingTop: 8 }}>
+        <div style={{ borderTop: `1px solid ${colors.borderDim}`, paddingTop: 8 }}>
           <div
             style={{
               fontSize: 9,
-              color: "#64748b",
+              color: colors.textMuted,
               textTransform: "uppercase",
               letterSpacing: 0.5,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
               marginBottom: 4,
             }}
           >
             Exit Rules
           </div>
-          <div style={{ fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: "#94a3b8", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, fontFamily: fonts.mono, color: colors.textSecondary, lineHeight: 1.5 }}>
             {spec.delta_exits.map((r, i) => (
               <div key={`d${i}`}>
                 {r.leg === "put" ? "P" : "C"}
@@ -172,13 +178,13 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
       {stats && stats.total_trades > 0 && (
         <div
           style={{
-            borderTop: "1px solid #1e293b",
+            borderTop: `1px solid ${colors.borderDim}`,
             paddingTop: 8,
             display: "flex",
             flexDirection: "column",
             gap: 6,
             fontSize: 11,
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: fonts.mono,
           }}
         >
           <div
@@ -196,7 +202,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
             <Stat
               label="P&L"
               value={`${stats.total_pnl >= 0 ? "+" : ""}$${stats.total_pnl.toFixed(0)}`}
-              color={stats.total_pnl >= 0 ? "#10b981" : "#ef4444"}
+              color={stats.total_pnl >= 0 ? colors.accentGreen : colors.accentRed}
             />
           </div>
           <div
@@ -219,10 +225,10 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
           {(stats.consecutive_wins > 0 || stats.consecutive_losses > 0) && (
             <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
               {stats.consecutive_wins > 0 && (
-                <span style={{ color: "#10b981" }}>{stats.consecutive_wins}W streak</span>
+                <span style={{ color: colors.accentGreen }}>{stats.consecutive_wins}W streak</span>
               )}
               {stats.consecutive_losses > 0 && (
-                <span style={{ color: "#ef4444" }}>{stats.consecutive_losses}L streak</span>
+                <span style={{ color: colors.accentRed }}>{stats.consecutive_losses}L streak</span>
               )}
             </div>
           )}
@@ -235,8 +241,8 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
 function SpecRow({ label, value, fullWidth }: { label: string; value: string; fullWidth?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 6, gridColumn: fullWidth ? "1 / -1" : undefined }}>
-      <span style={{ color: "#64748b", fontFamily: "Inter, sans-serif", fontSize: 10 }}>{label}</span>
-      <span style={{ color: "#e2e8f0", textAlign: "right" }}>{value}</span>
+      <span style={{ color: colors.textMuted, fontFamily: fonts.sans, fontSize: 10 }}>{label}</span>
+      <span style={{ color: colors.textPrimary, textAlign: "right" }}>{value}</span>
     </div>
   );
 }
@@ -244,10 +250,10 @@ function SpecRow({ label, value, fullWidth }: { label: string; value: string; fu
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ fontSize: 9, color: "#64748b", fontFamily: "Inter, sans-serif", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 9, color: colors.textMuted, fontFamily: fonts.sans, textTransform: "uppercase", letterSpacing: 0.5 }}>
         {label}
       </div>
-      <div style={{ color: color ?? "#e2e8f0" }}>{value}</div>
+      <div style={{ color: color ?? colors.textPrimary }}>{value}</div>
     </div>
   );
 }

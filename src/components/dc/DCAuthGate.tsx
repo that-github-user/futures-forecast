@@ -15,6 +15,7 @@
 
 import { useState, type ReactNode } from "react";
 import bcrypt from "bcryptjs";
+import { colors, fonts } from "../../styles/tokens";
 
 const PASSWORD_HASH = import.meta.env.VITE_DC_PASSWORD_HASH || "";
 
@@ -52,15 +53,15 @@ export function DCAuthGate({ children }: Props) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0a0e17",
-        fontFamily: "Inter, sans-serif",
+        background: colors.bgBase,
+        fontFamily: fonts.sans,
         gap: 16,
       }}
     >
-      <h2 style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 18, margin: 0 }}>
+      <h2 style={{ color: colors.textPrimary, fontWeight: 600, fontSize: 18, margin: 0 }}>
         DC Trading Dashboard
       </h2>
-      <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>
+      <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>
         Enter password to access
       </p>
       <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
@@ -71,12 +72,12 @@ export function DCAuthGate({ children }: Props) {
           placeholder="Password"
           autoFocus
           style={{
-            background: "#1e293b",
-            border: error ? "1px solid #ef4444" : "1px solid #334155",
+            background: colors.borderDim,
+            border: `1px solid ${error ? colors.accentRed : colors.borderMid}`,
             borderRadius: 6,
             padding: "8px 14px",
-            color: "#e2e8f0",
-            fontFamily: "JetBrains Mono, monospace",
+            color: colors.textPrimary,
+            fontFamily: fonts.mono,
             fontSize: 14,
             outline: "none",
             width: 240,
@@ -85,12 +86,14 @@ export function DCAuthGate({ children }: Props) {
         <button
           type="submit"
           style={{
-            background: "#3b82f6",
+            background: colors.accentBlue,
             border: "none",
             borderRadius: 6,
             padding: "8px 20px",
+            // Button text stays pure white against the blue — not part
+            // of the muted-text palette. Kept inline.
             color: "#fff",
-            fontFamily: "Inter, sans-serif",
+            fontFamily: fonts.sans,
             fontSize: 13,
             fontWeight: 600,
             cursor: "pointer",
@@ -100,11 +103,11 @@ export function DCAuthGate({ children }: Props) {
         </button>
       </form>
       {error && (
-        <span style={{ color: "#ef4444", fontSize: 12 }}>Incorrect password</span>
+        <span style={{ color: colors.accentRed, fontSize: 12 }}>Incorrect password</span>
       )}
       <a
         href="#/"
-        style={{ color: "#64748b", fontSize: 11, textDecoration: "none", marginTop: 8 }}
+        style={{ color: colors.textMuted, fontSize: 11, textDecoration: "none", marginTop: 8 }}
       >
         Back to ES Dashboard
       </a>
