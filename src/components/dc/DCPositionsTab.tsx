@@ -137,6 +137,22 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
 const DRIFT_WARN = 0.05;
 const DRIFT_ERROR = 0.15;
 
+// Shared style for the two error banners in BrokerRealityPanel
+// (conId-collision + full-drift). Same visual treatment; extracted to
+// avoid two copies of the identical inline-style block. `#fecaca`
+// (Tailwind red-200) is a softer red than accentRed / accentRedLight,
+// used only here for body text on the dark error-banner background.
+const errorBannerStyle: React.CSSProperties = {
+  background: withAlpha(colors.accentRed, 0.12),
+  border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
+  borderRadius: 4,
+  padding: "8px 12px",
+  marginBottom: 8,
+  fontSize: 12,
+  color: "#fecaca",
+  fontFamily: fonts.sans,
+};
+
 // Null predicate: all three helpers agree on the same nullish check
 // (`d == null`). Backend always sets broker_entry_debit + debit_drift
 // together; checking just one would catch any accidental desync between
@@ -309,20 +325,7 @@ function BrokerRealityPanel({
         // Two open daemon rows claim the same conId. Broker leg lands
         // in whichever row registered first — the second's group will
         // show incomplete. Upstream bug in deconflict / double-book.
-        <div role="status" aria-live="polite"
-             style={{
-               background: withAlpha(colors.accentRed, 0.12),
-               border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
-               borderRadius: 4,
-               padding: "8px 12px",
-               marginBottom: 8,
-               fontSize: 12,
-               // Red-200 (softer than accentRed / accentRedLight) —
-               // used only for body text on the dark error banner, not
-               // part of the shared palette.
-               color: "#fecaca",
-               fontFamily: fonts.sans,
-             }}>
+        <div role="status" aria-live="polite" style={errorBannerStyle}>
           <strong style={{ color: colors.accentRed }}>conId collision:</strong>{" "}
           {collisions.length} contract{collisions.length !== 1 ? "s" : ""}{" "}
           ({collisions.join(", ")}) claimed by more than one open daemon
@@ -338,20 +341,7 @@ function BrokerRealityPanel({
         // interrupt on mount if the page loaded during a drift state,
         // which is too aggressive for a signal the operator is already
         // seeing in the table.
-        <div role="status" aria-live="polite"
-             style={{
-               background: withAlpha(colors.accentRed, 0.12),
-               border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
-               borderRadius: 4,
-               padding: "8px 12px",
-               marginBottom: 8,
-               fontSize: 12,
-               // Red-200 (softer than accentRed / accentRedLight) —
-               // used only for body text on the dark error banner, not
-               // part of the shared palette.
-               color: "#fecaca",
-               fontFamily: fonts.sans,
-             }}>
+        <div role="status" aria-live="polite" style={errorBannerStyle}>
           <strong style={{ color: colors.accentRed }}>Full daemon–broker drift:</strong>{" "}
           IBKR reports {posCount} SPX position{posCount !== 1 ? "s" : ""}, none
           of which any open daemon position references. Either the

@@ -13,6 +13,7 @@ import type { DCSignalEvent } from "../../api/dcTypes";
 import { colors, fonts } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import {
+  STICKY_HEADER_BG,
   tableStyle,
   thStickyStyle as thStyle,
   tdStyle,
@@ -323,11 +324,6 @@ function formatET(iso: string): string {
     return iso;
   }
 }
-
-// Matches tableStyles.ts `thStickyStyle` background — slightly darker
-// than bgInset so sticky-header filter rows read against the content
-// below. One-off, not in the shared palette.
-const STICKY_HEADER_BG = "#0f1520";
 
 const labelStyle: React.CSSProperties = {
   display: "flex", flexDirection: "column", gap: 4, fontSize: 10,

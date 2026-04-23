@@ -469,7 +469,8 @@ function NotificationControl({
           fontSize: 11,
           color: colors.accentAmber,
           cursor: "help",
-          borderBottom: `1px dashed ${withAlpha(colors.accentAmber, 0.4)}`,
+          // 0x60 (96) — preserved exactly; 0.4 rounds to 0x66 and drifts.
+          borderBottom: `1px dashed ${withAlphaByte(colors.accentAmber, 0x60)}`,
         }}
       >
         Tap Share → Add to Home Screen to enable alerts

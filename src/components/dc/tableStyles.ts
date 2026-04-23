@@ -9,6 +9,12 @@
 import type { CSSProperties } from "react";
 import { colors, fonts } from "../../styles/tokens";
 
+/** Slightly-darker-than-bgInset tone used as the background for sticky
+ *  table headers. Exported so filter-row inputs in DCEventsTab can
+ *  match the sticky-header edge above them. Not in the shared palette
+ *  — this is a DC-table-local visual detail. */
+export const STICKY_HEADER_BG = "#0f1520";
+
 export const tableStyle: CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
@@ -32,9 +38,7 @@ export const thStickyStyle: CSSProperties = {
   ...thBase,
   position: "sticky",
   top: 0,
-  // Slightly darker-than-bgInset so the sticky header edge reads
-  // against the rows below. One-off — not in the shared palette.
-  background: "#0f1520",
+  background: STICKY_HEADER_BG,
 };
 
 export const tdStyle: CSSProperties = {
