@@ -18,9 +18,19 @@ import type { LegData } from "./types";
 
 /** True when the lifecycle state + signal combination warrants showing
  *  a "Suggested: N cts" sizing recommendation. Hides on SKIP (no
- *  entry-worthy signal), fully-inactive (not firing today), or closed
- *  (already handled). */
-export function shouldShowSuggested(state: LifecycleState, signal: string | null): boolean {
+ *  entry-worthy signal), fully-inactive (not firing today), closed
+ *  (already handled), or credit-direction strategies (SPY short puts /
+ *  straddles are not auto-executed today — the `blocked_direction`
+ *  gate in the backend refuses them — and the sizing math assumes a
+ *  4-leg SPX debit structure with an SPX_MULTIPLIER-based margin
+ *  proxy). Rendering "Suggested: N cts" for a credit strategy would
+ *  be actively misleading. */
+export function shouldShowSuggested(
+  state: LifecycleState,
+  signal: string | null,
+  entryDirection: "debit" | "credit" = "debit",
+): boolean {
+  if (entryDirection === "credit") return false;
   const activeEnough =
     state === "primed" ||
     state === "imminent" ||
