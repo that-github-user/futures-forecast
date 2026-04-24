@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { roundToSpxTick } from "./spxTick";
+import { roundToSpxTick, roundToSpyTick } from "./spxTick";
 
 // Cases ported from automated-dc-entry/tests/test_tick_size.py so any
 // future divergence between backend and frontend tick-rounding shows
@@ -51,5 +51,50 @@ describe("roundToSpxTick — boundary at $3", () => {
   });
   it("just over $3 uses 10c grid", () => {
     expect(roundToSpxTick(3.04)).toBeCloseTo(3.00, 6);
+  });
+});
+
+// SPY is in the CBOE penny pilot program — $0.01 below $3, $0.05 above.
+// These cases pin values that roundToSpxTick would visibly mis-round
+// (e.g. $1.37 → $1.35 on SPX's $0.05 grid, but stays $1.37 on SPY's
+// $0.01 grid).
+describe("roundToSpyTick — small prices (<$3)", () => {
+  it.each([
+    [0.00, 0.00],
+    [0.01, 0.01],
+    [0.014, 0.01],   // snaps down
+    [0.016, 0.02],   // snaps up
+    [1.37, 1.37],    // the case SPX rounding breaks
+    [1.374, 1.37],
+    [1.376, 1.38],
+    [2.25, 2.25],
+    [2.99, 2.99],
+  ])("rounds %p → %p (1c grid)", (raw, expected) => {
+    expect(roundToSpyTick(raw)).toBeCloseTo(expected, 6);
+  });
+});
+
+describe("roundToSpyTick — large prices (≥$3)", () => {
+  it.each([
+    [3.00, 3.00],
+    [3.02, 3.00],    // snaps down
+    [3.03, 3.05],    // snaps up
+    [4.25, 4.25],
+    [5.13, 5.15],
+    [10.00, 10.00],
+  ])("rounds %p → %p (5c grid)", (raw, expected) => {
+    expect(roundToSpyTick(raw)).toBeCloseTo(expected, 6);
+  });
+});
+
+describe("roundToSpyTick — boundary at $3", () => {
+  it("exactly $3 uses the 5c grid (per rule: price ≥ $3)", () => {
+    expect(roundToSpyTick(3.00)).toBeCloseTo(3.00, 6);
+  });
+  it("just under $3 still uses 1c grid", () => {
+    expect(roundToSpyTick(2.99)).toBeCloseTo(2.99, 6);
+  });
+  it("just over $3 uses 5c grid", () => {
+    expect(roundToSpyTick(3.02)).toBeCloseTo(3.00, 6);
   });
 });
