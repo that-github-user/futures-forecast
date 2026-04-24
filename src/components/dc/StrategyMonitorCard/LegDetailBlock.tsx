@@ -263,6 +263,11 @@ function ProfitTargetLine({
   }
 
   const isCredit = entryDirection === "credit";
+  // profit_target_pct = 1.0 is the "hold to expiration / no PT" sentinel
+  // (SPY 7d short puts). Rendering it as "TP 100% decay $0.00 locked"
+  // reads as a broken field; show the intent instead.
+  const holdToExpiration = profitTargetPct >= 1.0;
+
   // SPX/SPXW options trade in $0.10 tick increments above $3 ($0.05
   // below). The raw math usually lands off-tick — round to the tick grid
   // the broker actually accepts so the UI shows exactly what the daemon
@@ -270,7 +275,11 @@ function ProfitTargetLine({
   const multiplier = isCredit ? 1 - profitTargetPct : 1 + profitTargetPct;
   const ptTarget = roundToSpxTick(basisDebit * multiplier);
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
-  const targetLabel = isCredit ? `TP ${pctLabel} decay` : `TP ${pctLabel} close`;
+  const targetLabel = holdToExpiration
+    ? "Hold to expiration"
+    : isCredit
+      ? `TP ${pctLabel} decay`
+      : `TP ${pctLabel} close`;
   const statusLabel = entered ? "locked" : "potential";
   const statusColor = entered ? colors.accentGreen : colors.textSecondary;
 
@@ -296,9 +305,11 @@ function ProfitTargetLine({
       >
         {targetLabel}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
-        ${ptTarget.toFixed(2)}
-      </div>
+      {!holdToExpiration && (
+        <div style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
+          ${ptTarget.toFixed(2)}
+        </div>
+      )}
       <div
         style={{
           fontSize: 9,
