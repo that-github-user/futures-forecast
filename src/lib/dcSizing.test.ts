@@ -75,6 +75,7 @@ function makeSpec(name: string, avgMargin: number): DCStrategySpec {
     tested_exits: [],
     partial_close: null,
     entry_window_end: null,
+    entry_direction: "debit",
   };
 }
 
@@ -222,6 +223,7 @@ describe("computeSuggestedContracts — defensive edge cases", () => {
     tested_exits: [],
     partial_close: null,
     entry_window_end: null,
+    entry_direction: "debit",
   };
 
   it("returns 0 when portfolioSize is 0", () => {

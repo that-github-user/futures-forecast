@@ -283,6 +283,9 @@ export interface DCStrategySpec {
   tested_exits: DCTestedExitRule[];
   partial_close: DCPartialClose | null;
   entry_window_end: string | null; // 'HH:MM' ET, only set when the strategy has an entry window range
+  // 'debit' = we pay premium (DCs); 'credit' = we collect premium (SPY short
+  // puts, straddles). Drives net-mark header coloring and profit-target math.
+  entry_direction: "debit" | "credit";
 }
 
 

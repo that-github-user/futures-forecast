@@ -39,7 +39,7 @@ const LEG_LABELS: Record<LegName, string> = {
 };
 
 export function LegDetailBlock({ legData }: { legData: LegData }) {
-  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio, ivSource } = legData;
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio, ivSource, entryDirection } = legData;
 
   // No leg data yet (worker hasn't polled or this strategy isn't eligible).
   // Fall back to just the S/L line for strategies that use it; otherwise render nothing.
@@ -55,11 +55,13 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
         entryNetDebit={entryNetDebit}
         snapshotTime={snapshot?.entry_time ?? null}
         ivSource={ivSource}
+        entryDirection={entryDirection}
       />
       <ProfitTargetLine
         netDebit={netDebit}
         entryNetDebit={entryNetDebit}
         profitTargetPct={profitTargetPct}
+        entryDirection={entryDirection}
       />
 
       {/* Leg table */}
@@ -98,12 +100,17 @@ function NetDebitHeader({
   entryNetDebit,
   snapshotTime,
   ivSource,
+  entryDirection,
 }: {
   netDebit: number | null;
   entryNetDebit: number | null;
   snapshotTime: string | null;
   ivSource: "chain" | "vix" | "default" | null;
+  entryDirection: "debit" | "credit";
 }) {
+  const isCredit = entryDirection === "credit";
+  const label = isCredit ? "Net Credit" : "Net Debit";
+
   if (netDebit == null) {
     // Review N1: after a daemon restart the SL worker resolves legs
     // (ivSource populated) before the first ratio poll produces
@@ -114,7 +121,7 @@ function NetDebitHeader({
       <div style={{ display: "flex", alignItems: "baseline", gap: 10,
                     fontSize: 12, color: colors.textMuted,
                     fontFamily: fonts.mono }}>
-        <span>Debit: --</span>
+        <span>{isCredit ? "Credit" : "Debit"}: --</span>
         <IVSourceBadge source={ivSource} />
       </div>
     );
@@ -122,8 +129,19 @@ function NetDebitHeader({
 
   const hasSnapshot = entryNetDebit != null;
   const delta = hasSnapshot ? netDebit - entryNetDebit : null;
-  // Net debit: positive delta = more expensive → red. Negative delta = cheaper → green.
-  const deltaColor = delta == null ? colors.textSecondary : delta > 0 ? colors.accentRed : delta < 0 ? colors.accentGreen : colors.textSecondary;
+  // Post-entry (hasSnapshot): color by P/L — "in our favor" = green, "against us" = red.
+  //   Debit (we paid): mark rising above entry = profit → green.
+  //   Credit (we collected): mark falling below entry = decay = profit → green.
+  // Pre-entry (no snapshot): color by cost-to-enter. Debit rising = more expensive → red;
+  //   credit rising = better fill → green. Keeps the "rising number = pay more" intuition
+  //   before any position is open.
+  let deltaColor: string = colors.textSecondary;
+  if (delta != null && delta !== 0) {
+    const favorable = hasSnapshot
+      ? (isCredit ? delta < 0 : delta > 0)
+      : (isCredit ? delta > 0 : delta < 0);
+    deltaColor = favorable ? colors.accentGreen : colors.accentRed;
+  }
   const deltaStr = delta == null ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
 
   return (
@@ -137,7 +155,7 @@ function NetDebitHeader({
       }}
     >
       <div style={{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
-        Net Debit
+        {label}
       </div>
       <div style={{ fontSize: 17, fontWeight: 700, color: colors.textPrimary }}>
         ${netDebit.toFixed(2)}
@@ -220,16 +238,20 @@ function ProfitTargetLine({
   netDebit,
   entryNetDebit,
   profitTargetPct,
+  entryDirection,
 }: {
   netDebit: number | null;
   entryNetDebit: number | null;
   profitTargetPct: number;
+  entryDirection: "debit" | "credit";
 }) {
-  // Debit DC profit = spread widening. Target close value = basis × (1 + pct).
-  // e.g. entry $11.90 + 40% TP → close at $16.66.
+  // Debit: profit = mark rises. Target close value = basis × (1 + pct).
+  //   e.g. entry $11.90 + 40% TP → close at $16.66.
+  // Credit: profit = mark decays. Target close value = basis × (1 − pct).
+  //   e.g. entry $3.00 − 25% TP → close at $2.25.
   //
-  // Pre-entry (potential): basis = current net debit (moves with prices). If a
-  //   viewer were to enter RIGHT NOW at the live debit, this is the target
+  // Pre-entry (potential): basis = current net mark (moves with prices). If a
+  //   viewer were to enter RIGHT NOW at the live mark, this is the target
   //   close they'd watch for.
   // Post-entry (locked): basis = snapshot entry_net_debit. This is the fixed
   //   close target the daemon is watching for.
@@ -240,13 +262,15 @@ function ProfitTargetLine({
     return null;
   }
 
+  const isCredit = entryDirection === "credit";
   // SPX/SPXW options trade in $0.10 tick increments above $3 ($0.05
-  // below). The raw math basis × (1 + pct) usually lands off-tick —
-  // e.g. $9.40 × 1.30 = $12.22 but a TP order would submit at $12.20.
-  // Round to the tick grid the broker actually accepts so the UI shows
-  // exactly what the daemon would put on the broker ticket.
-  const ptTarget = roundToSpxTick(basisDebit * (1 + profitTargetPct));
+  // below). The raw math usually lands off-tick — round to the tick grid
+  // the broker actually accepts so the UI shows exactly what the daemon
+  // would put on the broker ticket.
+  const multiplier = isCredit ? 1 - profitTargetPct : 1 + profitTargetPct;
+  const ptTarget = roundToSpxTick(basisDebit * multiplier);
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
+  const targetLabel = isCredit ? `TP ${pctLabel} decay` : `TP ${pctLabel} close`;
   const statusLabel = entered ? "locked" : "potential";
   const statusColor = entered ? colors.accentGreen : colors.textSecondary;
 
@@ -270,7 +294,7 @@ function ProfitTargetLine({
           fontFamily: fonts.sans,
         }}
       >
-        TP {pctLabel} close
+        {targetLabel}
       </div>
       <div style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
         ${ptTarget.toFixed(2)}

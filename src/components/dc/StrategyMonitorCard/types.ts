@@ -27,4 +27,8 @@ export interface LegData {
   // pre-fix path that caused the 21/28 strike incident) is visible
   // without digging through logs. Null when no resolve has happened.
   ivSource: "chain" | "vix" | "default" | null;
+  // 'debit' (DCs — we pay premium, profit when mark rises) or 'credit'
+  // (SPY short puts/straddles — we collect premium, profit when mark
+  // decays). Flips post-entry net-mark coloring and the TP math.
+  entryDirection: "debit" | "credit";
 }
