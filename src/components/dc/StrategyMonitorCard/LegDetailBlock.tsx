@@ -9,7 +9,7 @@ import { colors, fonts } from "../../../styles/tokens";
 import type { DCLegDetail, LegName } from "../../../api/dcTypes";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import { formatExpiry } from "../../../lib/dcLifecycle";
-import { roundToSpxTick } from "../../../lib/spxTick";
+import { roundToSpxTick, roundToSpyTick } from "../../../lib/spxTick";
 import type { LegData } from "./types";
 
 const ACTIVE_STATES = new Set<LifecycleState>([
@@ -268,12 +268,16 @@ function ProfitTargetLine({
   // reads as a broken field; show the intent instead.
   const holdToExpiration = profitTargetPct >= 1.0;
 
-  // SPX/SPXW options trade in $0.10 tick increments above $3 ($0.05
-  // below). The raw math usually lands off-tick — round to the tick grid
-  // the broker actually accepts so the UI shows exactly what the daemon
-  // would put on the broker ticket.
+  // Tick grid differs by underlying. SPX/SPXW: $0.05 under $3, $0.10
+  // above. SPY (penny pilot): $0.01 under $3, $0.05 above. Today credit
+  // strategies are all SPY and debit strategies are all SPX, so
+  // entry_direction is a reliable proxy. This coupling will need to be
+  // formalized (e.g. an explicit underlying field on the spec) if a
+  // credit SPX structure or a debit SPY structure ever joins the mix.
   const multiplier = isCredit ? 1 - profitTargetPct : 1 + profitTargetPct;
-  const ptTarget = roundToSpxTick(basisDebit * multiplier);
+  const ptTarget = isCredit
+    ? roundToSpyTick(basisDebit * multiplier)
+    : roundToSpxTick(basisDebit * multiplier);
   const pctLabel = `${(profitTargetPct * 100).toFixed(0)}%`;
   const targetLabel = holdToExpiration
     ? "Hold to expiration"
