@@ -166,7 +166,7 @@ function StrategyMonitorCardImpl({
           capital-allocation context isn't plumbed in by the caller, or when
           the lifecycle state doesn't warrant it (no point showing a size
           recommendation on a strategy that's INACTIVE all day). */}
-      {policy && portfolioSize != null && shouldShowSuggested(info.state, signal) && (
+      {policy && portfolioSize != null && shouldShowSuggested(info.state, signal, spec.entry_direction) && (
         <SuggestedRow
           spec={spec}
           signal={signal}
