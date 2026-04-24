@@ -28,7 +28,7 @@ import type { LegData } from "./types";
 export function shouldShowSuggested(
   state: LifecycleState,
   signal: string | null,
-  entryDirection: "debit" | "credit" = "debit",
+  entryDirection: "debit" | "credit",
 ): boolean {
   if (entryDirection === "credit") return false;
   const activeEnough =
