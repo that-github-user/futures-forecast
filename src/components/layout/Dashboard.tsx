@@ -139,7 +139,7 @@ export function Dashboard() {
           style={{
             width: 32,
             height: 32,
-            border: "3px solid #1e293b",
+            border: `3px solid ${colors.borderDim}`,
             borderTopColor: colors.accentBlue,
             borderRadius: "50%",
             animation: "spin 1s linear infinite",

@@ -91,7 +91,7 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy,
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 4, height: "100%", overflow: "hidden" }}>
       {/* Time range toggle */}
-      <div style={{ display: "flex", gap: 0, background: colors.bgInset, borderRadius: 4, border: "1px solid #1e293b", overflow: "hidden", flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 0, background: colors.bgInset, borderRadius: 4, border: `1px solid ${colors.borderDim}`, overflow: "hidden", flexShrink: 0 }}>
         {(["today", "month"] as const).map((r) => (
           <button
             key={r}
@@ -157,7 +157,7 @@ function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy }) {
     : colors.textMuted;
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 4px", background: colors.bgPanel, borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 4px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <MiniStat label="Coverage" value={accuracy.coverage_p10_p90 != null ? `${(accuracy.coverage_p10_p90 * 100).toFixed(0)}%` : "--"} color={covColor} sub="ideal ~80%" />
       <MiniStat label="Direction" value={accuracy.direction_hit_rate != null ? `${(accuracy.direction_hit_rate * 100).toFixed(0)}%` : "--"} color={dirColor} sub="hit rate" />
       <MiniStat label="Tracking" value={accuracy.mean_tracking_rmse_pts != null ? `${accuracy.mean_tracking_rmse_pts.toFixed(1)}` : "--"} color={trackColor} sub="RMSE pts" />
@@ -196,7 +196,7 @@ function SessionScorecard({ stats }: { stats: SessionStats }) {
     : [];
 
   return (
-    <div style={{ padding: "8px 10px", background: colors.bgPanel, borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ padding: "8px 10px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         {/* W/L record */}
         <div style={{ fontSize: 12, fontFamily: fonts.mono }}>
@@ -351,7 +351,7 @@ function PerformanceContext({ trades, pf }: { trades: Trade[]; pf: number | null
   }
 
   return (
-    <div style={{ padding: "6px 8px", background: colors.bgPanel, borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ padding: "6px 8px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 4 }}>
         <PerfStat label="Avg Win" value={avgWin > 0 ? `+${avgWin.toFixed(1)}` : "--"} color={colors.accentGreen} />
         <PerfStat label="Avg Loss" value={avgLoss.toFixed(1)} color={colors.accentRed} />

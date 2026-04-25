@@ -107,8 +107,8 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
             gap: 4,
             margin: "8px 0",
             padding: "8px 0",
-            borderTop: "1px solid #1e293b",
-            borderBottom: "1px solid #1e293b",
+            borderTop: `1px solid ${colors.borderDim}`,
+            borderBottom: `1px solid ${colors.borderDim}`,
           }}
         >
           {Object.entries(horizon_signals).map(([h, hs]) => {
@@ -172,7 +172,7 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
               right: 0,
               top: 0,
               bottom: 0,
-              background: `linear-gradient(90deg, #ef444460, ${color}40, #10b98160)`,
+              background: `linear-gradient(90deg, ${withAlpha(colors.accentRed, 0.38)}, ${withAlpha(color, 0.25)}, ${withAlpha(colors.accentGreen, 0.38)})`,
               borderRadius: 4,
             }}
           />
@@ -211,7 +211,7 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
           gridTemplateColumns: "1fr 1fr",
           gap: "8px 16px",
           fontSize: 11,
-          borderTop: "1px solid #1e293b",
+          borderTop: `1px solid ${colors.borderDim}`,
           paddingTop: 10,
         }}
       >
