@@ -1,33 +1,17 @@
-/* Dark trading terminal theme */
+/* LUMEN aesthetic — applied site-wide via CSS variable remapping.
+   The original token names (--bg-base, --text-primary, etc.) are
+   preserved so existing components keep working unchanged; only the
+   values they map to are swapped to the LUMEN palette. */
 
 @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
 /* ── Design tokens ── */
 :root {
-  --bg-base: #0a0e17;
-  --bg-panel: #111827;
-  --bg-elevated: #0d1117;
-  --bg-inset: #0f172a;
-  --border-dim: #1e293b;
-  --border-mid: #334155;
-  --border-bright: #475569;
-  --text-bright: #f8fafc;
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-dim: #475569;
-  --accent-blue: #3b82f6;
-  --accent-green: #10b981;
-  --accent-red: #ef4444;
-  --accent-red-light: #fca5a5;
-  --accent-amber: #f59e0b;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-
-  /* Lander tokens — additive, coexist with the trading-app palette
-     until the broader aesthetic refresh sweeps the rest of the site. */
+  /* LUMEN palette — primary source of truth for color. Everything
+     downstream (the trading-app aliases below) maps to these. */
   --paper: #0d0c0a;
   --paper-elev: #15130f;
+  --paper-deep: #08070a;
   --ink-100: #f5efe2;
   --ink-80: #c9c3b6;
   --ink-60: #8c877c;
@@ -35,8 +19,63 @@
   --ink-20: #2a2823;
   --pos-cream: #d6c79a;
   --neg-persimmon: #b8746a;
+  --neg-persimmon-light: #d4a59c;
   --lumen: #efc88b;
+  /* Burnt amber — preserves the three-state traffic-light semantic
+     (red/amber/green ↔ persimmon/warn/cream) for components that
+     encode severity by color. Visibly distinct from --lumen on one
+     side and --neg-persimmon on the other. Transitional: PR γ will
+     rework severity components to use shape/weight in addition to
+     color so the design's single-accent goal can be reached. */
+  --accent-warn: #cf9852;
+  /* Graphite-cool — secondary state color for components that use
+     "blue/green" pairings (SignalBadge GO_PLUS vs GO, strategy-type
+     swatches, active-state dots). Distinct from --lumen, --pos-cream,
+     and --accent-warn so 4-tone state palettes stay readable. Lumen
+     is reserved for brand-thesis moments only per design spec §2.1;
+     this token catches the "info / secondary entry" tier that
+     accent-blue used to fill in the trading-app palette. */
+  --accent-info: #8a96a1;
   --font-display: 'EB Garamond', Georgia, serif;
+
+  /* Spec parity — the design spec writes `--pos` / `--neg` for the
+     directional cream + persimmon. We expose both names. */
+  --pos: var(--pos-cream);
+  --neg: var(--neg-persimmon);
+
+  /* Backwards-compat aliases — original trading-app token names that
+     existing components reference. Each maps to a LUMEN value so the
+     whole site re-themes without component-level edits. */
+  --bg-base: var(--paper);
+  --bg-panel: var(--paper-elev);
+  --bg-elevated: var(--paper);
+  --bg-inset: var(--paper-deep);
+  --border-dim: var(--ink-20);
+  --border-mid: var(--ink-40);
+  --border-bright: var(--ink-60);
+  --text-bright: var(--ink-100);
+  --text-primary: var(--ink-100);
+  --text-secondary: var(--ink-80);
+  --text-muted: var(--ink-60);
+  --text-dim: var(--ink-40);
+  /* Accent aliases:
+     --accent-blue → --accent-info (graphite-cool, NOT lumen — lumen is
+       reserved for brand-thesis moments only per design spec §2.1)
+     --accent-amber → --accent-warn (preserves warning semantic, distinct
+       from --lumen so red/amber/green traffic lights still read as 3
+       distinct colors)
+     --accent-green → --pos-cream, --accent-red → --neg-persimmon
+     ("no green" rule for directional cues per design spec).
+     This 4-tone palette (info/warn/pos/neg) keeps SignalBadge's
+     GO_PLUS / GO / READY / SKIP visually distinct. */
+  --accent-blue: var(--accent-info);
+  --accent-amber: var(--accent-warn);
+  --accent-green: var(--pos-cream);
+  --accent-red: var(--neg-persimmon);
+  --accent-red-light: var(--neg-persimmon-light);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 * {
