@@ -12,6 +12,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { useState } from "react";
 import { formatHorizon } from "../../api/format";
 import type { HistoryEntry } from "../../api/types";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
@@ -80,36 +81,36 @@ export function EquityCurve({ history }: Props) {
     backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#1e293b",
-      borderColor: "#334155",
-      textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      backgroundColor: colors.borderDim,
+      borderColor: colors.borderMid,
+      textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
     },
     grid: { left: 50, right: 10, top: 10, bottom: 30 },
     xAxis: {
       type: "category",
       data: equity.map((e) => multiDay ? e.fullTime : e.time),
-      axisLabel: { color: "#94a3b8", fontSize: multiDay ? 8 : 10, interval: Math.max(0, Math.floor(equity.length / 6)), rotate: multiDay ? 30 : 0 },
-      axisLine: { lineStyle: { color: "#334155" } },
+      axisLabel: { color: colors.textSecondary, fontSize: multiDay ? 8 : 10, interval: Math.max(0, Math.floor(equity.length / 6)), rotate: multiDay ? 30 : 0 },
+      axisLine: { lineStyle: { color: colors.borderMid } },
     },
     yAxis: {
       type: "value",
       axisLabel: {
-        color: "#94a3b8",
-        fontFamily: "JetBrains Mono, monospace",
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
         fontSize: 10,
         formatter: (v: number) => `${v.toFixed(2)}%`,
       },
-      splitLine: { lineStyle: { color: "#1e293b" } },
-      axisLine: { lineStyle: { color: "#334155" } },
+      splitLine: { lineStyle: { color: colors.borderDim } },
+      axisLine: { lineStyle: { color: colors.borderMid } },
     },
     series: [
       {
         type: "line",
         data: equity.map((e) => e.value),
-        lineStyle: { color: isPositive ? "#10b981" : "#ef4444", width: 2 },
+        lineStyle: { color: isPositive ? colors.accentGreen : colors.accentRed, width: 2 },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: isPositive ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)" },
+            { offset: 0, color: isPositive ? withAlpha(colors.accentGreen, 0.3) : withAlpha(colors.accentRed, 0.3) },
             { offset: 1, color: "transparent" },
           ]),
         },
@@ -122,12 +123,12 @@ export function EquityCurve({ history }: Props) {
   if (equity.length === 0) {
     return (
       <div className="panel" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#64748b" }}>Awaiting realized outcomes...</span>
+        <span style={{ color: colors.textMuted }}>Awaiting realized outcomes...</span>
       </div>
     );
   }
 
-  const lineColor = isPositive ? "#10b981" : "#ef4444";
+  const lineColor = isPositive ? colors.accentGreen : colors.accentRed;
 
   return (
     <div className="panel" style={{ height: "100%" }}>
@@ -141,21 +142,21 @@ export function EquityCurve({ history }: Props) {
                 key={h}
                 onClick={() => setSelectedHorizon(h)}
                 style={{
-                  background: h === selectedHorizon ? lineColor : "#1e293b",
-                  color: h === selectedHorizon ? "#fff" : "#94a3b8",
-                  border: "1px solid #334155",
+                  background: h === selectedHorizon ? lineColor : colors.borderDim,
+                  color: h === selectedHorizon ? colors.textPrimary : colors.textSecondary,
+                  border: `1px solid ${colors.borderMid}`,
                   borderRadius: 4,
                   padding: "1px 5px",
                   fontSize: 9,
                   cursor: "pointer",
-                  fontFamily: "JetBrains Mono, monospace",
+                  fontFamily: fonts.mono,
                 }}
               >
                 {formatHorizon(h)}
               </button>
             ))}
           </div>
-          <span style={{ color: lineColor, fontFamily: "JetBrains Mono, monospace", fontSize: 13 }}>
+          <span style={{ color: lineColor, fontFamily: fonts.mono, fontSize: 13 }}>
             {isPositive ? "+" : ""}{(cumReturn * 100).toFixed(3)}%
           </span>
         </div>

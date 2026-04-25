@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from "react";
 import type { PredictionResponse } from "../../api/types";
+import { colors } from "../../styles/tokens";
 
 interface Cluster {
   label: string;
@@ -93,16 +94,19 @@ export function ScenarioCluster({
       }
     }
 
-    // Build cluster objects
+    // Build cluster objects. Renamed from `colors` → `clusterColors`
+    // to avoid shadowing the imported `colors` token map. Seven cluster
+    // types map to seven LUMEN tones — warm tones for positive variants,
+    // persimmon family for negative, accent-info for the range/neutral.
     const result: Cluster[] = [];
-    const colors: Record<string, string> = {
-      "Bullish Breakout": "#10b981",
-      "Bearish Breakdown": "#ef4444",
-      "Range Bound": "#3b82f6",
-      "Bullish Fade": "#a3e635",
-      "Bearish Fade": "#f97316",
-      "Up Drift": "#34d399",
-      "Down Drift": "#fb7185",
+    const clusterColors: Record<string, string> = {
+      "Bullish Breakout": colors.accentGreen,        // pos-cream
+      "Bearish Breakdown": colors.accentRed,         // neg-persimmon
+      "Range Bound": colors.accentBlue,              // accent-info graphite
+      "Bullish Fade": colors.lumen,                  // warm secondary positive
+      "Bearish Fade": colors.accentAmber,            // burnt amber (caution)
+      "Up Drift": colors.ink80,                      // subtle bone-grey positive
+      "Down Drift": colors.accentRedLight,           // light persimmon
     };
 
     for (const [label, members] of merged) {
@@ -122,7 +126,7 @@ export function ScenarioCluster({
         indices,
         meanReturn,
         meanPath,
-        color: colors[label] ?? "#94a3b8",
+        color: clusterColors[label] ?? colors.textSecondary,
       });
     }
 
@@ -143,7 +147,7 @@ export function ScenarioCluster({
 
   if (!clusters.length) {
     return (
-      <div className="scenario-cluster" style={{ color: "#64748b", fontSize: 12, padding: 16, textAlign: "center" }}>
+      <div className="scenario-cluster" style={{ color: colors.textMuted, fontSize: 12, padding: 16, textAlign: "center" }}>
         No sample paths available
       </div>
     );
@@ -170,7 +174,7 @@ export function ScenarioCluster({
           </div>
           <div
             className="scenario-return"
-            style={{ color: c.meanReturn >= 0 ? "#10b981" : "#ef4444" }}
+            style={{ color: c.meanReturn >= 0 ? colors.accentGreen : colors.accentRed }}
           >
             {c.meanReturn >= 0 ? "+" : ""}
             {(c.meanReturn * lastClose / 100).toFixed(1)} pts
@@ -201,7 +205,7 @@ function Sparkline({ path, color, lastClose }: { path: number[]; color: string; 
 
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-      <line x1={pad} y1={refY} x2={w - pad} y2={refY} stroke="#334155" strokeWidth={0.5} strokeDasharray="2,2" />
+      <line x1={pad} y1={refY} x2={w - pad} y2={refY} stroke={colors.borderMid} strokeWidth={0.5} strokeDasharray="2,2" />
       <polyline points={points.join(" ")} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

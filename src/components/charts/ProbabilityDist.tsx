@@ -11,6 +11,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { useState } from "react";
 import { formatHorizon } from "../../api/format";
 import type { PredictionResponse } from "../../api/types";
+import { colors, fonts } from "../../styles/tokens";
 
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
@@ -103,9 +104,9 @@ export function ProbabilityDist({ prediction }: Props) {
     backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#1e293b",
-      borderColor: "#334155",
-      textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      backgroundColor: colors.borderDim,
+      borderColor: colors.borderMid,
+      textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
       formatter: (params: unknown) => {
         const p = (params as { name: string; value: number }[])[0];
         if (!p) return "";
@@ -117,23 +118,23 @@ export function ProbabilityDist({ prediction }: Props) {
       type: "category",
       data: bins.map((b) => b.label),
       axisLabel: {
-        color: "#94a3b8",
+        color: colors.textSecondary,
         fontSize: 8,
         rotate: bins.length > 8 ? 45 : 0,
         overflow: "truncate" as const,
         width: 50,
       },
-      axisLine: { lineStyle: { color: "#334155" } },
+      axisLine: { lineStyle: { color: colors.borderMid } },
     },
     yAxis: {
       type: "value",
       axisLabel: {
-        color: "#94a3b8",
-        fontFamily: "JetBrains Mono, monospace",
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
         fontSize: 10,
       },
-      splitLine: { lineStyle: { color: "#1e293b" } },
-      axisLine: { lineStyle: { color: "#334155" } },
+      splitLine: { lineStyle: { color: colors.borderDim } },
+      axisLine: { lineStyle: { color: colors.borderMid } },
     },
     series: [
       {
@@ -141,7 +142,7 @@ export function ProbabilityDist({ prediction }: Props) {
         data: bins.map((b) => ({
           value: b.count,
           itemStyle: {
-            color: b.midReturn >= 0 ? "#10b981" : "#ef4444",
+            color: b.midReturn >= 0 ? colors.accentGreen : colors.accentRed,
             borderRadius: [3, 3, 0, 0],
           },
         })),
@@ -150,7 +151,7 @@ export function ProbabilityDist({ prediction }: Props) {
     ],
   };
 
-  const barColor = "#3b82f6";
+  const barColor = colors.accentBlue;
 
   return (
     <div className="panel" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -162,14 +163,14 @@ export function ProbabilityDist({ prediction }: Props) {
               key={h}
               onClick={() => setSelectedIdx(idx)}
               style={{
-                background: idx === selectedIdx ? barColor : "#1e293b",
-                color: idx === selectedIdx ? "#fff" : "#94a3b8",
-                border: "1px solid #334155",
+                background: idx === selectedIdx ? barColor : colors.borderDim,
+                color: idx === selectedIdx ? colors.textPrimary : colors.textSecondary,
+                border: `1px solid ${colors.borderMid}`,
                 borderRadius: 4,
                 padding: "2px 6px",
                 fontSize: 10,
                 cursor: "pointer",
-                fontFamily: "JetBrains Mono, monospace",
+                fontFamily: fonts.mono,
               }}
             >
               {formatHorizon(h)}
@@ -193,24 +194,24 @@ export function ProbabilityDist({ prediction }: Props) {
             display: "flex",
             justifyContent: "space-around",
             padding: "4px 2px 2px",
-            borderTop: "1px solid #1e293b",
-            fontFamily: "JetBrains Mono, monospace",
+            borderTop: `1px solid ${colors.borderDim}`,
+            fontFamily: fonts.mono,
             fontSize: 10,
             flexWrap: "wrap",
             gap: 2,
           }}
         >
           <span>
-            <span style={{ color: "#64748b" }}>P(up)</span>{" "}
-            <span style={{ color: "#10b981" }}>{(pUp * 100).toFixed(0)}%</span>
+            <span style={{ color: colors.textMuted }}>P(up)</span>{" "}
+            <span style={{ color: colors.accentGreen }}>{(pUp * 100).toFixed(0)}%</span>
           </span>
           <span>
-            <span style={{ color: "#64748b" }}>P(&gt;0.5%)</span>{" "}
-            <span style={{ color: "#10b981" }}>{(pBigUp * 100).toFixed(0)}%</span>
+            <span style={{ color: colors.textMuted }}>P(&gt;0.5%)</span>{" "}
+            <span style={{ color: colors.accentGreen }}>{(pBigUp * 100).toFixed(0)}%</span>
           </span>
           <span>
-            <span style={{ color: "#64748b" }}>P(&lt;-0.5%)</span>{" "}
-            <span style={{ color: "#ef4444" }}>{(pBigDown * 100).toFixed(0)}%</span>
+            <span style={{ color: colors.textMuted }}>P(&lt;-0.5%)</span>{" "}
+            <span style={{ color: colors.accentRed }}>{(pBigDown * 100).toFixed(0)}%</span>
           </span>
         </div>
       )}
