@@ -89,7 +89,7 @@ export function DCDashboard() {
             </span>
           )}
         </div>
-        <a href="#/" style={{
+        <a href="#/forecast" style={{
           color: colors.textMuted, fontSize: 11, fontFamily: fonts.sans,
           textDecoration: "none", padding: "4px 10px",
           background: colors.borderDim, borderRadius: 4,
