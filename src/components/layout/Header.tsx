@@ -6,6 +6,7 @@ import type { PredictionResponse } from "../../api/types";
 import type { Timeframe } from "../../api/timeframe";
 import { getTimeframeLabel } from "../../api/timeframe";
 import { CountdownTimer } from "../indicators/CountdownTimer";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 
 // Shared ET formatter — declaring this at module scope so the loop
 // below doesn't rebuild it per candle. Intl.DateTimeFormat is the
@@ -68,10 +69,10 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
   const sessionChange = prediction.last_close - refPrice;
   const sessionChangePct = refPrice !== 0 ? (sessionChange / refPrice) * 100 : 0;
   const changePositive = sessionChange >= 0;
-  const changeColor = changePositive ? "#10b981" : "#ef4444";
+  const changeColor = changePositive ? colors.accentGreen : colors.accentRed;
 
   const marketStatusColor =
-    marketStatus === "RTH" ? "#10b981" : marketStatus === "ETH" ? "#f59e0b" : "#ef4444";
+    marketStatus === "RTH" ? colors.accentGreen : marketStatus === "ETH" ? colors.accentAmber : colors.accentRed;
 
   return (
     <header className="dashboard-header">
@@ -81,8 +82,8 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
             margin: 0,
             fontSize: 18,
             fontWeight: 700,
-            fontFamily: "Inter, sans-serif",
-            color: "#e2e8f0",
+            fontFamily: fonts.sans,
+            color: colors.textPrimary,
             letterSpacing: 0.5,
           }}
         >
@@ -92,17 +93,17 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
         {/* Price ticker */}
         <span
           style={{
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: fonts.mono,
             fontSize: 16,
             fontWeight: 700,
-            color: "#e2e8f0",
+            color: colors.textPrimary,
           }}
         >
           {prediction.last_close.toFixed(2)}
         </span>
         <span
           style={{
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: fonts.mono,
             fontSize: 13,
             fontWeight: 600,
             color: changeColor,
@@ -118,7 +119,7 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
               fontSize: 10,
               fontWeight: 600,
               color: marketStatusColor,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
               background: marketStatusColor + "18",
               border: `1px solid ${marketStatusColor}40`,
               padding: "2px 8px",
@@ -133,9 +134,9 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
         <span
           style={{
             fontSize: 11,
-            color: "#64748b",
-            fontFamily: "JetBrains Mono, monospace",
-            background: "#1e293b",
+            color: colors.textMuted,
+            fontFamily: fonts.mono,
+            background: colors.borderDim,
             padding: "2px 8px",
             borderRadius: 4,
           }}
@@ -149,18 +150,18 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
           const n = modelHealth.nScored;
           let label: string;
           let color: string;
-          if (n < 10) { label = "Initializing"; color = "#64748b"; }
-          else if (cov == null) { label = "No Data"; color = "#64748b"; }
-          else if (cov >= 0.70 && cov <= 0.90) { label = "Calibrated"; color = "#10b981"; }
-          else if (cov > 0.90) { label = "Bands Wide"; color = "#f59e0b"; }
-          else { label = "Check Model"; color = "#ef4444"; }
+          if (n < 10) { label = "Initializing"; color = colors.textMuted; }
+          else if (cov == null) { label = "No Data"; color = colors.textMuted; }
+          else if (cov >= 0.70 && cov <= 0.90) { label = "Calibrated"; color = colors.accentGreen; }
+          else if (cov > 0.90) { label = "Bands Wide"; color = colors.accentAmber; }
+          else { label = "Check Model"; color = colors.accentRed; }
           return (
             <span
               style={{
                 fontSize: 9,
                 fontWeight: 600,
                 color,
-                fontFamily: "Inter, sans-serif",
+                fontFamily: fonts.sans,
                 background: color + "18",
                 border: `1px solid ${color}40`,
                 padding: "2px 8px",
@@ -187,17 +188,17 @@ export function Header({ instrument, connected, lastPredictionTime, prediction, 
               width: 8,
               height: 8,
               borderRadius: "50%",
-              background: connected ? "#10b981" : "#ef4444",
+              background: connected ? colors.accentGreen : colors.accentRed,
               boxShadow: connected
-                ? "0 0 6px rgba(16, 185, 129, 0.5)"
-                : "0 0 6px rgba(239, 68, 68, 0.5)",
+                ? `0 0 6px ${withAlpha(colors.accentGreen, 0.5)}`
+                : `0 0 6px ${withAlpha(colors.accentRed, 0.5)}`,
             }}
           />
           <span
             style={{
               fontSize: 11,
-              color: connected ? "#10b981" : "#ef4444",
-              fontFamily: "JetBrains Mono, monospace",
+              color: connected ? colors.accentGreen : colors.accentRed,
+              fontFamily: fonts.mono,
             }}
           >
             {connected ? "LIVE" : "OFFLINE"}

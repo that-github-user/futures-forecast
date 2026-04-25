@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { colors, fonts } from "../../styles/tokens";
 
 interface Props {
   lastPredictionTime: string | null;
@@ -67,9 +68,9 @@ export function CountdownTimer({ lastPredictionTime, lastBarTime, intervalSecond
           display: "flex",
           alignItems: "center",
           gap: 6,
-          fontFamily: "JetBrains Mono, monospace",
+          fontFamily: fonts.mono,
           fontSize: 12,
-          color: "#64748b",
+          color: colors.textMuted,
         }}
       >
         <div
@@ -77,7 +78,7 @@ export function CountdownTimer({ lastPredictionTime, lastBarTime, intervalSecond
             width: 6,
             height: 6,
             borderRadius: "50%",
-            background: "#334155",
+            background: colors.borderMid,
           }}
         />
         Waiting...
@@ -97,21 +98,21 @@ export function CountdownTimer({ lastPredictionTime, lastBarTime, intervalSecond
 
   if (isStale) {
     display = "STALE";
-    textColor = "#ef4444";
-    dotColor = "#ef4444";
+    textColor = colors.accentRed;
+    dotColor = colors.accentRed;
     dotAnimation = "pulse 1s infinite";
   } else if (overdue) {
     const oSec = overdueSeconds % 60;
     display = `overdue ${overdueMinutes}m ${oSec.toString().padStart(2, "0")}s`;
-    textColor = "#f59e0b";
-    dotColor = "#f59e0b";
+    textColor = colors.accentAmber;
+    dotColor = colors.accentAmber;
     dotAnimation = "pulse 1s infinite";
   } else {
     const minutes = Math.floor(remaining / 60);
     const seconds = remaining % 60;
     display = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-    textColor = remaining < 30 ? "#f59e0b" : "#64748b";
-    dotColor = remaining < 30 ? "#f59e0b" : "#334155";
+    textColor = remaining < 30 ? colors.accentAmber : colors.textMuted;
+    dotColor = remaining < 30 ? colors.accentAmber : colors.borderMid;
     dotAnimation = remaining < 30 ? "pulse 1s infinite" : undefined;
   }
 
@@ -121,7 +122,7 @@ export function CountdownTimer({ lastPredictionTime, lastBarTime, intervalSecond
         display: "flex",
         alignItems: "center",
         gap: 6,
-        fontFamily: "JetBrains Mono, monospace",
+        fontFamily: fonts.mono,
         fontSize: 12,
         color: textColor,
       }}

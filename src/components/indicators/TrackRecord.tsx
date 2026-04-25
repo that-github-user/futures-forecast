@@ -8,6 +8,7 @@
 import { useMemo, useState } from "react";
 import type { DailySummary, HistoryEntry, RollingAccuracy, SessionStats } from "../../api/types";
 import { CalendarHeatmap } from "../charts/CalendarHeatmap";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 
 type TimeRange = "today" | "month";
 
@@ -90,19 +91,19 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy,
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 4, height: "100%", overflow: "hidden" }}>
       {/* Time range toggle */}
-      <div style={{ display: "flex", gap: 0, background: "#0f172a", borderRadius: 4, border: "1px solid #1e293b", overflow: "hidden", flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 0, background: colors.bgInset, borderRadius: 4, border: `1px solid ${colors.borderDim}`, overflow: "hidden", flexShrink: 0 }}>
         {(["today", "month"] as const).map((r) => (
           <button
             key={r}
             onClick={() => setTimeRange(r)}
             style={{
               flex: 1,
-              background: timeRange === r ? "#1e293b" : "transparent",
-              color: timeRange === r ? "#e2e8f0" : "#475569",
+              background: timeRange === r ? colors.borderDim : "transparent",
+              color: timeRange === r ? colors.textPrimary : colors.textDim,
               border: "none",
               padding: "4px 8px",
               fontSize: 10,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
               fontWeight: 500,
               cursor: "pointer",
               textTransform: "capitalize",
@@ -123,7 +124,7 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy,
               <PerformanceContext trades={trades} pf={liveStats.pf} />
             </>
           ) : (
-            <div style={{ padding: 16, color: "#64748b", fontSize: 11, textAlign: "center" }}>
+            <div style={{ padding: 16, color: colors.textMuted, fontSize: 11, textAlign: "center" }}>
               Waiting for trade outcomes...
             </div>
           )}
@@ -143,24 +144,24 @@ export function TrackRecord({ history, liveStats, sessionStats, rollingAccuracy,
 
 function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy }) {
   const covColor = accuracy.coverage_p10_p90 != null
-    ? (accuracy.coverage_p10_p90 >= 0.70 && accuracy.coverage_p10_p90 <= 0.90 ? "#10b981"
-      : accuracy.coverage_p10_p90 < 0.50 ? "#ef4444" : "#f59e0b")
-    : "#64748b";
+    ? (accuracy.coverage_p10_p90 >= 0.70 && accuracy.coverage_p10_p90 <= 0.90 ? colors.accentGreen
+      : accuracy.coverage_p10_p90 < 0.50 ? colors.accentRed : colors.accentAmber)
+    : colors.textMuted;
   const dirColor = accuracy.direction_hit_rate != null
-    ? (accuracy.direction_hit_rate > 0.55 ? "#10b981"
-      : accuracy.direction_hit_rate >= 0.50 ? "#f59e0b" : "#ef4444")
-    : "#64748b";
+    ? (accuracy.direction_hit_rate > 0.55 ? colors.accentGreen
+      : accuracy.direction_hit_rate >= 0.50 ? colors.accentAmber : colors.accentRed)
+    : colors.textMuted;
   const trackColor = accuracy.mean_tracking_rmse_pts != null
-    ? (accuracy.mean_tracking_rmse_pts < 2 ? "#10b981"
-      : accuracy.mean_tracking_rmse_pts < 4 ? "#f59e0b" : "#ef4444")
-    : "#64748b";
+    ? (accuracy.mean_tracking_rmse_pts < 2 ? colors.accentGreen
+      : accuracy.mean_tracking_rmse_pts < 4 ? colors.accentAmber : colors.accentRed)
+    : colors.textMuted;
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 4px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 4px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <MiniStat label="Coverage" value={accuracy.coverage_p10_p90 != null ? `${(accuracy.coverage_p10_p90 * 100).toFixed(0)}%` : "--"} color={covColor} sub="ideal ~80%" />
       <MiniStat label="Direction" value={accuracy.direction_hit_rate != null ? `${(accuracy.direction_hit_rate * 100).toFixed(0)}%` : "--"} color={dirColor} sub="hit rate" />
       <MiniStat label="Tracking" value={accuracy.mean_tracking_rmse_pts != null ? `${accuracy.mean_tracking_rmse_pts.toFixed(1)}` : "--"} color={trackColor} sub="RMSE pts" />
-      <MiniStat label="n" value={`${accuracy.n_evaluated}`} color="#e2e8f0" sub="scored" />
+      <MiniStat label="n" value={`${accuracy.n_evaluated}`} color={colors.textPrimary} sub="scored" />
     </div>
   );
 }
@@ -168,9 +169,9 @@ function AccuracyStrip({ accuracy }: { accuracy: RollingAccuracy }) {
 function MiniStat({ label, value, color, sub }: { label: string; value: string; color: string; sub: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 8, color: "#64748b", marginBottom: 1 }}>{label}</div>
-      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: 7, color: "#475569", marginTop: 1 }}>{sub}</div>
+      <div style={{ fontSize: 8, color: colors.textMuted, marginBottom: 1 }}>{label}</div>
+      <div style={{ fontFamily: fonts.mono, fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 7, color: colors.textDim, marginTop: 1 }}>{sub}</div>
     </div>
   );
 }
@@ -178,7 +179,7 @@ function MiniStat({ label, value, color, sub }: { label: string; value: string; 
 /* ── Session Scorecard ── */
 
 function SessionScorecard({ stats }: { stats: SessionStats }) {
-  const pnlColor = stats.total_pnl_pts > 0 ? "#10b981" : stats.total_pnl_pts < 0 ? "#ef4444" : "#94a3b8";
+  const pnlColor = stats.total_pnl_pts > 0 ? colors.accentGreen : stats.total_pnl_pts < 0 ? colors.accentRed : colors.textSecondary;
 
   // Build streak dots (last N results from streak info)
   const streakDots = [];
@@ -195,22 +196,22 @@ function SessionScorecard({ stats }: { stats: SessionStats }) {
     : [];
 
   return (
-    <div style={{ padding: "8px 10px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ padding: "8px 10px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         {/* W/L record */}
-        <div style={{ fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}>
-          <span style={{ color: "#10b981", fontWeight: 700 }}>{stats.n_wins}W</span>
-          <span style={{ color: "#64748b" }}> / </span>
-          <span style={{ color: "#ef4444", fontWeight: 700 }}>{stats.n_losses}L</span>
+        <div style={{ fontSize: 12, fontFamily: fonts.mono }}>
+          <span style={{ color: colors.accentGreen, fontWeight: 700 }}>{stats.n_wins}W</span>
+          <span style={{ color: colors.textMuted }}> / </span>
+          <span style={{ color: colors.accentRed, fontWeight: 700 }}>{stats.n_losses}L</span>
           {stats.n_flat > 0 && (
             <>
-              <span style={{ color: "#64748b" }}> / </span>
-              <span style={{ color: "#94a3b8" }}>{stats.n_flat}F</span>
+              <span style={{ color: colors.textMuted }}> / </span>
+              <span style={{ color: colors.textSecondary }}>{stats.n_flat}F</span>
             </>
           )}
         </div>
         {/* Total P&L */}
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 16, fontWeight: 700, color: pnlColor }}>
+        <div style={{ fontFamily: fonts.mono, fontSize: 16, fontWeight: 700, color: pnlColor }}>
           {stats.total_pnl_pts >= 0 ? "+" : ""}{stats.total_pnl_pts.toFixed(2)} pts
         </div>
       </div>
@@ -219,7 +220,7 @@ function SessionScorecard({ stats }: { stats: SessionStats }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         {/* Streak dots */}
         <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-          <span style={{ fontSize: 9, color: "#64748b" }}>streak</span>
+          <span style={{ fontSize: 9, color: colors.textMuted }}>streak</span>
           {streakDots.length > 0 ? streakDots.map((type, i) => (
             <div
               key={i}
@@ -227,17 +228,17 @@ function SessionScorecard({ stats }: { stats: SessionStats }) {
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                background: type === "W" ? "#10b981" : "#ef4444",
+                background: type === "W" ? colors.accentGreen : colors.accentRed,
               }}
             />
           )) : (
-            <span style={{ fontSize: 9, color: "#475569" }}>--</span>
+            <span style={{ fontSize: 9, color: colors.textDim }}>--</span>
           )}
         </div>
 
         {/* Regime context */}
         {regimeEntries.length > 0 && (
-          <div style={{ fontSize: 9, color: "#94a3b8" }}>
+          <div style={{ fontSize: 9, color: colors.textSecondary }}>
             {regimeEntries.slice(0, 2).map(([regime, data]) => (
               <span key={regime} style={{ marginLeft: 8 }}>
                 {regime}: {(data as { n: number; wins: number }).wins}/{(data as { n: number }).n}
@@ -261,9 +262,9 @@ function TradeLog({ trades }: { trades: Trade[] }) {
       {reversed.map((t, i) => {
         const isWin = t.pnlPts > 0;
         const isLoss = t.pnlPts < 0;
-        const dirColor = t.direction === "LONG" ? "#10b981" : "#ef4444";
+        const dirColor = t.direction === "LONG" ? colors.accentGreen : colors.accentRed;
         const arrow = t.direction === "LONG" ? "\u2191" : "\u2193";
-        const bgTint = isWin ? "rgba(16, 185, 129, 0.04)" : isLoss ? "rgba(239, 68, 68, 0.04)" : "transparent";
+        const bgTint = isWin ? withAlpha(colors.accentGreen, 0.04) : isLoss ? withAlpha(colors.accentRed, 0.04) : "transparent";
 
         return (
           <div
@@ -278,20 +279,20 @@ function TradeLog({ trades }: { trades: Trade[] }) {
               fontSize: 11,
             }}
           >
-            <span style={{ color: "#64748b", fontFamily: "JetBrains Mono, monospace", fontSize: 10, minWidth: 36 }}>
+            <span style={{ color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, minWidth: 36 }}>
               {t.time}
             </span>
             <span style={{ color: dirColor, fontWeight: 700, fontSize: 13, minWidth: 16, textAlign: "center" }}>
               {arrow}
             </span>
-            <span style={{ color: "#94a3b8", fontFamily: "JetBrains Mono, monospace", fontSize: 10, minWidth: 52 }}>
+            <span style={{ color: colors.textSecondary, fontFamily: fonts.mono, fontSize: 10, minWidth: 52 }}>
               {t.entryPrice.toFixed(2)}
             </span>
             {t.regime && (
               <span style={{
                 fontSize: 8,
-                color: "#475569",
-                background: "#1e293b",
+                color: colors.textDim,
+                background: colors.borderDim,
                 padding: "1px 4px",
                 borderRadius: 3,
                 textTransform: "capitalize",
@@ -301,8 +302,8 @@ function TradeLog({ trades }: { trades: Trade[] }) {
             )}
             <span style={{ flex: 1 }} />
             <span style={{
-              color: isWin ? "#10b981" : isLoss ? "#ef4444" : "#94a3b8",
-              fontFamily: "JetBrains Mono, monospace",
+              color: isWin ? colors.accentGreen : isLoss ? colors.accentRed : colors.textSecondary,
+              fontFamily: fonts.mono,
               fontWeight: 600,
               fontSize: 11,
               minWidth: 52,
@@ -314,7 +315,7 @@ function TradeLog({ trades }: { trades: Trade[] }) {
         );
       })}
       {trades.length === 0 && (
-        <div style={{ padding: 12, color: "#64748b", fontSize: 11, textAlign: "center" }}>
+        <div style={{ padding: 12, color: colors.textMuted, fontSize: 11, textAlign: "center" }}>
           No trades yet this session
         </div>
       )}
@@ -350,12 +351,12 @@ function PerformanceContext({ trades, pf }: { trades: Trade[]; pf: number | null
   }
 
   return (
-    <div style={{ padding: "6px 8px", background: "#111827", borderRadius: 6, border: "1px solid #1e293b" }}>
+    <div style={{ padding: "6px 8px", background: colors.bgPanel, borderRadius: 6, border: `1px solid ${colors.borderDim}` }}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 4 }}>
-        <PerfStat label="Avg Win" value={avgWin > 0 ? `+${avgWin.toFixed(1)}` : "--"} color="#10b981" />
-        <PerfStat label="Avg Loss" value={avgLoss.toFixed(1)} color="#ef4444" />
-        <PerfStat label="Max DD" value={`-${maxDD.toFixed(1)}`} color="#f59e0b" />
-        <PerfStat label="PF" value={pf != null ? pf.toFixed(2) : "--"} color={pf == null ? "#64748b" : pf >= 1 ? "#10b981" : "#ef4444"} />
+        <PerfStat label="Avg Win" value={avgWin > 0 ? `+${avgWin.toFixed(1)}` : "--"} color={colors.accentGreen} />
+        <PerfStat label="Avg Loss" value={avgLoss.toFixed(1)} color={colors.accentRed} />
+        <PerfStat label="Max DD" value={`-${maxDD.toFixed(1)}`} color={colors.accentAmber} />
+        <PerfStat label="PF" value={pf != null ? pf.toFixed(2) : "--"} color={pf == null ? colors.textMuted : pf >= 1 ? colors.accentGreen : colors.accentRed} />
       </div>
       {equityPoints.length >= 2 && <EquitySparkline data={equityPoints} />}
     </div>
@@ -365,8 +366,8 @@ function PerformanceContext({ trades, pf }: { trades: Trade[]; pf: number | null
 function PerfStat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 8, color: "#64748b" }}>{label}</div>
-      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, fontWeight: 600, color }}>{value}</div>
+      <div style={{ fontSize: 8, color: colors.textMuted }}>{label}</div>
+      <div style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 600, color }}>{value}</div>
     </div>
   );
 }
@@ -386,11 +387,11 @@ function EquitySparkline({ data }: { data: number[] }) {
   const points = data.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
   const zeroY = toY(0);
   const lastVal = data[data.length - 1];
-  const lineColor = lastVal >= 0 ? "#10b981" : "#ef4444";
+  const lineColor = lastVal >= 0 ? colors.accentGreen : colors.accentRed;
 
   return (
     <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-      <line x1={pad} y1={zeroY} x2={w - pad} y2={zeroY} stroke="#334155" strokeWidth={0.5} strokeDasharray="2,2" />
+      <line x1={pad} y1={zeroY} x2={w - pad} y2={zeroY} stroke={colors.borderMid} strokeWidth={0.5} strokeDasharray="2,2" />
       <polyline points={points} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round" />
     </svg>
   );
