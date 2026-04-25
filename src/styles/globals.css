@@ -1,6 +1,6 @@
 /* Dark trading terminal theme */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
 /* ── Design tokens ── */
 :root {
@@ -23,6 +23,20 @@
   --accent-amber: #f59e0b;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  /* Lander tokens — additive, coexist with the trading-app palette
+     until the broader aesthetic refresh sweeps the rest of the site. */
+  --paper: #0d0c0a;
+  --paper-elev: #15130f;
+  --ink-100: #f5efe2;
+  --ink-80: #c9c3b6;
+  --ink-60: #8c877c;
+  --ink-40: #5a564f;
+  --ink-20: #2a2823;
+  --pos-cream: #d6c79a;
+  --neg-persimmon: #b8746a;
+  --lumen: #efc88b;
+  --font-display: 'EB Garamond', Georgia, serif;
 }
 
 * {
