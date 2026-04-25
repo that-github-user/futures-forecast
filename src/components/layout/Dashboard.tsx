@@ -20,6 +20,7 @@ import { AnalyticsCards } from "../indicators/AnalyticsCards";
 import { TrackRecord } from "../indicators/TrackRecord";
 import { SidebarTabs, type SidebarTab } from "./SidebarTabs";
 import { Header } from "./Header";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 
 export function Dashboard() {
   const { prediction, connected, demoMode, error, retryConnection } = usePrediction();
@@ -128,9 +129,9 @@ export function Dashboard() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0a0e17",
-          color: "#64748b",
-          fontFamily: "Inter, sans-serif",
+          background: colors.bgBase,
+          color: colors.textMuted,
+          fontFamily: fonts.sans,
           gap: 12,
         }}
       >
@@ -139,7 +140,7 @@ export function Dashboard() {
             width: 32,
             height: 32,
             border: "3px solid #1e293b",
-            borderTopColor: "#3b82f6",
+            borderTopColor: colors.accentBlue,
             borderRadius: "50%",
             animation: "spin 1s linear infinite",
           }}
@@ -165,19 +166,19 @@ export function Dashboard() {
       {demoMode && (
         <div className="demo-banner">
           Demo mode — showing simulated data.
-          {error && <span style={{ marginLeft: 8, color: "#94a3b8" }}>({error})</span>}
+          {error && <span style={{ marginLeft: 8, color: colors.textSecondary }}>({error})</span>}
           <button
             onClick={retryConnection}
             style={{
               marginLeft: 12,
-              background: "rgba(245, 158, 11, 0.2)",
-              border: "1px solid rgba(245, 158, 11, 0.4)",
-              color: "#f59e0b",
+              background: withAlpha(colors.accentAmber, 0.2),
+              border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
+              color: colors.accentAmber,
               borderRadius: 4,
               padding: "2px 10px",
               fontSize: 11,
               cursor: "pointer",
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
             }}
           >
             Retry Connection
@@ -206,9 +207,9 @@ export function Dashboard() {
               <TrackingToggle value={showTracking} onChange={setShowTracking} />
               <span
                 style={{
-                  fontFamily: "JetBrains Mono, monospace",
+                  fontFamily: fonts.mono,
                   fontSize: 12,
-                  color: "#94a3b8",
+                  color: colors.textSecondary,
                 }}
               >
                 {prediction.last_close.toFixed(2)}
@@ -336,26 +337,26 @@ function MarketClosedBanner({
   return (
     <div
       style={{
-        background: "rgba(239, 68, 68, 0.08)",
-        border: "1px solid rgba(239, 68, 68, 0.25)",
+        background: withAlpha(colors.accentRed, 0.08),
+        border: `1px solid ${withAlpha(colors.accentRed, 0.25)}`,
         borderRadius: 6,
         padding: "8px 16px",
         margin: "0 12px 8px",
         display: "flex",
         alignItems: "center",
         gap: 10,
-        fontFamily: "Inter, sans-serif",
+        fontFamily: fonts.sans,
         fontSize: 12,
       }}
     >
-      <span style={{ color: "#ef4444", fontWeight: 600, fontSize: 13 }}>
+      <span style={{ color: colors.accentRed, fontWeight: 600, fontSize: 13 }}>
         Market Closed
       </span>
-      <span style={{ color: "#94a3b8" }}>
+      <span style={{ color: colors.textSecondary }}>
         ES futures are offline. Predictions resume {formatNextOpen(nextMarketOpen)}.
       </span>
       {staleMinutes != null && staleMinutes > 10 && (
-        <span style={{ color: "#64748b", fontSize: 11 }}>
+        <span style={{ color: colors.textMuted, fontSize: 11 }}>
           Last prediction: {staleMinutes >= 60
             ? `${Math.floor(staleMinutes / 60)}h ${staleMinutes % 60}m ago`
             : `${staleMinutes}m ago`}

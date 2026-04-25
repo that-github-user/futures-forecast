@@ -5,6 +5,7 @@
  */
 
 import type { InvalidationInfo, RegimeInfo, RegimePerformance } from "../../api/types";
+import { colors } from "../../styles/tokens";
 
 interface Props {
   regime: RegimeInfo | null;
@@ -18,11 +19,11 @@ interface Props {
 }
 
 const REGIME_COLORS: Record<string, string> = {
-  trending: "#3b82f6",
-  "mean-reverting": "#f59e0b",
-  mean_reverting: "#f59e0b",
-  volatile: "#ef4444",
-  quiet: "#64748b",
+  trending: colors.accentBlue,
+  "mean-reverting": colors.accentAmber,
+  mean_reverting: colors.accentAmber,
+  volatile: colors.accentRed,
+  quiet: colors.textMuted,
 };
 
 export function AnalyticsCards({
@@ -34,27 +35,27 @@ export function AnalyticsCards({
   regimePerformance,
   direction,
 }: Props) {
-  const regimeColor = regime ? (REGIME_COLORS[regime.label] ?? "#64748b") : "#64748b";
+  const regimeColor = regime ? (REGIME_COLORS[regime.label] ?? colors.textMuted) : colors.textMuted;
   const regimeLabel = regime?.label?.replace("_", "-") ?? "--";
 
   // Exhaustion color ramp
   const exhVal = exhaustionScore ?? 0;
-  const exhColor = exhVal > 2 ? "#ef4444" : exhVal > 1 ? "#f59e0b" : "#10b981";
+  const exhColor = exhVal > 2 ? colors.accentRed : exhVal > 1 ? colors.accentAmber : colors.accentGreen;
   const exhPct = Math.min(exhVal / 3, 1) * 100;
   const exhAlert = exhVal > 2;
 
   // Agreement color
   const agrVal = ensembleAgreement ?? 0;
-  const agrColor = agrVal > 0.8 ? "#10b981" : agrVal > 0.5 ? "#f59e0b" : "#ef4444";
+  const agrColor = agrVal > 0.8 ? colors.accentGreen : agrVal > 0.5 ? colors.accentAmber : colors.accentRed;
 
   // Signal percentile color
   const pctVal = signalPercentile ?? 0;
-  const pctColor = pctVal > 75 ? "#10b981" : pctVal < 25 ? "#ef4444" : "#94a3b8";
+  const pctColor = pctVal > 75 ? colors.accentGreen : pctVal < 25 ? colors.accentRed : colors.textSecondary;
 
   // Invalidation arrow
   const invDir = invalidation?.price_direction;
   const invArrow = invDir === "below" ? "\u2193" : invDir === "above" ? "\u2191" : "\u2194";
-  const invColor = direction === "LONG" ? "#ef4444" : direction === "SHORT" ? "#ef4444" : "#94a3b8";
+  const invColor = direction === "LONG" ? colors.accentRed : direction === "SHORT" ? colors.accentRed : colors.textSecondary;
 
   return (
     <div className="analytics-cards-wrap">
@@ -89,7 +90,7 @@ export function AnalyticsCards({
           <div
             style={{
               height: 4,
-              background: "#1e293b",
+              background: colors.borderDim,
               borderRadius: 2,
               marginTop: 4,
               overflow: "hidden",

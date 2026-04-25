@@ -6,6 +6,7 @@
 
 import { formatHorizon } from "../../api/format";
 import type { RegimeInfo, SignalResponse } from "../../api/types";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 
 interface Props {
   signal: SignalResponse;
@@ -33,17 +34,17 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
 
   const color =
     bias === "BULLISH"
-      ? "#10b981"
+      ? colors.accentGreen
       : bias === "BEARISH"
-        ? "#ef4444"
-        : "#3b82f6";
+        ? colors.accentRed
+        : colors.accentBlue;
 
   const bgGlow =
     bias === "BULLISH"
-      ? "rgba(16, 185, 129, 0.06)"
+      ? withAlpha(colors.accentGreen, 0.06)
       : bias === "BEARISH"
-        ? "rgba(239, 68, 68, 0.06)"
-        : "rgba(59, 130, 246, 0.04)";
+        ? withAlpha(colors.accentRed, 0.06)
+        : withAlpha(colors.accentBlue, 0.04);
 
   // Convert returns to points
   const medianPts = expected_return * lastClose;
@@ -65,9 +66,9 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
         <span className="panel-title">Forecast Summary</span>
         <span
           style={{
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: fonts.mono,
             fontSize: 12,
-            color: "#94a3b8",
+            color: colors.textSecondary,
           }}
         >
           {lastClose.toFixed(2)}
@@ -81,17 +82,17 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
             fontSize: 22,
             fontWeight: 700,
             color,
-            fontFamily: "Inter, sans-serif",
+            fontFamily: fonts.sans,
             letterSpacing: 2,
           }}
         >
           {bias}
         </span>
-        <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: colors.textMuted, marginTop: 2 }}>
           median ensemble bias
         </div>
         {regime && (
-          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: colors.textSecondary, marginTop: 4 }}>
             {regime.label.replace("_", "-")} regime ({(regime.confidence * 100).toFixed(0)}% conf)
           </div>
         )}
@@ -112,12 +113,12 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
         >
           {Object.entries(horizon_signals).map(([h, hs]) => {
             const dirColor =
-              hs.direction === "LONG" ? "#10b981" : hs.direction === "SHORT" ? "#ef4444" : "#94a3b8";
+              hs.direction === "LONG" ? colors.accentGreen : hs.direction === "SHORT" ? colors.accentRed : colors.textSecondary;
             const arrow = hs.direction === "LONG" ? "\u2191" : hs.direction === "SHORT" ? "\u2193" : "\u2192";
             const expectedPts = hs.expected_return * lastClose;
             return (
               <div key={h} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>
+                <div style={{ fontSize: 9, color: colors.textMuted, marginBottom: 2 }}>
                   {formatHorizon(Number(h))}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: dirColor }}>
@@ -127,7 +128,7 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
                   style={{
                     fontSize: 10,
                     color: dirColor,
-                    fontFamily: "JetBrains Mono, monospace",
+                    fontFamily: fonts.mono,
                   }}
                 >
                   {expectedPts >= 0 ? "+" : ""}{expectedPts.toFixed(1)}
@@ -145,19 +146,19 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
             display: "flex",
             justifyContent: "space-between",
             fontSize: 10,
-            color: "#94a3b8",
+            color: colors.textSecondary,
             marginBottom: 4,
           }}
         >
           <span>P10-P90 Spread</span>
-          <span style={{ fontFamily: "JetBrains Mono, monospace" }}>
+          <span style={{ fontFamily: fonts.mono }}>
             {spreadPts.toFixed(1)} pts
           </span>
         </div>
         <div
           style={{
             height: 8,
-            background: "#1e293b",
+            background: colors.borderDim,
             borderRadius: 4,
             overflow: "hidden",
             position: "relative",
@@ -193,7 +194,7 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
             display: "flex",
             justifyContent: "space-between",
             fontSize: 9,
-            color: "#64748b",
+            color: colors.textMuted,
             marginTop: 2,
           }}
         >
@@ -217,23 +218,23 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
         <StatItem
           label="Median Move"
           value={`${medianPts >= 0 ? "+" : ""}${medianPts.toFixed(1)} pts`}
-          color={medianPts > 0 ? "#10b981" : medianPts < 0 ? "#ef4444" : "#94a3b8"}
+          color={medianPts > 0 ? colors.accentGreen : medianPts < 0 ? colors.accentRed : colors.textSecondary}
         />
         <StatItem
           label="Paths Up"
           value={`${(long_frac * 100).toFixed(0)}%`}
           subtitle="% of paths ending higher"
-          color={long_frac > 0.55 ? "#10b981" : long_frac < 0.45 ? "#ef4444" : "#94a3b8"}
+          color={long_frac > 0.55 ? colors.accentGreen : long_frac < 0.45 ? colors.accentRed : colors.textSecondary}
         />
         <StatItem
           label="Downside Risk (P10)"
           value={`${p10Pts >= 0 ? "+" : ""}${p10Pts.toFixed(1)} pts`}
-          color="#ef4444"
+          color={colors.accentRed}
         />
         <StatItem
           label="Upside (P90)"
           value={`${p90Pts >= 0 ? "+" : ""}${p90Pts.toFixed(1)} pts`}
-          color="#10b981"
+          color={colors.accentGreen}
         />
         <StatItem
           label="Signal Sharpe"
@@ -253,8 +254,8 @@ export function SignalPanel({ signal, lastClose, regime }: Props) {
           color={(() => {
             const absP10 = Math.abs(p10Pts);
             const absP90 = Math.abs(p90Pts);
-            if (absP10 < 0.01) return "#94a3b8";
-            return absP90 / absP10 > 1.2 ? "#10b981" : "#ef4444";
+            if (absP10 < 0.01) return colors.textSecondary;
+            return absP90 / absP10 > 1.2 ? colors.accentGreen : colors.accentRed;
           })()}
         />
       </div>
@@ -275,11 +276,11 @@ function StatItem({
 }) {
   return (
     <div>
-      <div style={{ color: "#64748b", fontSize: 10 }}>{label}</div>
+      <div style={{ color: colors.textMuted, fontSize: 10 }}>{label}</div>
       <div
         style={{
-          color: color ?? "#e2e8f0",
-          fontFamily: "JetBrains Mono, monospace",
+          color: color ?? colors.textPrimary,
+          fontFamily: fonts.mono,
           fontSize: 13,
           fontWeight: 600,
         }}
@@ -287,7 +288,7 @@ function StatItem({
         {value}
       </div>
       {subtitle && (
-        <div style={{ color: "#475569", fontSize: 9, marginTop: 1 }}>{subtitle}</div>
+        <div style={{ color: colors.textDim, fontSize: 9, marginTop: 1 }}>{subtitle}</div>
       )}
     </div>
   );
