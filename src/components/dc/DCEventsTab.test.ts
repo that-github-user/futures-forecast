@@ -15,24 +15,27 @@ import { ivSourceCellStyle, ivSourceTitle } from "./DCEventsTab";
 type Source = DCSignalEvent["iv_source"];
 
 describe("ivSourceCellStyle", () => {
-  it("chain renders green", () => {
-    expect(ivSourceCellStyle("chain").color).toBe("#10b981");
+  // Hex values updated for the LUMEN palette (PR #61). The function's
+  // contract — chain/vix/default/null mapped to four distinct colors —
+  // is unchanged; only the underlying hex literals shift.
+  it("chain renders cream (positive)", () => {
+    expect(ivSourceCellStyle("chain").color).toBe("#d6c79a");
   });
-  it("vix renders amber", () => {
-    expect(ivSourceCellStyle("vix").color).toBe("#f59e0b");
+  it("vix renders burnt amber (warn)", () => {
+    expect(ivSourceCellStyle("vix").color).toBe("#cf9852");
   });
-  it("default renders red", () => {
-    expect(ivSourceCellStyle("default").color).toBe("#ef4444");
+  it("default renders persimmon (negative)", () => {
+    expect(ivSourceCellStyle("default").color).toBe("#b8746a");
   });
-  it("null renders grey", () => {
-    expect(ivSourceCellStyle(null).color).toBe("#64748b");
+  it("null renders graphite (muted)", () => {
+    expect(ivSourceCellStyle(null).color).toBe("#8c877c");
   });
-  it("unknown value falls back to grey", () => {
+  it("unknown value falls back to graphite", () => {
     // Defensive: if the backend ever ships a new enum value we don't
     // know about, the style should degrade gracefully rather than
     // throw or pick a misleading color.
     const sneaky = "unknown" as unknown as Source;
-    expect(ivSourceCellStyle(sneaky).color).toBe("#64748b");
+    expect(ivSourceCellStyle(sneaky).color).toBe("#8c877c");
   });
 });
 

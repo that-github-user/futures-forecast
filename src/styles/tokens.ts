@@ -23,20 +23,22 @@ export const colors = {
   // Borders — dim to bright (ink scale)
   borderDim: "#2a2823",   // --ink-20
   borderMid: "#5a564f",   // --ink-40
-  borderBright: "#8c877c",// --ink-60
+  borderBright: "#8c877c",// --ink-60 — same hex as textMuted by design (muted-on-muted)
   // Text — primary to dim (ink scale, bone-cream tones)
   textBright: "#f5efe2",   // --ink-100
   textPrimary: "#f5efe2",  // --ink-100
   textSecondary: "#c9c3b6",// --ink-80
-  textMuted: "#8c877c",    // --ink-60
+  textMuted: "#8c877c",    // --ink-60 — same hex as borderBright
   textDim: "#5a564f",      // --ink-40
   // Accents — single warm accent (lumen) for emphasis;
-  // bone-cream + persimmon for directional cues (no green per spec)
+  // bone-cream + persimmon for directional cues (no green per spec).
+  // accentAmber stays distinct from accentBlue/lumen so traffic-light
+  // UIs (e.g. SignalBadge READY/GO/GO+) keep three readable states.
   accentBlue: "#efc88b",       // --lumen
   accentGreen: "#d6c79a",      // --pos-cream
   accentRed: "#b8746a",        // --neg-persimmon
   accentRedLight: "#d4a59c",   // --neg-persimmon-light
-  accentAmber: "#efc88b",      // --lumen (consolidated)
+  accentAmber: "#cf9852",      // --accent-warn (burnt amber)
 } as const;
 
 export const fonts = {

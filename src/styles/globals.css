@@ -21,7 +21,19 @@
   --neg-persimmon: #b8746a;
   --neg-persimmon-light: #d4a59c;
   --lumen: #efc88b;
+  /* Burnt amber — preserves the three-state traffic-light semantic
+     (red/amber/green ↔ persimmon/warn/cream) for components that
+     encode severity by color. Visibly distinct from --lumen on one
+     side and --neg-persimmon on the other. Transitional: PR γ will
+     rework severity components to use shape/weight in addition to
+     color so the design's single-accent goal can be reached. */
+  --accent-warn: #cf9852;
   --font-display: 'EB Garamond', Georgia, serif;
+
+  /* Spec parity — the design spec writes `--pos` / `--neg` for the
+     directional cream + persimmon. We expose both names. */
+  --pos: var(--pos-cream);
+  --neg: var(--neg-persimmon);
 
   /* Backwards-compat aliases — original trading-app token names that
      existing components reference. Each maps to a LUMEN value so the
@@ -38,11 +50,15 @@
   --text-secondary: var(--ink-80);
   --text-muted: var(--ink-60);
   --text-dim: var(--ink-40);
-  /* Accent aliases — blue/amber both fold to lumen (the single
-     site-wide accent). Green/red fold to bone-cream / persimmon
-     per the design spec's "no green" rule for directional cues. */
+  /* Accent aliases:
+     --accent-blue → --lumen (single brand accent, replaces info blue)
+     --accent-amber → --accent-warn (preserves warning semantic, distinct
+       from --lumen so red/amber/green traffic lights still read as 3
+       distinct colors)
+     --accent-green → --pos-cream, --accent-red → --neg-persimmon
+     ("no green" rule for directional cues per design spec) */
   --accent-blue: var(--lumen);
-  --accent-amber: var(--lumen);
+  --accent-amber: var(--accent-warn);
   --accent-green: var(--pos-cream);
   --accent-red: var(--neg-persimmon);
   --accent-red-light: var(--neg-persimmon-light);
