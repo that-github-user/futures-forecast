@@ -15,27 +15,28 @@
  */
 
 export const colors = {
-  // Backgrounds — progressively lighter panel chrome
-  bgBase: "#0a0e17",      // app background
-  bgPanel: "#111827",     // default panel / card
-  bgElevated: "#0d1117",  // header / tab-bar
-  bgInset: "#0f172a",     // inner sub-panel / sticky table head
-  // Borders — dim to bright
-  borderDim: "#1e293b",
-  borderMid: "#334155",
-  borderBright: "#475569",
-  // Text — primary to dim
-  textBright: "#f8fafc",   // near-white, used rarely for headline emphasis
-  textPrimary: "#e2e8f0",
-  textSecondary: "#94a3b8",
-  textMuted: "#64748b",
-  textDim: "#475569",      // same hex as borderBright by design — muted-on-muted
-  // Accents
-  accentBlue: "#3b82f6",
-  accentGreen: "#10b981",
-  accentRed: "#ef4444",
-  accentRedLight: "#fca5a5", // for "error text on dark bg" where #ef4444 reads too hot
-  accentAmber: "#f59e0b",
+  // Backgrounds — paper layers, warm graphite tones
+  bgBase: "#0d0c0a",      // app background (--paper)
+  bgPanel: "#15130f",     // default panel / card (--paper-elev)
+  bgElevated: "#0d0c0a",  // header / tab-bar (--paper, no elevation chrome)
+  bgInset: "#08070a",     // inner sub-panel / sticky table head (--paper-deep)
+  // Borders — dim to bright (ink scale)
+  borderDim: "#2a2823",   // --ink-20
+  borderMid: "#5a564f",   // --ink-40
+  borderBright: "#8c877c",// --ink-60
+  // Text — primary to dim (ink scale, bone-cream tones)
+  textBright: "#f5efe2",   // --ink-100
+  textPrimary: "#f5efe2",  // --ink-100
+  textSecondary: "#c9c3b6",// --ink-80
+  textMuted: "#8c877c",    // --ink-60
+  textDim: "#5a564f",      // --ink-40
+  // Accents — single warm accent (lumen) for emphasis;
+  // bone-cream + persimmon for directional cues (no green per spec)
+  accentBlue: "#efc88b",       // --lumen
+  accentGreen: "#d6c79a",      // --pos-cream
+  accentRed: "#b8746a",        // --neg-persimmon
+  accentRedLight: "#d4a59c",   // --neg-persimmon-light
+  accentAmber: "#efc88b",      // --lumen (consolidated)
 } as const;
 
 export const fonts = {

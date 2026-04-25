@@ -1,33 +1,17 @@
-/* Dark trading terminal theme */
+/* LUMEN aesthetic — applied site-wide via CSS variable remapping.
+   The original token names (--bg-base, --text-primary, etc.) are
+   preserved so existing components keep working unchanged; only the
+   values they map to are swapped to the LUMEN palette. */
 
 @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
 /* ── Design tokens ── */
 :root {
-  --bg-base: #0a0e17;
-  --bg-panel: #111827;
-  --bg-elevated: #0d1117;
-  --bg-inset: #0f172a;
-  --border-dim: #1e293b;
-  --border-mid: #334155;
-  --border-bright: #475569;
-  --text-bright: #f8fafc;
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-dim: #475569;
-  --accent-blue: #3b82f6;
-  --accent-green: #10b981;
-  --accent-red: #ef4444;
-  --accent-red-light: #fca5a5;
-  --accent-amber: #f59e0b;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-
-  /* Lander tokens — additive, coexist with the trading-app palette
-     until the broader aesthetic refresh sweeps the rest of the site. */
+  /* LUMEN palette — primary source of truth for color. Everything
+     downstream (the trading-app aliases below) maps to these. */
   --paper: #0d0c0a;
   --paper-elev: #15130f;
+  --paper-deep: #08070a;
   --ink-100: #f5efe2;
   --ink-80: #c9c3b6;
   --ink-60: #8c877c;
@@ -35,8 +19,36 @@
   --ink-20: #2a2823;
   --pos-cream: #d6c79a;
   --neg-persimmon: #b8746a;
+  --neg-persimmon-light: #d4a59c;
   --lumen: #efc88b;
   --font-display: 'EB Garamond', Georgia, serif;
+
+  /* Backwards-compat aliases — original trading-app token names that
+     existing components reference. Each maps to a LUMEN value so the
+     whole site re-themes without component-level edits. */
+  --bg-base: var(--paper);
+  --bg-panel: var(--paper-elev);
+  --bg-elevated: var(--paper);
+  --bg-inset: var(--paper-deep);
+  --border-dim: var(--ink-20);
+  --border-mid: var(--ink-40);
+  --border-bright: var(--ink-60);
+  --text-bright: var(--ink-100);
+  --text-primary: var(--ink-100);
+  --text-secondary: var(--ink-80);
+  --text-muted: var(--ink-60);
+  --text-dim: var(--ink-40);
+  /* Accent aliases — blue/amber both fold to lumen (the single
+     site-wide accent). Green/red fold to bone-cream / persimmon
+     per the design spec's "no green" rule for directional cues. */
+  --accent-blue: var(--lumen);
+  --accent-amber: var(--lumen);
+  --accent-green: var(--pos-cream);
+  --accent-red: var(--neg-persimmon);
+  --accent-red-light: var(--neg-persimmon-light);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 * {
