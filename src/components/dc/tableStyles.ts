@@ -9,11 +9,11 @@
 import type { CSSProperties } from "react";
 import { colors, fonts } from "../../styles/tokens";
 
-/** Slightly-darker-than-bgInset tone used as the background for sticky
- *  table headers. Exported so filter-row inputs in DCEventsTab can
- *  match the sticky-header edge above them. Not in the shared palette
- *  — this is a DC-table-local visual detail. */
-export const STICKY_HEADER_BG = "#0f1520";
+/** Sticky-header background — uses bgInset (paper-deep) which is the
+ *  natural "darker than panel" tone in the LUMEN palette. Exported so
+ *  filter-row inputs in DCEventsTab can match the sticky-header edge
+ *  above them. */
+export const STICKY_HEADER_BG = colors.bgInset;
 
 export const tableStyle: CSSProperties = {
   width: "100%",

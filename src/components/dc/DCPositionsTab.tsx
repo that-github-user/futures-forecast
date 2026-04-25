@@ -139,9 +139,10 @@ const DRIFT_ERROR = 0.15;
 
 // Shared style for the two error banners in BrokerRealityPanel
 // (conId-collision + full-drift). Same visual treatment; extracted to
-// avoid two copies of the identical inline-style block. `#fecaca`
-// (Tailwind red-200) is a softer red than accentRed / accentRedLight,
-// used only here for body text on the dark error-banner background.
+// avoid two copies of the identical inline-style block. accentRedLight
+// (persimmon-light) is the softer-red token for body text on the dark
+// error-banner background — distinct from accentRed (used for the
+// banner border) so the message text stays readable inside the tint.
 const errorBannerStyle: React.CSSProperties = {
   background: withAlpha(colors.accentRed, 0.12),
   border: `1px solid ${withAlpha(colors.accentRed, 0.45)}`,
@@ -149,7 +150,7 @@ const errorBannerStyle: React.CSSProperties = {
   padding: "8px 12px",
   marginBottom: 8,
   fontSize: 12,
-  color: "#fecaca",
+  color: colors.accentRedLight,
   fontFamily: fonts.sans,
 };
 
@@ -546,11 +547,12 @@ function BrokerOrdersTable({ orders }: { orders: DCBrokerOrder[] }) {
               <td style={tdStyle}>{o.tif}</td>
               <td style={{
                 ...tdStyle,
-                // "#f97316" (orange) is a one-off tier for Inactive
-                // order state — distinct from amber and red, not part
-                // of the shared palette.
+                // accentRedLight (persimmon-light) for Inactive — the
+                // mid-severity tier between accentAmber (warn) and
+                // accentRed (error). Same token used in DCEventsTab for
+                // the equivalent severity slot.
                 color: o.status === "Filled" ? colors.accentGreen
-                  : o.status === "Inactive" ? "#f97316"
+                  : o.status === "Inactive" ? colors.accentRedLight
                   : o.status === "Cancelled" ? colors.textMuted
                   : colors.textPrimary,
               }}>

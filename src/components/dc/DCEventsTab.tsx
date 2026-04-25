@@ -10,7 +10,7 @@ import { useMemo, useState } from "react";
 
 import { useDCSignalEvents } from "../../hooks/useDCSignalEvents";
 import type { DCSignalEvent } from "../../api/dcTypes";
-import { colors, fonts } from "../../styles/tokens";
+import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import {
   STICKY_HEADER_BG,
@@ -264,12 +264,12 @@ function MoveBadge({ event }: { event: DCSignalEvent }) {
       style={{
         fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8,
         marginLeft: 4, fontFamily: fonts.sans,
-        // #f97316 (orange) is a one-off severity tier for blocked_* outcomes
-        // that sit between warn (amber) and error (red) — not in the shared
-        // palette. Kept inline with matching 0x18/0x40 alpha variants.
-        color: "#f97316",
-        background: "#f9731618",
-        border: "1px solid #f9731640",
+        // accentRedLight (persimmon-light) tier — between accentAmber (warn)
+        // and accentRed (error) for blocked_* deconflict outcomes. Matches
+        // the OUTCOME column severity tiers in outcomeColor().
+        color: colors.accentRedLight,
+        background: withAlpha(colors.accentRedLight, 0.094),
+        border: `1px solid ${withAlpha(colors.accentRedLight, 0.25)}`,
         verticalAlign: "middle",
       }}
     >
@@ -294,13 +294,15 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
 function outcomeColor(outcome: string): string {
   if (outcome === "entered") return colors.accentGreen;
   if (outcome === "skipped_signal") return colors.textMuted;
-  // #eab308 (yellow) and #f97316 (orange) are one-off severity tiers used
-  // only for blocked_* outcome badging — distinct from the shared accent
-  // palette. Kept inline.
-  if (outcome === "blocked_sl" || outcome === "blocked_vix") return "#eab308";
+  // Two intermediate severity tiers between accentGreen (entered) and
+  // accentRed (hard-error blocked): accentAmber for soft-block (sl/vix
+  // recoverable on next cycle) and accentRedLight for mid-block
+  // (margin/risk/dup/size/deconflict — these are caller-side rejections,
+  // not infrastructure failures).
+  if (outcome === "blocked_sl" || outcome === "blocked_vix") return colors.accentAmber;
   if (outcome === "blocked_margin" || outcome === "blocked_risk"
       || outcome === "blocked_duplicate" || outcome === "blocked_size"
-      || outcome === "blocked_deconflict") return "#f97316";
+      || outcome === "blocked_deconflict") return colors.accentRedLight;
   if (outcome === "blocked_strike" || outcome === "blocked_legs"
       || outcome === "blocked_conn" || outcome === "blocked_data"
       || outcome === "blocked_order") return colors.accentRed;

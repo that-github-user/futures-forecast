@@ -5,7 +5,7 @@
  * sense (see isActiveLifecycleState below).
  */
 
-import { colors, fonts } from "../../../styles/tokens";
+import { colors, fonts, withAlpha } from "../../../styles/tokens";
 import type { DCLegDetail, LegName } from "../../../api/dcTypes";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import { formatExpiry } from "../../../lib/dcLifecycle";
@@ -186,24 +186,24 @@ function IVSourceBadge({
       case "chain":
         return {
           label: "IV chain",
-          bg: "rgba(16, 185, 129, 0.12)",
-          border: "rgba(16, 185, 129, 0.45)",
+          bg: withAlpha(colors.accentGreen, 0.12),
+          border: withAlpha(colors.accentGreen, 0.45),
           color: colors.accentGreen,
           title: "BS inverter is using live chain-sampled ATM IV — the fix is engaged for this strategy.",
         };
       case "vix":
         return {
           label: "IV vix",
-          bg: "rgba(245, 158, 11, 0.14)",
-          border: "rgba(245, 158, 11, 0.45)",
+          bg: withAlpha(colors.accentAmber, 0.14),
+          border: withAlpha(colors.accentAmber, 0.45),
           color: colors.accentAmber,
           title: "BS inverter fell back to VIX-scaled IV — the chain sample failed. Strikes may drift from market 20Δ; investigate if persistent.",
         };
       case "default":
         return {
           label: "IV default",
-          bg: "rgba(239, 68, 68, 0.14)",
-          border: "rgba(239, 68, 68, 0.45)",
+          bg: withAlpha(colors.accentRed, 0.14),
+          border: withAlpha(colors.accentRed, 0.45),
           color: colors.accentRed,
           title: "BS inverter has neither a chain sample nor VIX — using hardcoded 20% default. Cold-start or feature-refresh failure.",
         };
