@@ -236,6 +236,13 @@
   .lumen-hero {
     gap: 36px;
   }
+  .lumen-heroline .l1,
+  .lumen-heroline .l2 {
+    /* Drop the clamp floor on narrower viewports so the title
+       fits without clipping. 18vw + low floor scales sanely
+       all the way down to 320px. */
+    font-size: clamp(56px, 18vw, 140px);
+  }
   .lumen-heroline .l2 {
     margin-left: 48px;
   }
@@ -259,4 +266,22 @@
   .lumen-edition .seal {
     display: none;
   }
+  .lumen-heroline .l2 {
+    margin-left: 24px;
+  }
+  .lumen-whisper,
+  .lumen-auth {
+    margin-left: 24px;
+  }
+  .lumen-heroline .ornament {
+    width: 200px;
+    height: 200px;
+  }
 }
+
+/* Reduced-motion handling for the α denoise lives in the React
+   component (`LumenLander.tsx`), since SMIL <animate> doesn't honor
+   CSS-side `animation:none`. The component checks
+   matchMedia('(prefers-reduced-motion: reduce)') and skips mounting
+   the <animate> child — feDisplacementMap defaults scale=0, so the
+   character renders directly in resolved form. */

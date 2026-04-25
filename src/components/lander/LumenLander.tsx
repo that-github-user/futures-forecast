@@ -9,9 +9,15 @@
  * Visual reference: /tmp/lumen-proof/lander.html.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import "./LumenLander.css";
+
+/** Resolved at module load — operator's reduced-motion preference. */
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
 
 interface Props {
   /** Hash route to navigate to on successful unlock. Default `#/forecast`. */
@@ -22,6 +28,16 @@ export function LumenLander({ redirectTo = "#/forecast" }: Props) {
   const { tryUnlock } = useAuth();
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState<boolean>(prefersReducedMotion);
+
+  // Track changes to the OS-level reduced-motion preference live.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReducedMotion(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   // The lander is the auth surface; don't auto-redirect even when no
   // gate is configured — the user always sees the page and clicks
@@ -53,7 +69,7 @@ export function LumenLander({ redirectTo = "#/forecast" }: Props) {
 
         <section className="lumen-hero">
           <div className="lumen-heroline">
-            <Ornament />
+            <Ornament reducedMotion={reducedMotion} />
             <span className="l1">Denoised</span>
             <span className="l2">Alpha.</span>
           </div>
@@ -68,6 +84,7 @@ export function LumenLander({ redirectTo = "#/forecast" }: Props) {
             <input
               type="password"
               placeholder="Passphrase."
+              aria-label="Passphrase"
               autoComplete="off"
               autoFocus
               value={value}
@@ -141,8 +158,12 @@ function NoiseGradient() {
  * Atmospheric α — denoises into character on load, freezes.
  * Right-edge aligned to end of "Denoised" via title-anchored absolute
  * positioning (see CSS). Spec §3.4.
+ *
+ * When the operator prefers reduced motion, we skip the SMIL <animate>
+ * child entirely. feDisplacementMap defaults `scale=0`, so the α
+ * renders directly in its resolved (clean) form on first paint.
  */
-function Ornament() {
+function Ornament({ reducedMotion }: { reducedMotion: boolean }) {
   return (
     <div className="ornament" aria-hidden="true">
       <svg viewBox="0 0 480 480" preserveAspectRatio="xMidYMid meet">
@@ -161,15 +182,17 @@ function Ornament() {
               xChannelSelector="R"
               yChannelSelector="G"
             >
-              <animate
-                attributeName="scale"
-                values="220;180;120;60;25;8;0"
-                keyTimes="0;0.18;0.36;0.54;0.72;0.88;1"
-                dur="3.6s"
-                fill="freeze"
-                calcMode="spline"
-                keySplines="0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
-              />
+              {!reducedMotion && (
+                <animate
+                  attributeName="scale"
+                  values="220;180;120;60;25;8;0"
+                  keyTimes="0;0.18;0.36;0.54;0.72;0.88;1"
+                  dur="3.6s"
+                  fill="freeze"
+                  calcMode="spline"
+                  keySplines="0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
+                />
+              )}
             </feDisplacementMap>
           </filter>
         </defs>
