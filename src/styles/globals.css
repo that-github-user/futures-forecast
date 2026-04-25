@@ -28,6 +28,14 @@
      rework severity components to use shape/weight in addition to
      color so the design's single-accent goal can be reached. */
   --accent-warn: #cf9852;
+  /* Graphite-cool — secondary state color for components that use
+     "blue/green" pairings (SignalBadge GO_PLUS vs GO, strategy-type
+     swatches, active-state dots). Distinct from --lumen, --pos-cream,
+     and --accent-warn so 4-tone state palettes stay readable. Lumen
+     is reserved for brand-thesis moments only per design spec §2.1;
+     this token catches the "info / secondary entry" tier that
+     accent-blue used to fill in the trading-app palette. */
+  --accent-info: #8a96a1;
   --font-display: 'EB Garamond', Georgia, serif;
 
   /* Spec parity — the design spec writes `--pos` / `--neg` for the
@@ -51,13 +59,16 @@
   --text-muted: var(--ink-60);
   --text-dim: var(--ink-40);
   /* Accent aliases:
-     --accent-blue → --lumen (single brand accent, replaces info blue)
+     --accent-blue → --accent-info (graphite-cool, NOT lumen — lumen is
+       reserved for brand-thesis moments only per design spec §2.1)
      --accent-amber → --accent-warn (preserves warning semantic, distinct
        from --lumen so red/amber/green traffic lights still read as 3
        distinct colors)
      --accent-green → --pos-cream, --accent-red → --neg-persimmon
-     ("no green" rule for directional cues per design spec) */
-  --accent-blue: var(--lumen);
+     ("no green" rule for directional cues per design spec).
+     This 4-tone palette (info/warn/pos/neg) keeps SignalBadge's
+     GO_PLUS / GO / READY / SKIP visually distinct. */
+  --accent-blue: var(--accent-info);
   --accent-amber: var(--accent-warn);
   --accent-green: var(--pos-cream);
   --accent-red: var(--neg-persimmon);

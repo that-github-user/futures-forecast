@@ -21,7 +21,7 @@ describe("withAlpha", () => {
   });
 
   it("appends 80 for alpha 0.5", () => {
-    expect(withAlpha(colors.accentBlue, 0.5)).toBe("#efc88b80");
+    expect(withAlpha(colors.accentBlue, 0.5)).toBe("#8a96a180");
   });
 
   it("clamps negative alpha to 0", () => {
@@ -68,7 +68,7 @@ describe("token shape", () => {
     expect(colors.bgBase).toBe("#0d0c0a");
     expect(colors.textPrimary).toBe("#f5efe2");
     expect(colors.accentGreen).toBe("#d6c79a");
-    expect(colors.accentBlue).toBe("#efc88b");
+    expect(colors.accentBlue).toBe("#8a96a1");
     expect(colors.accentAmber).toBe("#cf9852");
     expect(fonts.sans).toMatch(/Inter/);
     expect(fonts.mono).toMatch(/JetBrains/);

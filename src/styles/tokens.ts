@@ -30,11 +30,12 @@ export const colors = {
   textSecondary: "#c9c3b6",// --ink-80
   textMuted: "#8c877c",    // --ink-60 — same hex as borderBright
   textDim: "#5a564f",      // --ink-40
-  // Accents — single warm accent (lumen) for emphasis;
-  // bone-cream + persimmon for directional cues (no green per spec).
-  // accentAmber stays distinct from accentBlue/lumen so traffic-light
-  // UIs (e.g. SignalBadge READY/GO/GO+) keep three readable states.
-  accentBlue: "#efc88b",       // --lumen
+  // Accents — single warm accent (lumen) reserved for brand-thesis
+  // moments per design spec §2.1. The trading-app's accent slots map
+  // to a 4-tone state palette (info/warn/pos/neg) so SignalBadge's
+  // GO_PLUS / GO / READY / SKIP and similar four-state UIs keep
+  // visual distinction.
+  accentBlue: "#8a96a1",       // --accent-info (graphite-cool)
   accentGreen: "#d6c79a",      // --pos-cream
   accentRed: "#b8746a",        // --neg-persimmon
   accentRedLight: "#d4a59c",   // --neg-persimmon-light
