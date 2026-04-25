@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from "react";
 import type { DailySummary } from "../../api/types";
+import { colors, fonts } from "../../styles/tokens";
 
 interface Props {
   summaries: DailySummary[];
@@ -30,7 +31,7 @@ function getETNow() {
  * Uses a continuous HSL interpolation for smooth gradients.
  */
 function getPnlColor(pnl: number, monthMin: number, monthMax: number): string {
-  if (pnl === 0) return "#475569";
+  if (pnl === 0) return colors.textDim;
 
   // Compute intensity as fraction of the month's range on each side
   // Use at least ±2 pts as floor so very quiet months still show some range
@@ -41,13 +42,15 @@ function getPnlColor(pnl: number, monthMin: number, monthMax: number): string {
     : Math.min(-pnl / negMax, 1);
 
   if (pnl > 0) {
-    // Green ramp: HSL(160, 72%, L) where L goes from 62% (faint) to 36% (vivid)
-    const lightness = 62 - t * 26;
-    return `hsl(160, 72%, ${lightness}%)`;
+    // Cream-amber ramp (LUMEN positive): HSL(40, 45%, L), L from 68% (faint cream)
+    // to 48% (saturated amber). Tracks the warm tones from --pos-cream → --lumen.
+    const lightness = 68 - t * 20;
+    return `hsl(40, 45%, ${lightness}%)`;
   } else {
-    // Red ramp: HSL(0, 75%, L) where L goes from 70% (faint) to 44% (vivid)
-    const lightness = 70 - t * 26;
-    return `hsl(0, 75%, ${lightness}%)`;
+    // Persimmon ramp (LUMEN negative): HSL(12, 35%, L), L from 65% (faint persimmon)
+    // to 42% (deep persimmon). Tracks the dusty-red tones of --neg-persimmon.
+    const lightness = 65 - t * 23;
+    return `hsl(12, 35%, ${lightness}%)`;
   }
 }
 
@@ -125,17 +128,17 @@ export function CalendarHeatmap({ summaries }: Props) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <button
           onClick={() => setMonthOffset((p) => p - 1)}
-          style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: "2px 8px" }}
+          style={{ background: "none", border: "none", color: colors.textSecondary, cursor: "pointer", fontSize: 14, padding: "2px 8px" }}
         >
           &lt;
         </button>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", fontFamily: "Inter, sans-serif" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: colors.textPrimary, fontFamily: fonts.sans }}>
           {MONTH_NAMES[viewDate.getMonth()]} {viewDate.getFullYear()}
         </span>
         <button
           onClick={() => setMonthOffset((p) => Math.min(p + 1, 0))}
           disabled={monthOffset >= 0}
-          style={{ background: "none", border: "none", color: monthOffset >= 0 ? "#334155" : "#94a3b8", cursor: monthOffset >= 0 ? "default" : "pointer", fontSize: 14, padding: "2px 8px" }}
+          style={{ background: "none", border: "none", color: monthOffset >= 0 ? colors.borderMid : colors.textSecondary, cursor: monthOffset >= 0 ? "default" : "pointer", fontSize: 14, padding: "2px 8px" }}
         >
           &gt;
         </button>
@@ -144,7 +147,7 @@ export function CalendarHeatmap({ summaries }: Props) {
       {/* Day-of-week headers */}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(7, ${cellSize}px)`, gap, justifyContent: "center", marginBottom: 2 }}>
         {DAY_LABELS.map((d) => (
-          <div key={d} style={{ fontSize: 8, color: "#64748b", textAlign: "center" }}>{d}</div>
+          <div key={d} style={{ fontSize: 8, color: colors.textMuted, textAlign: "center" }}>{d}</div>
         ))}
       </div>
 
@@ -160,10 +163,10 @@ export function CalendarHeatmap({ summaries }: Props) {
           const bg = hasData
             ? getPnlColor(cell.pnl!, monthMin, monthMax)
             : cell.isWeekend
-              ? "#0f172a"
+              ? colors.bgInset
               : cell.isFuture
-                ? "#0f172a"
-                : "#1e293b";
+                ? colors.bgInset
+                : colors.borderDim;
 
           return (
             <div
@@ -180,10 +183,10 @@ export function CalendarHeatmap({ summaries }: Props) {
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 9,
-                fontFamily: "JetBrains Mono, monospace",
-                color: hasData ? "#fff" : "#475569",
+                fontFamily: fonts.mono,
+                color: hasData ? colors.textPrimary : colors.textDim,
                 fontWeight: isToday ? 700 : 400,
-                border: isToday ? "1.5px solid #e2e8f0" : "1px solid transparent",
+                border: isToday ? `1.5px solid ${colors.textPrimary}` : "1px solid transparent",
                 cursor: hasData ? "pointer" : "default",
                 transition: "transform 0.1s",
                 transform: hoveredDate === cell.date ? "scale(1.15)" : "scale(1)",
@@ -200,16 +203,16 @@ export function CalendarHeatmap({ summaries }: Props) {
         <div style={{
           marginTop: 6,
           padding: "6px 10px",
-          background: "#0f172a",
+          background: colors.bgInset,
           borderRadius: 4,
-          border: "1px solid #1e293b",
+          border: `1px solid ${colors.borderDim}`,
           fontSize: 10,
-          fontFamily: "JetBrains Mono, monospace",
-          color: "#94a3b8",
+          fontFamily: fonts.mono,
+          color: colors.textSecondary,
         }}>
-          <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{hoveredDate}</span>
+          <span style={{ color: colors.textPrimary, fontWeight: 600 }}>{hoveredDate}</span>
           {" | "}
-          <span style={{ color: hoveredSummary.total_pnl_pts >= 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+          <span style={{ color: hoveredSummary.total_pnl_pts >= 0 ? colors.accentGreen : colors.accentRed, fontWeight: 600 }}>
             {hoveredSummary.total_pnl_pts >= 0 ? "+" : ""}{hoveredSummary.total_pnl_pts.toFixed(1)} pts
           </span>
           {" | "}
@@ -220,8 +223,8 @@ export function CalendarHeatmap({ summaries }: Props) {
 
       {/* Month summary */}
       {monthSummaries.length > 0 && (
-        <div style={{ marginTop: 6, fontSize: 10, color: "#94a3b8", textAlign: "center", fontFamily: "JetBrains Mono, monospace" }}>
-          <span style={{ color: monthPnl >= 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+        <div style={{ marginTop: 6, fontSize: 10, color: colors.textSecondary, textAlign: "center", fontFamily: fonts.mono }}>
+          <span style={{ color: monthPnl >= 0 ? colors.accentGreen : colors.accentRed, fontWeight: 600 }}>
             {monthPnl >= 0 ? "+" : ""}{monthPnl.toFixed(1)} pts
           </span>
           {" | "}{monthSummaries.length} days ({greenDays} green / {redDays} red)

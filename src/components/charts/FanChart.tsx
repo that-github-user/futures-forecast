@@ -21,6 +21,7 @@ import { formatHorizon } from "../../api/format";
 import type { PredictionResponse } from "../../api/types";
 import type { Timeframe } from "../../api/timeframe";
 import { getContextCandles, subsampleForecast } from "../../api/timeframe";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 
 echarts.use([
   LineChart,
@@ -37,6 +38,18 @@ export type ChartType = "line" | "candlestick" | "ohlc";
 export type ForecastStyle = "bands" | "spaghetti" | "gradient" | "density" | "ribbon";
 
 // ── Helpers for advanced forecast styles ──
+
+/** Convert a 6-digit hex color to an `"rgba(R, G, B,"` prefix that
+ *  callers concatenate with `"${alpha})"` to build a full rgba string.
+ *  Used by FanChart's band/gradient stops which need many varying-alpha
+ *  versions of the same directional hue without computing R/G/B each
+ *  call. The 6-digit hex contract matches LUMEN palette tokens. */
+function hexToRgbaPrefix(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, `;
+}
 
 /** Compute a percentile value from a sorted array at a given fraction (0–1) */
 function percentileFromSorted(sorted: number[], p: number): number {
@@ -220,13 +233,13 @@ export function FanChart({
   const isLong = signal.direction === "LONG";
   const isShort = signal.direction === "SHORT";
 
-  // Color scheme based on direction
-  const bandColor = isLong
-    ? "rgba(16, 185, 129, "
-    : isShort
-      ? "rgba(239, 68, 68, "
-      : "rgba(59, 130, 246, ";
-  const medianColor = isLong ? "#10b981" : isShort ? "#ef4444" : "#3b82f6";
+  // Color scheme based on direction. `bandColor` is a "rgba(R, G, B," prefix
+  // that gets concatenated with `${alpha})` at each band's call site. The
+  // RGB triplet comes from the LUMEN directional token rather than being
+  // hardcoded, so the band hue follows the palette automatically.
+  const directionalColor = isLong ? colors.accentGreen : isShort ? colors.accentRed : colors.accentBlue;
+  const bandColor = hexToRgbaPrefix(directionalColor);
+  const medianColor = isLong ? colors.accentGreen : isShort ? colors.accentRed : colors.accentBlue;
 
   // Build time axis: context candles + forecast horizons
   const contextTimes: string[] = candles.map((c) => {
@@ -405,18 +418,18 @@ export function FanChart({
     backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#1e293be8",
-      borderColor: "#334155",
-      textStyle: { color: "#e2e8f0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      backgroundColor: withAlphaByte(colors.borderDim, 0xe8),
+      borderColor: colors.borderMid,
+      textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
       axisPointer: {
         type: "cross",
-        crossStyle: { color: "#94a3b8", width: 1, type: "dashed" },
-        lineStyle: { color: "#94a3b8", width: 1, type: "dashed" },
+        crossStyle: { color: colors.textSecondary, width: 1, type: "dashed" },
+        lineStyle: { color: colors.textSecondary, width: 1, type: "dashed" },
         label: {
-          backgroundColor: "#1e293b",
-          borderColor: "#334155",
-          color: "#e2e8f0",
-          fontFamily: "JetBrains Mono, monospace",
+          backgroundColor: colors.borderDim,
+          borderColor: colors.borderMid,
+          color: colors.textPrimary,
+          fontFamily: fonts.mono,
           fontSize: 10,
           formatter: (params: { axisDimension: string; value: string | number }) => {
             if (params.axisDimension === "y") {
@@ -441,7 +454,7 @@ export function FanChart({
             const c = candles[dataIndex];
             const chg = c.close - c.open;
             const chgPct = ((chg / c.open) * 100).toFixed(2);
-            const chgColor = chg >= 0 ? "#10b981" : "#ef4444";
+            const chgColor = chg >= 0 ? colors.accentGreen : colors.accentRed;
             return [
               `<b>${time}</b>`,
               `O: ${c.open.toFixed(2)}`,
@@ -465,12 +478,12 @@ export function FanChart({
             const delta = ((p50 - last_close) / last_close * 100).toFixed(2);
             return [
               `<b>${time}</b> (+${formatHorizon(horizons[forecastIdx])})`,
-              `<span style="color:#64748b">P90:</span> ${p90.toFixed(2)}`,
-              `<span style="color:#94a3b8">P75:</span> ${p75.toFixed(2)}`,
-              `<b>P50: ${p50.toFixed(2)}</b> <span style="color:#64748b">(${delta}%)</span>`,
-              `<span style="color:#94a3b8">P25:</span> ${p25.toFixed(2)}`,
-              `<span style="color:#64748b">P10:</span> ${p10.toFixed(2)}`,
-              `<span style="color:#475569">Spread: ${(p90 - p10).toFixed(1)} pts</span>`,
+              `<span style="color:${colors.textMuted}">P90:</span> ${p90.toFixed(2)}`,
+              `<span style="color:${colors.textSecondary}">P75:</span> ${p75.toFixed(2)}`,
+              `<b>P50: ${p50.toFixed(2)}</b> <span style="color:${colors.textMuted}">(${delta}%)</span>`,
+              `<span style="color:${colors.textSecondary}">P25:</span> ${p25.toFixed(2)}`,
+              `<span style="color:${colors.textMuted}">P10:</span> ${p10.toFixed(2)}`,
+              `<span style="color:${colors.textMuted}">Spread: ${(p90 - p10).toFixed(1)} pts</span>`,
             ].join("<br/>");
           }
         }
@@ -486,10 +499,10 @@ export function FanChart({
     xAxis: {
       type: "category",
       data: allTimes,
-      axisLine: { lineStyle: { color: "#334155" } },
+      axisLine: { lineStyle: { color: colors.borderMid } },
       axisLabel: {
-        color: "#94a3b8",
-        fontFamily: "JetBrains Mono, monospace",
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
         fontSize: 10,
         interval: Math.floor(allTimes.length / 8),
       },
@@ -500,23 +513,23 @@ export function FanChart({
       scale: true,
       min: Math.floor(yMin - yPad),
       max: Math.ceil(yMax + yPad),
-      axisLine: { lineStyle: { color: "#334155" } },
+      axisLine: { lineStyle: { color: colors.borderMid } },
       axisLabel: {
-        color: "#94a3b8",
-        fontFamily: "JetBrains Mono, monospace",
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
         formatter: (v: number) => v.toFixed(1),
       },
-      splitLine: { lineStyle: { color: "#1e293b" } },
+      splitLine: { lineStyle: { color: colors.borderDim } },
       axisPointer: {
         show: true,
         snap: false,
         label: {
           show: true,
           formatter: (params: { value: number }) => params.value.toFixed(2),
-          backgroundColor: "#1e293b",
-          borderColor: "#334155",
-          color: "#e2e8f0",
-          fontFamily: "JetBrains Mono, monospace",
+          backgroundColor: colors.borderDim,
+          borderColor: colors.borderMid,
+          color: colors.textPrimary,
+          fontFamily: fonts.mono,
           fontSize: 11,
         },
       },
@@ -533,10 +546,10 @@ export function FanChart({
                 ...new Array(horizons.length).fill([]),
               ],
               itemStyle: {
-                color: "#10b981",
-                color0: "#ef4444",
-                borderColor: "#10b981",
-                borderColor0: "#ef4444",
+                color: colors.accentGreen,
+                color0: colors.accentRed,
+                borderColor: colors.accentGreen,
+                borderColor0: colors.accentRed,
               },
               barWidth: "60%",
               z: 10,
@@ -566,7 +579,7 @@ export function FanChart({
                   const low = api.value(2);
                   const close = api.value(3);
                   const bullish = close >= open;
-                  const color = bullish ? "#10b981" : "#ef4444";
+                  const color = bullish ? colors.accentGreen : colors.accentRed;
                   const highPt = api.coord([idx, high]);
                   const lowPt = api.coord([idx, low]);
                   const openPt = api.coord([idx, open]);
@@ -602,7 +615,7 @@ export function FanChart({
                 name: "Price",
                 type: "line" as const,
                 data: [...contextCloses, ...new Array(horizons.length).fill(null)],
-                lineStyle: { color: "#e2e8f0", width: 1.5 },
+                lineStyle: { color: colors.textPrimary, width: 1.5 },
                 symbol: "none",
                 z: 10,
               },
@@ -1053,17 +1066,17 @@ export function FanChart({
         let lineColor: string;
         if (!lastRawBarTime || delaySec < 120) {
           nowLabel = barTime;
-          nowColor = "#94a3b8";
-          lineColor = "#475569";
+          nowColor = colors.textSecondary;
+          lineColor = colors.textDim;
         } else if (delaySec <= 1200) {
           const delayMin = Math.round(delaySec / 60);
           nowLabel = `${barTime} (~${delayMin}m delay)`;
-          nowColor = "#f59e0b";
-          lineColor = "#f59e0b";
+          nowColor = colors.accentAmber;
+          lineColor = colors.accentAmber;
         } else {
           nowLabel = `${barTime} (STALE)`;
-          nowColor = "#ef4444";
-          lineColor = "#ef4444";
+          nowColor = colors.accentRed;
+          lineColor = colors.accentRed;
         }
         return {
           name: "Now",
@@ -1077,7 +1090,7 @@ export function FanChart({
               formatter: nowLabel,
               color: nowColor,
               fontSize: 10,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: fonts.sans,
             },
           },
           data: [],
@@ -1092,13 +1105,13 @@ export function FanChart({
               markLine: {
                 silent: true,
                 symbol: "none",
-                lineStyle: { color: "#ef4444", width: 1, type: "dashed" as const, opacity: 0.5 },
+                lineStyle: { color: colors.accentRed, width: 1, type: "dashed" as const, opacity: 0.5 },
                 data: [{ yAxis: invalidationLevel }],
                 label: {
                   formatter: `INVALIDATION ${invalidationLevel.toFixed(2)}`,
-                  color: "#ef4444",
+                  color: colors.accentRed,
                   fontSize: 9,
-                  fontFamily: "Inter, sans-serif",
+                  fontFamily: fonts.sans,
                   position: "insideEndTop" as const,
                 },
               },
@@ -1114,7 +1127,7 @@ export function FanChart({
               name: "",
               type: "line" as const,
               data: bestTrack.coneLower,
-              lineStyle: { color: "rgba(6, 182, 212, 0.25)", width: 0.7, type: "dashed" as const },
+              lineStyle: { color: withAlpha(colors.lumen, 0.25), width: 0.7, type: "dashed" as const },
               symbol: "none" as const,
               stack: "best-track-cone",
               areaStyle: { color: "transparent" },
@@ -1131,10 +1144,10 @@ export function FanChart({
                 if (lo == null || hi == null) return null;
                 return hi - lo;
               }),
-              lineStyle: { color: "rgba(6, 182, 212, 0.25)", width: 0.7, type: "dashed" as const },
+              lineStyle: { color: withAlpha(colors.lumen, 0.25), width: 0.7, type: "dashed" as const },
               symbol: "none" as const,
               stack: "best-track-cone",
-              areaStyle: { color: "rgba(6, 182, 212, 0.12)" },
+              areaStyle: { color: withAlpha(colors.lumen, 0.12) },
               smooth: 0.3,
               z: 6,
               silent: true,
@@ -1144,7 +1157,7 @@ export function FanChart({
               name: "Track Projection",
               type: "line" as const,
               data: bestTrack.projectedCenter,
-              lineStyle: { color: "#06b6d4", width: 1.5, opacity: 0.7 },
+              lineStyle: { color: colors.lumen, width: 1.5, opacity: 0.7 },
               symbol: "none" as const,
               smooth: 0.3,
               z: 7,
@@ -1156,9 +1169,9 @@ export function FanChart({
               type: "line" as const,
               data: bestTrack.realizedData,
               lineStyle: {
-                color: "#06b6d4",
+                color: colors.lumen,
                 width: 2.5,
-                shadowColor: "rgba(6, 182, 212, 0.4)",
+                shadowColor: withAlpha(colors.lumen, 0.4),
                 shadowBlur: 6,
               },
               symbol: "none" as const,
@@ -1180,9 +1193,9 @@ export function FanChart({
             top: 4,
             right: 24,
             fontSize: 10,
-            fontFamily: "JetBrains Mono, monospace",
-            color: "#06b6d4",
-            background: "#0f172acc",
+            fontFamily: fonts.mono,
+            color: colors.lumen,
+            background: withAlphaByte(colors.bgInset, 0xcc),
             padding: "2px 8px",
             borderRadius: 3,
             zIndex: 10,

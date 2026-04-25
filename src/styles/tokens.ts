@@ -40,6 +40,12 @@ export const colors = {
   accentRed: "#b8746a",        // --neg-persimmon
   accentRedLight: "#d4a59c",   // --neg-persimmon-light
   accentAmber: "#cf9852",      // --accent-warn (burnt amber)
+  // Direct palette tokens (mirror --ink-* and --lumen). Used by charts
+  // and other contexts that need >5 distinct accents and reach beyond
+  // the trading-app's 5 accent slots. Lumen here is for chart marks
+  // only; brand-thesis usage stays in the lander per spec §2.1.
+  ink80: "#c9c3b6",            // --ink-80
+  lumen: "#efc88b",            // --lumen
 } as const;
 
 export const fonts = {
