@@ -483,7 +483,7 @@ export function FanChart({
               `<b>P50: ${p50.toFixed(2)}</b> <span style="color:${colors.textMuted}">(${delta}%)</span>`,
               `<span style="color:${colors.textSecondary}">P25:</span> ${p25.toFixed(2)}`,
               `<span style="color:${colors.textMuted}">P10:</span> ${p10.toFixed(2)}`,
-              `<span style="color:${colors.textDim}">Spread: ${(p90 - p10).toFixed(1)} pts</span>`,
+              `<span style="color:${colors.textMuted}">Spread: ${(p90 - p10).toFixed(1)} pts</span>`,
             ].join("<br/>");
           }
         }
@@ -1127,7 +1127,7 @@ export function FanChart({
               name: "",
               type: "line" as const,
               data: bestTrack.coneLower,
-              lineStyle: { color: withAlpha(colors.accentBlue, 0.25), width: 0.7, type: "dashed" as const },
+              lineStyle: { color: withAlpha(colors.lumen, 0.25), width: 0.7, type: "dashed" as const },
               symbol: "none" as const,
               stack: "best-track-cone",
               areaStyle: { color: "transparent" },
@@ -1144,10 +1144,10 @@ export function FanChart({
                 if (lo == null || hi == null) return null;
                 return hi - lo;
               }),
-              lineStyle: { color: withAlpha(colors.accentBlue, 0.25), width: 0.7, type: "dashed" as const },
+              lineStyle: { color: withAlpha(colors.lumen, 0.25), width: 0.7, type: "dashed" as const },
               symbol: "none" as const,
               stack: "best-track-cone",
-              areaStyle: { color: withAlpha(colors.accentBlue, 0.12) },
+              areaStyle: { color: withAlpha(colors.lumen, 0.12) },
               smooth: 0.3,
               z: 6,
               silent: true,
@@ -1157,7 +1157,7 @@ export function FanChart({
               name: "Track Projection",
               type: "line" as const,
               data: bestTrack.projectedCenter,
-              lineStyle: { color: colors.accentBlue, width: 1.5, opacity: 0.7 },
+              lineStyle: { color: colors.lumen, width: 1.5, opacity: 0.7 },
               symbol: "none" as const,
               smooth: 0.3,
               z: 7,
@@ -1169,9 +1169,9 @@ export function FanChart({
               type: "line" as const,
               data: bestTrack.realizedData,
               lineStyle: {
-                color: colors.accentBlue,
+                color: colors.lumen,
                 width: 2.5,
-                shadowColor: withAlpha(colors.accentBlue, 0.4),
+                shadowColor: withAlpha(colors.lumen, 0.4),
                 shadowBlur: 6,
               },
               symbol: "none" as const,
@@ -1194,7 +1194,7 @@ export function FanChart({
             right: 24,
             fontSize: 10,
             fontFamily: fonts.mono,
-            color: colors.accentBlue,
+            color: colors.lumen,
             background: withAlphaByte(colors.bgInset, 0xcc),
             padding: "2px 8px",
             borderRadius: 3,
