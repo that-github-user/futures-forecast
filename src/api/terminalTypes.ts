@@ -1,0 +1,101 @@
+/**
+ * TS types mirroring the terminal API Pydantic schemas in
+ * `vega-pilot/futures_terminal/api/schemas.py`. Keep in lockstep —
+ * any backend schema change requires updating these.
+ */
+
+export type RegimeLabel =
+  | "trending"
+  | "mean_reverting"
+  | "volatile"
+  | "quiet"
+  | "unknown";
+
+export interface TerminalHealth {
+  status: "ok" | "degraded";
+  ibkr_connected: boolean;
+  last_tick_age_seconds: number | null;
+}
+
+export interface RegimeData {
+  vix: number | null;
+  sqn: number | null;
+  divergence_flag: "positive" | "negative" | "none";
+  regime_label: RegimeLabel;
+  confidence: number | null;
+}
+
+export interface GexData {
+  available: boolean;
+  flip_strike: number | null;
+  largest_gamma_strike: number | null;
+  dealer_posture: "dampen" | "amplify" | "unknown";
+  message: string;
+}
+
+export interface AnchoredVwap {
+  name: string;
+  value: number | null;
+  anchor_time: string | null;
+}
+
+export interface VwapData {
+  session_vwap: number | null;
+  anchored: AnchoredVwap[];
+  confluence_count: number;
+  confluence_price: number | null;
+}
+
+export interface LevelsData {
+  pd_high: number | null;
+  pd_low: number | null;
+  pd_close: number | null;
+  poc: number | null;
+  vah: number | null;
+  val: number | null;
+  or_high: number | null;
+  or_low: number | null;
+}
+
+export interface BreadthData {
+  tick: number | null;
+  trin: number | null;
+  advn_decl_ratio: number | null;
+  hyg_lqd_ratio: number | null;
+  hyg_lqd_lead_signal: "bullish" | "bearish" | "neutral" | "unknown";
+}
+
+export type SystemKey = "volatility" | "gamma" | "structure" | "levels" | "breadth";
+
+export interface SynthesizerContribution {
+  system: SystemKey;
+  /** System-internal score (signed). */
+  score: number;
+  /** Signed contribution to the synthesizer total. */
+  contribution: number;
+  /** Normalized share for proportional bar rendering, range -1..+1. */
+  share: number;
+}
+
+export interface SynthesizerData {
+  score: number;
+  confirms: number;
+  overrides: string[];
+  bias: "LONG" | "SHORT" | "FLAT";
+  conviction: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  contributions: SynthesizerContribution[];
+  score_history_4h: number[];
+}
+
+export interface TerminalSnapshot {
+  timestamp: string;
+  es_price: number | null;
+  es_change: number | null;
+  es_change_pct: number | null;
+  regime: RegimeData;
+  gex: GexData;
+  vwap: VwapData;
+  levels: LevelsData;
+  breadth: BreadthData;
+  synthesizer: SynthesizerData;
+}
