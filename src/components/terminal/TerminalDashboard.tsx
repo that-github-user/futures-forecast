@@ -136,7 +136,7 @@ function MiddleBand() {
 function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
   return (
     <section className="terminal-cards">
-      <SystemCard system="volatility" />
+      <RegimeCard data={data} />
       <GexPlaceholderCard data={data} />
       <VwapCard data={data} />
       <LevelsCard data={data} />
@@ -146,17 +146,32 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
   );
 }
 
-type InputSystem = "volatility" | "structure" | "levels" | "breadth";
+function RegimeCard({ data }: { data: TerminalSnapshot | null }) {
+  const regime = data?.regime;
+  const hasAny =
+    regime != null &&
+    (regime.vix != null ||
+      regime.sqn != null ||
+      regime.regime_label !== "unknown" ||
+      regime.divergence_flag !== "none");
 
-function SystemCard({ system }: { system: InputSystem }) {
-  // PR β: no per-system score logic yet — that lands when individual
-  // systems wire up in PRs γ and δ. Denominator stays `—` until the
-  // synthesizer endpoint exposes its share/contribution payload, since
-  // raw weights aren't shipped through the API per the privacy threshold.
+  const label = regime?.regime_label ?? "unknown";
+  const labelClass =
+    label === "volatile"
+      ? "neg"
+      : label === "trending"
+        ? "pos"
+        : label === "quiet"
+          ? "neutral"
+          : "neutral";
+
+  const div = regime?.divergence_flag ?? "none";
+  const divClass = div === "positive" ? "neg" : div === "negative" ? "pos" : "neutral";
+
   return (
     <div className="terminal-card">
       <div className="terminal-card-title-row">
-        <span className="terminal-card-title">{SYSTEM_LABELS[system]}</span>
+        <span className="terminal-card-title">{SYSTEM_LABELS.volatility}</span>
         <span className="terminal-card-ts">—</span>
       </div>
       <div className="terminal-card-score">
@@ -165,10 +180,65 @@ function SystemCard({ system }: { system: InputSystem }) {
         <span className="denom">—</span>
       </div>
       <div className="terminal-card-body">
-        <span className="empty">Awaiting data.</span>
+        {hasAny ? (
+          <ul className="levels-list breadth-list">
+            <LevelRow label="VIX" value={regime!.vix} />
+            <li className="levels-row">
+              <span className="levels-label">SQN</span>
+              <span
+                className={`levels-value${regime!.sqn == null ? " placeholder" : ""}`}
+              >
+                {regime!.sqn != null
+                  ? `${regime!.sqn >= 0 ? "+" : ""}${regime!.sqn.toFixed(2)}`
+                  : "—"}
+              </span>
+            </li>
+            <li className="levels-row">
+              <span className="levels-label">Regime</span>
+              <span
+                className={`levels-value lead-${labelClass}${
+                  label === "unknown" ? " placeholder" : ""
+                }`}
+              >
+                {formatRegimeLabel(label)}
+              </span>
+            </li>
+            <li className="levels-row">
+              <span className="levels-label">ES/VIX</span>
+              <span
+                className={`levels-value lead-${divClass}${
+                  div === "none" ? " placeholder" : ""
+                }`}
+              >
+                {formatDivergence(div)}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <span className="empty">Awaiting data.</span>
+        )}
       </div>
     </div>
   );
+}
+
+function formatRegimeLabel(label: string): string {
+  if (label === "trending") return "Trending";
+  if (label === "mean_reverting") return "Mean-revert";
+  if (label === "volatile") return "Volatile";
+  if (label === "quiet") return "Quiet";
+  return "—";
+}
+
+// Backend speaks positive/negative for the ES/VIX divergence. The
+// trader-facing framing is "distribution warning" (positive) and
+// "capitulation hint" (negative). Compress to short labels for the
+// card; the long form lives in the spec docs.
+function formatDivergence(d: string): string {
+  if (d === "positive") return "Distribution";
+  if (d === "negative") return "Capitulation";
+  if (d === "none") return "Normal";
+  return "—";
 }
 
 function VwapCard({ data }: { data: TerminalSnapshot | null }) {
