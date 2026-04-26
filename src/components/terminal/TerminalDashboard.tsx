@@ -467,28 +467,25 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
   );
 }
 
-// Per spec §4.5: SYNTHESIS card body is the weighted-contribution
-// matrix — bias / conviction / overrides live in the headline strip
-// (§4.1), not here. The card is just the score number reduction +
-// the 5-row contribution bars. Weights are shown in the row labels
-// per the spec ("Vol · 3 / Gam · 2 / …") as a transparency feature:
-// the operator gauges conviction by seeing which systems are doing
-// the lifting. The earlier privacy concern about exposing weights
-// was for DC strategies (per the privacy memo), not synthesizer
-// design constants — the spec calls for visible weights here.
+// SYNTHESIS card body is the weighted-contribution matrix — bias /
+// conviction / overrides live in the headline strip (§4.1), not here.
+// The card is just the score number reduction + the 5-row contribution
+// bars.
+//
+// PRIVACY DEVIATION FROM SPEC §4.5: spec mandates label format
+// "{system_short} · {weight}" with the actual numeric weight visible
+// (e.g. "Vol · 3"). We render only the system_short — the weights are
+// the synthesizer's "alpha" (the design's opinion of which signals
+// matter most), and exposing them in the public bundle is a leak of
+// proprietary research. The right-column numeric contribution still
+// shows magnitude per system; the operator can see relative
+// importance from contribution sizes without seeing the raw weight.
 const SYSTEM_SHORT: Record<string, string> = {
   volatility: "Vol",
   gamma: "Gam",
   structure: "Str",
   levels: "Lvl",
   breadth: "Brd",
-};
-const SYSTEM_WEIGHT: Record<string, string> = {
-  volatility: "3",
-  gamma: "2",
-  structure: "2",
-  levels: "1.5",
-  breadth: "1.5",
 };
 
 function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
@@ -536,7 +533,7 @@ function ContributionBar({ contribution }: { contribution: SynthesizerContributi
   const { system, contribution: value, share } = contribution;
   const widthPct = Math.abs(share) * 50; // share in [-1,1] → 0..50% of half-width
   const direction = share >= 0 ? "pos" : "neg";
-  const label = `${SYSTEM_SHORT[system] ?? system} · ${SYSTEM_WEIGHT[system] ?? "?"}`;
+  const label = SYSTEM_SHORT[system] ?? system;
   const valueDisplay =
     value === 0
       ? "0.0"
