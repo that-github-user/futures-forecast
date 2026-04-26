@@ -23,7 +23,12 @@ const REGIME_COLORS: Record<string, string> = {
   "mean-reverting": colors.accentAmber,
   mean_reverting: colors.accentAmber,
   volatile: colors.accentRed,
-  quiet: colors.textMuted,
+  // ink80 (bone-grey) — distinct from accentBlue (graphite-cool, used
+  // for trending). Earlier mapping had `quiet: textMuted` which is
+  // also a graphite at #8c877c; that left trending/quiet visually
+  // indistinguishable (RGB-distance ~22) since accentBlue is #8a96a1.
+  // ink80 is a bone-grey at distance ~78 from accentBlue.
+  quiet: colors.ink80,
 };
 
 export function AnalyticsCards({

@@ -43,8 +43,13 @@ export type ForecastStyle = "bands" | "spaghetti" | "gradient" | "density" | "ri
  *  callers concatenate with `"${alpha})"` to build a full rgba string.
  *  Used by FanChart's band/gradient stops which need many varying-alpha
  *  versions of the same directional hue without computing R/G/B each
- *  call. The 6-digit hex contract matches LUMEN palette tokens. */
+ *  call. The 6-digit hex contract matches LUMEN palette tokens.
+ *  Falls back to graphite-neutral on a non-6-digit input so a future
+ *  drift (3-digit `#abc` or a missing `#`) doesn't render NaN bands. */
 function hexToRgbaPrefix(hex: string): string {
+  if (hex.length !== 7 || hex[0] !== "#") {
+    return "rgba(138, 150, 161, ";  // accent-info graphite-cool fallback
+  }
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
