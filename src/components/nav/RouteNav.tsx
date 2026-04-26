@@ -72,9 +72,11 @@ export function RouteNav({ current, showBrand = true }: Props) {
         aria-label={menuOpen ? "Close routes menu" : "Open routes menu"}
         onClick={() => setMenuOpen((o) => !o)}
       >
-        <span aria-hidden="true" />
-        <span aria-hidden="true" />
-        <span aria-hidden="true" />
+        {/* U+2630 ☰ TRIGRAM FOR HEAVEN — renders natively as three
+            horizontal bars on every platform without depending on a
+            three-span flex layout. aria-hidden on the glyph because
+            the button's aria-label provides the accessible name. */}
+        <span aria-hidden="true">☰</span>
       </button>
       <ul className="route-nav-links" id="route-nav-menu">
         {ROUTES.map((r, i) => {

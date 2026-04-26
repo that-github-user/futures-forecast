@@ -43,12 +43,12 @@
 }
 
 /* Hamburger toggle — hidden on desktop, visible on phone tier.
-   Three hairlines stacked, 1px ink-100 each, 18px wide; centered
-   in a 44px-square tap target. The dropdown panel's presence is
-   the affordance for the open state — bars stay ink-100 across
-   open/closed (§2.1 reserves lumen for the brand-thesis register
-   only; "button hover / open-state cue" is explicitly forbidden).
-   On press, bars dim to ink-60 as silent-tap feedback (no lumen). */
+   Single Unicode glyph U+2630 ☰ ("TRIGRAM FOR HEAVEN") renders natively
+   as three horizontal bars on every platform. Earlier draft used three
+   separate <span> bars in a flex column; that was visibility-fragile
+   on some iOS Safari builds. Single-glyph approach has no layout
+   dependencies — if the button's `display` is set to flex/inline-flex,
+   the glyph renders. */
 .route-nav-toggle {
   display: none;
   width: 44px;
@@ -59,20 +59,23 @@
   margin: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
+  /* Hardcoded fallback color so the glyph remains visible even if
+     --ink-100 fails to resolve (defensive against CSS load order
+     issues some users have hit). */
+  color: #f5efe2;
+  color: var(--ink-100, #f5efe2);
+  font-size: 22px;
+  line-height: 1;
+  /* §2.1 forbids lumen for state cues — bars stay ink-100 across
+     open/closed. The dropdown panel's appearance carries the
+     affordance. On press, glyph dims to ink-60 as silent-tap
+     feedback (avoiding -webkit-tap-highlight-color: transparent
+     leaving press state silent). */
+  transition: color 120ms ease;
 }
-.route-nav-toggle span {
-  display: block;
-  width: 18px;
-  height: 1px;
-  background: var(--ink-100);
-  transition: background 120ms ease;
-}
-.route-nav-toggle:active span {
-  background: var(--ink-60);
+.route-nav-toggle:active {
+  color: #aaa49a;
+  color: var(--ink-60, #aaa49a);
 }
 
 .route-nav-links {
@@ -134,7 +137,9 @@
   }
 
   .route-nav-toggle {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     margin-left: auto;
   }
 
