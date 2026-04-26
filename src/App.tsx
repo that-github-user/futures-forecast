@@ -37,7 +37,10 @@ function App() {
     );
   } else {
     // Default route `#/` — the lander / auth gate.
-    content = <LumenLander redirectTo="#/forecast" />;
+    // After unlock, send the operator to the terminal (the new
+    // load-bearing surface). Forecast + DC are reachable via RouteNav
+    // links from any gated page.
+    content = <LumenLander redirectTo="#/app" />;
   }
 
   return (

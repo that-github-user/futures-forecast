@@ -15,6 +15,7 @@
 
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
 import type { TerminalSnapshot } from "../../api/terminalTypes";
+import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
 
 const SYSTEM_LABELS = {
@@ -37,6 +38,7 @@ export function TerminalDashboard() {
 
   return (
     <div className="terminal-root">
+      <RouteNav current="terminal" />
       <HeadlineStrip data={data} />
       <MiddleBand />
       <ScorecardGrid data={data} />

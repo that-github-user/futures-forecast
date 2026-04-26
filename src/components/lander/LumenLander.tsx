@@ -20,11 +20,13 @@ function prefersReducedMotion(): boolean {
 }
 
 interface Props {
-  /** Hash route to navigate to on successful unlock. Default `#/forecast`. */
+  /** Hash route to navigate to on successful unlock. Default `#/app`
+   *  (the terminal — current load-bearing surface; Forecast and DC
+   *  are reachable via cross-route nav from there). */
   redirectTo?: string;
 }
 
-export function LumenLander({ redirectTo = "#/forecast" }: Props) {
+export function LumenLander({ redirectTo = "#/app" }: Props) {
   const { tryUnlock } = useAuth();
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);

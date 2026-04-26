@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useDCData } from "../../hooks/useDCData";
 import { computeSystemHealth } from "../../lib/systemHealth";
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
+import { RouteNav } from "../nav/RouteNav";
 import { DCPositionsTab } from "./DCPositionsTab";
 import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
@@ -89,13 +90,7 @@ export function DCDashboard() {
             </span>
           )}
         </div>
-        <a href="#/forecast" style={{
-          color: colors.textMuted, fontSize: 11, fontFamily: fonts.sans,
-          textDecoration: "none", padding: "4px 10px",
-          background: colors.borderDim, borderRadius: 4,
-        }}>
-          ES Dashboard
-        </a>
+        <RouteNav current="dc" showBrand={false} />
       </header>
 
       {/* System Health strip — one ambient anomaly-radar row. Neutral

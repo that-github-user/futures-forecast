@@ -1,0 +1,75 @@
+/* RouteNav — minimal LUMEN nav strip, ~48px tall.
+   Italic-serif route links on the right, optional brand mark on the
+   left. Designed to dock above the terminal's headline strip and into
+   the DC dashboard's existing header. */
+
+.route-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 48px;
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 300;
+}
+
+/* Brand mark mirrors the lander's exactly per spec §3.2 — same α
+   font-size + margin + bone-cream text-shadow halo so the visual
+   register feels continuous with the lander's gate when the user
+   navigates between gated surfaces. */
+.route-nav-brand {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink-100);
+  display: inline-flex;
+  align-items: baseline;
+  text-shadow: 0 0 9px rgba(245, 239, 226, 0.14);
+}
+.route-nav-brand .alpha {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--lumen);
+  font-size: 19px;
+  line-height: 1;
+  margin-right: 14px;
+  vertical-align: middle;
+  display: inline-block;
+}
+
+.route-nav-links {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  margin-left: auto;
+  list-style: none;
+  padding: 0;
+}
+.route-nav-item {
+  display: inline-flex;
+  align-items: baseline;
+}
+.route-nav-item .sep {
+  color: var(--ink-40);
+  margin: 0 12px;
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+.route-nav-item a {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 16px;
+  color: var(--ink-60);
+  text-decoration: none;
+  letter-spacing: 0;
+  transition: color 200ms ease;
+}
+.route-nav-item a:hover {
+  color: var(--ink-100);
+}
+.route-nav-item a.active {
+  color: var(--ink-100);
+}
