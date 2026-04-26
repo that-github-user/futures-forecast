@@ -30,9 +30,32 @@ echarts.use([
 
 const POLL_INTERVAL_MS = 30_000;
 
+// Read LUMEN tokens off :root once at module load (CSS vars don't change
+// at runtime, and ECharts' option API can't read `var(--…)` directly).
+// Fallbacks mirror the literal values defined in styles/globals.css so
+// SSR / test environments without computed styles still render.
+function resolveLumenPalette() {
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const cs = root ? getComputedStyle(root) : null;
+  const tok = (name: string, fallback: string): string => {
+    const v = cs?.getPropertyValue(name).trim();
+    return v && v.length > 0 ? v : fallback;
+  };
+  return {
+    posCream: tok("--pos-cream", "#d6c79a"),
+    negPersimmon: tok("--neg-persimmon", "#b8746a"),
+    paperDeep: tok("--paper-deep", "#08070a"),
+    ink100: tok("--ink-100", "#f5efe2"),
+    ink60: tok("--ink-60", "#8c877c"),
+    ink40: tok("--ink-40", "#5a564f"),
+    ink20: tok("--ink-20", "#2a2823"),
+  };
+}
+
 export function TerminalChartCanvas() {
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const palette = useMemo(() => resolveLumenPalette(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +80,7 @@ export function TerminalChartCanvas() {
     };
   }, []);
 
-  const option = useMemo(() => buildEChartsOption(bars), [bars]);
+  const option = useMemo(() => buildEChartsOption(bars, palette), [bars, palette]);
 
   if (error && !bars) {
     return (
@@ -97,7 +120,12 @@ export function TerminalChartCanvas() {
 
 // ── ECharts option builder ──────────────────────────────────────────
 
-function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
+type LumenPalette = ReturnType<typeof resolveLumenPalette>;
+
+function buildEChartsOption(
+  bars: TerminalIntradayBar[] | null,
+  palette: LumenPalette,
+) {
   if (!bars || bars.length === 0) return {};
 
   // ECharts candlestick expects [open, close, low, high]
@@ -117,9 +145,9 @@ function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
     xAxis: {
       type: "category",
       data: times,
-      axisLine: { lineStyle: { color: "rgba(255,255,255,0.18)" } },
+      axisLine: { lineStyle: { color: palette.ink40 } },
       axisLabel: {
-        color: "rgba(255,255,255,0.55)",
+        color: palette.ink60,
         fontSize: 10,
         fontFamily: "var(--font-mono, monospace)",
         hideOverlap: true,
@@ -133,13 +161,13 @@ function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
       scale: true,
       axisLine: { show: false },
       axisLabel: {
-        color: "rgba(255,255,255,0.55)",
+        color: palette.ink60,
         fontSize: 10,
         fontFamily: "var(--font-mono, monospace)",
       },
       axisTick: { show: false },
       splitLine: {
-        lineStyle: { color: "rgba(255,255,255,0.06)" },
+        lineStyle: { color: palette.ink20 },
       },
     },
     dataZoom: [
@@ -153,11 +181,11 @@ function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
     ],
     tooltip: {
       trigger: "axis",
-      axisPointer: { type: "cross", lineStyle: { color: "rgba(255,255,255,0.3)" } },
-      backgroundColor: "rgba(8,7,10,0.94)",
-      borderColor: "rgba(255,255,255,0.18)",
+      axisPointer: { type: "cross", lineStyle: { color: palette.ink40 } },
+      backgroundColor: palette.paperDeep,
+      borderColor: palette.ink40,
       textStyle: {
-        color: "#f5efe2",
+        color: palette.ink100,
         fontFamily: "var(--font-mono, monospace)",
         fontSize: 11,
       },
@@ -186,12 +214,13 @@ function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
         type: "candlestick",
         data,
         itemStyle: {
-          // LUMEN palette: cream for up-bars, persimmon for down-bars.
-          // Hollow body for up, filled for down — the FT convention.
+          // LUMEN palette: cream borders + hollow body for up-bars,
+          // persimmon filled for down-bars (FT-style hollow-up
+          // convention). Tokens resolved from CSS vars.
           color: "rgba(0,0,0,0)",
-          color0: "#c45a3a",
-          borderColor: "#e8d8b0",
-          borderColor0: "#c45a3a",
+          color0: palette.negPersimmon,
+          borderColor: palette.posCream,
+          borderColor0: palette.negPersimmon,
           borderWidth: 1,
         },
       },
@@ -200,8 +229,10 @@ function buildEChartsOption(bars: TerminalIntradayBar[] | null) {
 }
 
 function formatBarTime(iso: string, withSeconds: boolean = false): string {
-  // Input: "2026-04-26T22:01:00Z" → display "22:01" (or "Sun 22:01" on
-  // a day boundary). Toggle with seconds for tooltip detail.
+  // Input: "2026-04-26T22:01:00Z" → display "22:01" UTC
+  // (UTC labels for now; ET-localized labels are a follow-up NIT.
+  // ET conversion via Intl.DateTimeFormat would land in a separate
+  // pass once the chart's running stably in production.)
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const hh = d.getUTCHours().toString().padStart(2, "0");
