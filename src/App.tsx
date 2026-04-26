@@ -2,6 +2,7 @@ import { Dashboard } from "./components/layout/Dashboard";
 import { DCDashboard } from "./components/dc/DCDashboard";
 import { LumenLander } from "./components/lander/LumenLander";
 import { RequireAuth } from "./components/lander/RequireAuth";
+import { TerminalDashboard } from "./components/terminal/TerminalDashboard";
 import { useHash } from "./hooks/useHash";
 import { colors, fonts } from "./styles/tokens";
 
@@ -11,6 +12,7 @@ function App() {
   const [hash] = useHash();
   const isDC = hash === "#/dc" || hash.startsWith("#/dc/");
   const isForecast = hash === "#/forecast" || hash.startsWith("#/forecast/");
+  const isTerminal = hash === "#/app" || hash.startsWith("#/app/");
 
   let content: React.ReactNode;
   if (isDC) {
@@ -25,6 +27,12 @@ function App() {
     content = (
       <RequireAuth>
         <Dashboard />
+      </RequireAuth>
+    );
+  } else if (isTerminal) {
+    content = (
+      <RequireAuth>
+        <TerminalDashboard />
       </RequireAuth>
     );
   } else {

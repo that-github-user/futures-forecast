@@ -1,0 +1,291 @@
+/* TerminalDashboard layout — implements the locked design spec §4.
+   Three rows: headline strip / chart+feed / scorecards.
+   PR β: layout + LUMEN tokens; cards render placeholder content
+   pending real data in subsequent PRs. */
+
+.terminal-root {
+  height: 100vh;
+  padding: 24px 32px;
+  display: grid;
+  grid-template-rows: 168px 1fr 230px;
+  gap: 1px;
+  background: var(--ink-40);
+  color: var(--ink-100);
+  font-family: var(--font-mono);
+  font-weight: 300;
+  font-size: 13px;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  overflow: hidden;
+}
+.terminal-root > section { background: var(--paper); }
+
+/* ── Headline strip ────────────────────────────────────────── */
+.terminal-headline {
+  display: grid;
+  grid-template-columns: 360px 1fr auto auto;
+  align-items: center;
+  padding: 0 48px 0 56px;
+  position: relative;
+  overflow: hidden;
+}
+
+.terminal-score-block {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 22px;
+  row-gap: 4px;
+  align-items: end;
+}
+.terminal-score {
+  grid-row: 1 / 3;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 168px;
+  line-height: 0.86;
+  color: var(--lumen);
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 36px rgba(239, 200, 139, 0.14);
+}
+.terminal-score.placeholder {
+  color: var(--ink-40);
+  text-shadow: none;
+}
+.terminal-score-label {
+  align-self: end;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-60);
+  line-height: 1.3;
+  padding-bottom: 2px;
+}
+.terminal-regime {
+  font-size: 22px;
+  color: var(--ink-100);
+  letter-spacing: 0.04em;
+}
+.terminal-regime em {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 28px;
+  color: var(--ink-100);
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+.terminal-regime.placeholder { color: var(--ink-40); }
+
+.terminal-overrides {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 56px;
+  min-width: 200px;
+}
+.terminal-overrides-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-60);
+}
+.terminal-overrides-body {
+  font-size: 14px;
+  color: var(--ink-80);
+}
+
+.terminal-price-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.terminal-price {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.terminal-price-num {
+  font-size: 32px;
+  color: var(--ink-100);
+}
+.terminal-price-num.placeholder { color: var(--ink-40); }
+.terminal-price-chg {
+  font-size: 16px;
+}
+.terminal-price-chg.pos { color: var(--pos-cream); }
+.terminal-price-chg.neg { color: var(--neg-persimmon); }
+.terminal-price-chg.placeholder { color: var(--ink-40); }
+
+/* ── Middle band: chart + feed ─────────────────────────────── */
+.terminal-middle {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1px;
+  background: var(--ink-40);
+}
+.terminal-middle > div { background: var(--paper); }
+
+.terminal-chart {
+  padding: 22px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--paper-deep);
+}
+.terminal-chart-toggles {
+  display: flex;
+  gap: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.20em;
+}
+.terminal-chart-toggles .pill {
+  color: var(--ink-60);
+  padding: 4px 16px 4px 0;
+  margin-right: 16px;
+  border-right: 1px solid var(--ink-40);
+  position: relative;
+}
+.terminal-chart-toggles .pill:last-child {
+  border-right: none;
+  margin-right: 0;
+}
+.terminal-chart-toggles .pill.on {
+  color: var(--ink-100);
+}
+.terminal-chart-toggles .pill.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 16px;
+  bottom: -2px;
+  height: 1px;
+  background: var(--ink-100);
+}
+.terminal-chart-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-40);
+  font-style: italic;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+
+/* ── System feed ───────────────────────────────────────────── */
+.terminal-feed {
+  padding: 22px 24px;
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.terminal-feed-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-60);
+  border-bottom: 1px solid var(--ink-40);
+  padding-bottom: 12px;
+}
+.terminal-feed-empty {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--ink-40);
+  font-size: 14px;
+  padding-top: 8px;
+}
+
+/* ── Scorecard grid ────────────────────────────────────────── */
+.terminal-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr) 1.5fr;
+  gap: 1px;
+  background: var(--ink-40);
+}
+.terminal-card {
+  background: var(--paper);
+  padding: 20px 24px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+  position: relative;
+}
+.terminal-card-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.terminal-card-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-60);
+}
+.terminal-card-ts {
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--ink-60);
+}
+.terminal-card-ts.stale { color: var(--neg-persimmon); }
+.terminal-card-score {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink-100);
+}
+.terminal-card-score .num { font-size: 36px; font-weight: 400; }
+.terminal-card-score .num.placeholder { color: var(--ink-40); }
+.terminal-card-score .num.pos { color: var(--ink-100); }
+.terminal-card-score .num.neg { color: var(--neg-persimmon); }
+.terminal-card-score .num.zero { color: var(--ink-60); }
+.terminal-card-score .slash {
+  font-size: 22px;
+  color: var(--ink-60);
+  padding: 0 4px;
+}
+.terminal-card-score .denom { font-size: 18px; color: var(--ink-60); }
+
+.terminal-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-80);
+  line-height: 1.45;
+}
+.terminal-card-body .empty {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--ink-40);
+  font-size: 13px;
+}
+
+/* ── Synthesis card — italic-serif numeral + weighted bars ── */
+.terminal-card.synthesis .terminal-card-score .num {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 64px;
+  color: var(--lumen);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+.terminal-card.synthesis .terminal-card-score .num.placeholder {
+  color: var(--ink-40);
+}
+
+/* ── GEX placeholder card ─────────────────────────────────── */
+.terminal-card.gex-placeholder .terminal-card-body .placeholder-msg {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--ink-60);
+  font-size: 13px;
+  line-height: 1.5;
+}

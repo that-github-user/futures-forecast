@@ -1,0 +1,212 @@
+/**
+ * TerminalDashboard — 6-system ES futures terminal at #/app.
+ *
+ * PR β skeleton: implements the locked design spec §4 layout (headline
+ * strip / chart+feed / 6 scorecards) with placeholder content. Real
+ * data wires up in subsequent PRs:
+ *   PR γ — VWAP / Levels / Breadth scorecards (frontend-computable)
+ *   PR δ — Volatility Regime scorecard
+ *   PR ε — GEX placeholder polish (third-party feed deferred)
+ *   PR ζ — Synthesizer score chip + override flash + headline polish
+ *   PR η — ML fan integration (toggleable chart overlay)
+ *
+ * Backend: vega-pilot/futures_terminal/ on terminal.denoisedalpha.com.
+ */
+
+import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
+import type { TerminalSnapshot } from "../../api/terminalTypes";
+import "./TerminalDashboard.css";
+
+const SYSTEM_LABELS = {
+  volatility: "Volatility",
+  gamma: "Gamma",
+  structure: "Structure",
+  levels: "Levels",
+  breadth: "Breadth",
+  synthesis: "Synthesis",
+} as const;
+
+const SYSTEM_DENOMS = {
+  volatility: 3,
+  gamma: 2,
+  structure: 2,
+  levels: 1.5,
+  breadth: 1.5,
+} as const;
+
+export function TerminalDashboard() {
+  const { data } = useTerminalSnapshot();
+
+  return (
+    <div className="terminal-root">
+      <HeadlineStrip data={data} />
+      <MiddleBand />
+      <ScorecardGrid data={data} />
+    </div>
+  );
+}
+
+/* ── Headline strip (spec §4.1) ──────────────────────────── */
+
+function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
+  const score = data?.synthesizer?.score;
+  const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
+  const scoreDisplay = hasScore
+    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}`
+    : "—";
+
+  const regimeLabel = data?.regime?.regime_label ?? "unknown";
+  const hasRegime = regimeLabel !== "unknown";
+
+  const overrides = data?.synthesizer?.overrides ?? [];
+  const overridesBody = overrides.length === 0 ? "clear" : overrides.join(" · ");
+
+  const price = data?.es_price;
+  const change = data?.es_change ?? 0;
+  const changePositive = change >= 0;
+
+  return (
+    <section className="terminal-headline">
+      <div className="terminal-score-block">
+        <span className={`terminal-score${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
+        <span className="terminal-score-label">
+          {hasScore ? (data!.synthesizer.bias === "LONG" ? "Buy" : "Sell") : "Awaiting"}
+          <br />
+          {hasScore ? "Bias" : "Data"}
+        </span>
+      </div>
+      <div className={`terminal-regime${hasRegime ? "" : " placeholder"}`}>
+        {hasRegime ? formatRegime(regimeLabel) : "—"}
+      </div>
+      <div className="terminal-overrides">
+        <span className="terminal-overrides-label">Overrides</span>
+        <span className="terminal-overrides-body">{overridesBody}</span>
+      </div>
+      <div className="terminal-price-block">
+        <div className="terminal-price">
+          <span className={`terminal-price-num${price == null ? " placeholder" : ""}`}>
+            {price != null ? price.toFixed(2) : "—"}
+          </span>
+          <span
+            className={`terminal-price-chg${
+              price == null ? " placeholder" : changePositive ? " pos" : " neg"
+            }`}
+          >
+            {price == null ? "—" : `${changePositive ? "▲" : "▼"} ${Math.abs(change).toFixed(2)}`}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function formatRegime(label: string): React.ReactNode {
+  // "trending" → "TRENDING" with a tonal italic-serif word echo;
+  // for PR β we keep it simple and uppercase the label
+  return label.replace("_", " ").toUpperCase();
+}
+
+/* ── Middle band: chart + system feed (spec §4.2 + §4.3) ──── */
+
+function MiddleBand() {
+  return (
+    <section className="terminal-middle">
+      <div className="terminal-chart">
+        <div className="terminal-chart-toggles">
+          <span className="pill">Session VWAP</span>
+          <span className="pill">AVWAP</span>
+          <span className="pill">Gamma Flip</span>
+          <span className="pill">POC / VAH / VAL</span>
+          <span className="pill">Prior Day HLC</span>
+          <span className="pill">Opening Range</span>
+          <span className="pill">ML Fan</span>
+        </div>
+        <div className="terminal-chart-canvas">Awaiting live ES data — toggle pills activate when overlays land</div>
+      </div>
+      <aside className="terminal-feed">
+        <div className="terminal-feed-title">System Feed</div>
+        <div className="terminal-feed-empty">Awaiting events.</div>
+      </aside>
+    </section>
+  );
+}
+
+/* ── Scorecard grid (spec §4.4 + §4.5) ───────────────────── */
+
+function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
+  return (
+    <section className="terminal-cards">
+      <SystemCard system="volatility" data={data} />
+      <GexPlaceholderCard data={data} />
+      <SystemCard system="structure" data={data} />
+      <SystemCard system="levels" data={data} />
+      <SystemCard system="breadth" data={data} />
+      <SynthesisCard data={data} />
+    </section>
+  );
+}
+
+type InputSystem = "volatility" | "structure" | "levels" | "breadth";
+
+function SystemCard({ system, data: _data }: { system: InputSystem; data: TerminalSnapshot | null }) {
+  const denom = SYSTEM_DENOMS[system];
+  // PR β: no per-system score logic yet — that lands when individual
+  // systems wire up in PRs γ and δ.
+  return (
+    <div className="terminal-card">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS[system]}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className="num placeholder">—</span>
+        <span className="slash">⁄</span>
+        <span className="denom">{denom}</span>
+      </div>
+      <div className="terminal-card-body">
+        <span className="empty">Awaiting data.</span>
+      </div>
+    </div>
+  );
+}
+
+function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
+  const message = data?.gex?.message ?? "GEX feed not subscribed.";
+  return (
+    <div className="terminal-card gex-placeholder">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS.gamma}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className="num placeholder">—</span>
+        <span className="slash">⁄</span>
+        <span className="denom">2</span>
+      </div>
+      <div className="terminal-card-body">
+        <span className="placeholder-msg">{message}</span>
+      </div>
+    </div>
+  );
+}
+
+function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
+  const score = data?.synthesizer?.score;
+  const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
+  const scoreDisplay = hasScore ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}` : "—";
+
+  return (
+    <div className="terminal-card synthesis">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS.synthesis}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className={`num${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
+      </div>
+      <div className="terminal-card-body">
+        <span className="empty">Awaiting input system scores.</span>
+      </div>
+    </div>
+  );
+}
