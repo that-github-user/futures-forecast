@@ -31,22 +31,29 @@ interface Props {
 
 export function RouteNav({ current, showBrand = true }: Props) {
   return (
-    <header className="route-nav">
+    <nav className="route-nav" aria-label="Site sections">
       {showBrand && (
         <div className="route-nav-brand">
           <span className="alpha">α</span>denoisedalpha
         </div>
       )}
-      <nav className="route-nav-links">
-        {ROUTES.map((r, i) => (
-          <span key={r.key} className="route-nav-item">
-            {i > 0 && <span className="sep">·</span>}
-            <a href={r.href} className={r.key === current ? "active" : ""}>
-              {r.label}
-            </a>
-          </span>
-        ))}
-      </nav>
-    </header>
+      <ul className="route-nav-links">
+        {ROUTES.map((r, i) => {
+          const isActive = r.key === current;
+          return (
+            <li key={r.key} className="route-nav-item">
+              {i > 0 && <span className="sep" aria-hidden="true">·</span>}
+              <a
+                href={r.href}
+                className={isActive ? "active" : ""}
+                aria-current={isActive ? "page" : undefined}
+              >
+                {r.label}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
