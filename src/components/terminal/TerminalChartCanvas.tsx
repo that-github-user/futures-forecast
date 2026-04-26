@@ -409,10 +409,16 @@ function buildOpeningRangeBand(
   return { low: lv.or_low, high: lv.or_high };
 }
 
-// Convert "#rrggbb" → "rgba(r,g,b,a)" so we can apply the spec's 5%
-// opacity tone for the OR band without losing the LUMEN token.
+// Convert "#rrggbb" or "#rgb" → "rgba(r,g,b,a)" so we can apply the
+// spec's 5% opacity tone for the OR band without losing the LUMEN
+// token. Falls back to returning the raw input on a parse miss.
 function hexToRgba(hex: string, alpha: number): string {
-  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  let s = hex.replace("#", "");
+  // Expand shorthand "#rgb" → "#rrggbb" before parsing.
+  if (s.length === 3) {
+    s = s.split("").map((c) => c + c).join("");
+  }
+  const m = s.match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
   if (!m) return hex;
   const r = parseInt(m[1], 16);
   const g = parseInt(m[2], 16);
