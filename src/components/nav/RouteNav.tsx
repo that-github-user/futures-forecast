@@ -34,7 +34,7 @@ export function RouteNav({ current, showBrand = true }: Props) {
     <nav className="route-nav" aria-label="Site sections">
       {showBrand && (
         <div className="route-nav-brand">
-          <span className="alpha">α</span>denoisedalpha
+          <span className="alpha">α</span><span className="wordmark">denoisedalpha</span>
         </div>
       )}
       <ul className="route-nav-links">

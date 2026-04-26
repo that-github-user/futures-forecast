@@ -73,3 +73,42 @@
 .route-nav-item a.active {
   color: var(--ink-100);
 }
+
+/* Mobile — tighten horizontal padding, drop the wordmark to leave the
+   α glyph as the brand mark, and bump the hit area on route links so
+   they meet iOS HIG. */
+@media (max-width: 480px) {
+  .route-nav {
+    padding: 0 14px;
+    height: 52px;
+    font-size: 11px;
+  }
+  /* Hide the wordmark explicitly — keeps the α glyph as a brand mark
+     while staying screen-reader-accessible (the wordmark text node
+     is preserved in DOM, just visually hidden). */
+  .route-nav-brand .wordmark {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .route-nav-brand .alpha {
+    font-size: 22px;     /* α glyph alone, larger to read as a brand mark */
+    margin-right: 0;
+  }
+  .route-nav-item .sep {
+    margin: 0 8px;
+    font-size: 12px;
+  }
+  .route-nav-item a {
+    font-size: 15px;
+    /* Vertical padding pushes the touch zone toward 44px without
+       making the visual link any heavier. */
+    padding: 14px 0;
+  }
+}
