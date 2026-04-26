@@ -136,11 +136,25 @@
     font-size: 22px;
   }
 
+  /* Pulled out of flex flow with `position: absolute` so the toggle's
+     placement is independent of the parent flex / grid layout. The
+     terminal renders RouteNav as a child of a `display: grid` parent
+     with `overflow-x: hidden`; on Firefox for Android this combination
+     was causing the toggle to fail to render at the expected right
+     edge despite `margin-left: auto`. Pinning the toggle absolute-to-
+     right works regardless of the surrounding layout. */
   .route-nav-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: auto;
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    margin: 0;
+    /* z-index above the absolutely-positioned dropdown panel base
+       so the toggle stays tappable when the menu is closed. */
+    z-index: 11;
   }
 
   /* Inline link strip → dropdown panel. Closed by default. When
