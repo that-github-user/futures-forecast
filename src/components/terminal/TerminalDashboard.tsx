@@ -228,12 +228,14 @@ function LevelRow({ label, value }: { label: string; value: number | null }) {
 
 function BreadthCard({ data }: { data: TerminalSnapshot | null }) {
   const breadth = data?.breadth;
+  // Open the populated body only when at least one numeric field is
+  // present. A stray "neutral" lead-signal with all numerics null is a
+  // degenerate state and should fall back to "Awaiting data."
   const hasAny =
     breadth != null &&
     (breadth.tick != null ||
       breadth.trin != null ||
-      breadth.hyg_lqd_ratio != null ||
-      breadth.hyg_lqd_lead_signal !== "unknown");
+      breadth.hyg_lqd_ratio != null);
 
   const lead = breadth?.hyg_lqd_lead_signal ?? "unknown";
   const leadClass =
@@ -266,7 +268,7 @@ function BreadthCard({ data }: { data: TerminalSnapshot | null }) {
               display={breadth!.trin != null ? breadth!.trin.toFixed(2) : null}
             />
             <BreadthRow
-              label="HY/IG"
+              label="HYG/LQD"
               display={
                 breadth!.hyg_lqd_ratio != null
                   ? breadth!.hyg_lqd_ratio.toFixed(4)
@@ -274,7 +276,7 @@ function BreadthCard({ data }: { data: TerminalSnapshot | null }) {
               }
             />
             <li className="levels-row">
-              <span className="levels-label">Lead</span>
+              <span className="levels-label">Credit Lead</span>
               <span className={`levels-value lead-${leadClass}`}>
                 {formatLead(lead)}
               </span>
@@ -299,6 +301,10 @@ function BreadthRow({ label, display }: { label: string; display: string | null 
   );
 }
 
+// Backend speaks bullish/bearish for the HYG/LQD lead signal; the more
+// natural framing for a credit-spread proxy is risk-on/risk-off, so we
+// remap at the display boundary. Keep the backend vocabulary intact —
+// the mapping is purely cosmetic.
 function formatLead(lead: string): string {
   if (lead === "bullish") return "Risk-on";
   if (lead === "bearish") return "Risk-off";
