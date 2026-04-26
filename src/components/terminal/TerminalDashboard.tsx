@@ -139,7 +139,7 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
       <SystemCard system="volatility" />
       <GexPlaceholderCard data={data} />
       <SystemCard system="structure" />
-      <SystemCard system="levels" />
+      <LevelsCard data={data} />
       <SystemCard system="breadth" />
       <SynthesisCard data={data} />
     </section>
@@ -168,6 +168,61 @@ function SystemCard({ system }: { system: InputSystem }) {
         <span className="empty">Awaiting data.</span>
       </div>
     </div>
+  );
+}
+
+function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
+  const levels = data?.levels;
+  const hasAny =
+    levels != null &&
+    (levels.pd_high != null ||
+      levels.pd_low != null ||
+      levels.pd_close != null ||
+      levels.poc != null ||
+      levels.vah != null ||
+      levels.val != null ||
+      levels.or_high != null ||
+      levels.or_low != null);
+
+  return (
+    <div className="terminal-card">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS.levels}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className="num placeholder">—</span>
+        <span className="slash">⁄</span>
+        <span className="denom">—</span>
+      </div>
+      <div className="terminal-card-body">
+        {hasAny ? (
+          <ul className="levels-list">
+            <LevelRow label="POC" value={levels!.poc} />
+            <LevelRow label="VAH" value={levels!.vah} />
+            <LevelRow label="VAL" value={levels!.val} />
+            <LevelRow label="PD H" value={levels!.pd_high} />
+            <LevelRow label="PD L" value={levels!.pd_low} />
+            <LevelRow label="PD C" value={levels!.pd_close} />
+            <LevelRow label="OR H" value={levels!.or_high} />
+            <LevelRow label="OR L" value={levels!.or_low} />
+          </ul>
+        ) : (
+          <span className="empty">Awaiting data.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LevelRow({ label, value }: { label: string; value: number | null }) {
+  return (
+    <li className="levels-row">
+      <span className="levels-label">{label}</span>
+      <span className={`levels-value${value == null ? " placeholder" : ""}`}>
+        {value != null ? value.toFixed(2) : "—"}
+      </span>
+    </li>
   );
 }
 
