@@ -12,7 +12,7 @@
  * panel respects §5 motion language (180ms fade).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./RouteNav.css";
 
 export type GatedRoute = "terminal" | "forecast" | "dc";
@@ -33,6 +33,7 @@ interface Props {
 
 export function RouteNav({ current, showBrand = true }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
   // Close the menu when the user navigates (hash change). The user
   // just took the action they came for — no reason to leave the
@@ -44,14 +45,30 @@ export function RouteNav({ current, showBrand = true }: Props) {
   }, []);
 
   // Esc to close — keyboard parity with mobile dropdowns elsewhere
-  // in the dashboard.
+  // in the dashboard. Restore focus to the toggle on close so
+  // keyboard users don't get stranded.
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        toggleRef.current?.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  // Body scroll-lock while the dropdown is open — prevents the page
+  // beneath from scrolling when the user tap-and-drags on the
+  // backdrop or panel. Restores prior overflow on close.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [menuOpen]);
 
   return (
@@ -65,6 +82,7 @@ export function RouteNav({ current, showBrand = true }: Props) {
         </div>
       )}
       <button
+        ref={toggleRef}
         type="button"
         className="route-nav-toggle"
         aria-expanded={menuOpen}
@@ -78,6 +96,13 @@ export function RouteNav({ current, showBrand = true }: Props) {
             the button's aria-label provides the accessible name. */}
         <span aria-hidden="true">☰</span>
       </button>
+      {menuOpen && (
+        <div
+          className="route-nav-backdrop"
+          aria-hidden="true"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       <ul className="route-nav-links" id="route-nav-menu">
         {ROUTES.map((r, i) => {
           const isActive = r.key === current;
