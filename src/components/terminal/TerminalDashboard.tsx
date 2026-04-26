@@ -201,11 +201,11 @@ function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
             <LevelRow label="POC" value={levels!.poc} />
             <LevelRow label="VAH" value={levels!.vah} />
             <LevelRow label="VAL" value={levels!.val} />
-            <LevelRow label="PD H" value={levels!.pd_high} />
-            <LevelRow label="PD L" value={levels!.pd_low} />
-            <LevelRow label="PD C" value={levels!.pd_close} />
-            <LevelRow label="OR H" value={levels!.or_high} />
-            <LevelRow label="OR L" value={levels!.or_low} />
+            <LevelRow label="Prior H" value={levels!.pd_high} />
+            <LevelRow label="Prior L" value={levels!.pd_low} />
+            <LevelRow label="Prior C" value={levels!.pd_close} />
+            <LevelRow label="OR High" value={levels!.or_high} />
+            <LevelRow label="OR Low" value={levels!.or_low} />
           </ul>
         ) : (
           <span className="empty">Awaiting data.</span>

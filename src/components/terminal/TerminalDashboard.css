@@ -304,6 +304,7 @@
 .levels-value {
   color: var(--ink-100);
   font-weight: 500;
+  white-space: nowrap;
 }
 .levels-value.placeholder {
   color: var(--ink-40);
