@@ -51,8 +51,11 @@ export function TerminalDashboard() {
 function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const score = data?.synthesizer?.score;
   const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
+  // Score is in the [-10, +10] float range — show one decimal place
+  // so a +5.4 reads distinctly from a +6.1 instead of both rounding to
+  // 5/6. Match the SynthesisCard score precision.
   const scoreDisplay = hasScore
-    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}`
+    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
     : "—";
 
   const regimeLabel = data?.regime?.regime_label ?? "unknown";
