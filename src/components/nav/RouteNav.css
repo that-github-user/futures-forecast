@@ -110,34 +110,27 @@
   color: var(--ink-100);
 }
 
-/* Mobile (≤480px) — hamburger + absolute-positioned dropdown panel.
+/* Narrow view (≤768px) — hamburger + absolute-positioned dropdown.
+   The threshold is set generously at 768px (iPad portrait) because
+   the inline link strip's natural width at desktop styling
+   (~411px including brand wordmark + Terminal · Forecast · DC) sits
+   uncomfortably close to phone widths and was cutting off the right
+   edge on phone-class viewports between 481-768px. The hamburger is
+   the right primitive across this whole range; tablet portrait users
+   see it too, which is fine — the alternative was inline links
+   running off the right edge.
+
    The bar itself stays a flex row with brand on the left and toggle
    on the right; the inline link strip is replaced by the dropdown
-   panel which absolute-positions beneath the bar at top:100%. The
-   panel overlays whatever content is below until dismissed. */
-@media (max-width: 480px) {
+   panel which absolute-positions beneath the bar at top:100%. */
+@media (max-width: 768px) {
   .route-nav {
     padding: 0 14px;
     height: 52px;
     font-size: 11px;
   }
-  /* Brand: keep α visible as the brand mark; clip the wordmark
-     out via the standard sr-only pattern so screen readers still
-     announce "denoisedalpha". */
-  .route-nav-brand .wordmark {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
   .route-nav-brand .alpha {
     font-size: 22px;
-    margin-right: 0;
   }
 
   .route-nav-toggle {
@@ -209,5 +202,26 @@
   @keyframes route-nav-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+}
+
+/* Phone-only tier (≤480px) — drop the brand wordmark and lean on
+   the α glyph as the brand mark. Above 480px (tablet portrait) the
+   bar has plenty of room to keep "denoisedalpha" rendered. The sr-only
+   clip pattern keeps the wordmark in DOM for assistive tech. */
+@media (max-width: 480px) {
+  .route-nav-brand .wordmark {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .route-nav-brand .alpha {
+    margin-right: 0;
   }
 }
