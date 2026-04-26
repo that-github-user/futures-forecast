@@ -136,35 +136,38 @@
     font-size: 22px;
   }
 
-  /* Pulled out of flex flow with `position: absolute` so the toggle's
-     placement is independent of the parent flex / grid layout. The
-     terminal renders RouteNav as a child of a `display: grid` parent
-     with `overflow-x: hidden`; on Firefox for Android this combination
-     was causing the toggle to fail to render at the expected right
-     edge despite `margin-left: auto`. Pinning the toggle absolute-to-
-     right works regardless of the surrounding layout. */
+  /* Viewport-pinned via `position: fixed` so the toggle's placement is
+     decoupled from the parent layout entirely. RouteNav lives in two
+     incompatible parent contexts (terminal grid + overflow-x:hidden;
+     DC flex header where showBrand=false collapses the nav to ~0
+     width). Previous patches positioned the toggle relative to those
+     parents and failed in one or both contexts. Fixed positioning
+     anchors against the viewport, working regardless of ancestor
+     display/overflow/flex behaviour. Caveat: a `transform`, `filter`,
+     `perspective`, or `will-change` on any ancestor would create a
+     new containing block and break this — verified clean across
+     `.terminal-root` + DC `<header>` at the time of writing. */
   .route-nav-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    position: absolute;
-    top: 50%;
+    position: fixed;
+    top: 8px;
     right: 14px;
-    transform: translateY(-50%);
     margin: 0;
-    /* z-index above the absolutely-positioned dropdown panel base
-       so the toggle stays tappable when the menu is closed. */
-    z-index: 11;
+    /* z-index 100 sits above any chart canvas / synthesizer content
+       beneath. Dropdown panel z-index stays just below at 99. */
+    z-index: 100;
   }
 
-  /* Inline link strip → dropdown panel. Closed by default. When
-     `.is-open`, the panel reveals as an absolutely-positioned column
-     that overlays the headline below the nav bar. The 180ms fade
-     matches the spec §5 drill-down cross-fade timing. */
+  /* Dropdown panel — also viewport-fixed so its width doesn't depend
+     on the (potentially zero-width) RouteNav containing block. Spans
+     the full viewport width below the toggle. The 180ms fade matches
+     spec §5 motion #5 (drill-down cross-fade, opacity-only). */
   .route-nav-links {
     display: none;
-    position: absolute;
-    top: 100%;
+    position: fixed;
+    top: 60px;
     left: 0;
     right: 0;
     flex-direction: column;
@@ -174,8 +177,7 @@
     background: var(--paper-deep);
     border-top: 1px solid var(--ink-40);
     border-bottom: 1px solid var(--ink-40);
-    /* Above the headline strip and any chart content beneath. */
-    z-index: 10;
+    z-index: 99;
   }
   .route-nav.is-open .route-nav-links {
     display: flex;
