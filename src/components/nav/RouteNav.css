@@ -46,6 +46,14 @@
    on some iOS Safari builds. Single-glyph approach has no layout
    dependencies — if the button's `display` is set to flex/inline-flex,
    the glyph renders. */
+/* Backdrop is hidden on desktop — only the mobile @media block
+   activates it. Defensive against state persisting across viewport
+   resize (e.g. user opens menu on phone, rotates, lands on tablet
+   landscape >768px). */
+.route-nav-backdrop {
+  display: none;
+}
+
 .route-nav-toggle {
   display: none;
   width: 44px;
@@ -143,6 +151,24 @@
      `perspective`, or `will-change` on any ancestor would create a
      new containing block and break this — verified clean across
      `.terminal-root` + DC `<header>` at the time of writing. */
+  /* Backdrop — full-viewport tap target sitting below the toggle
+     (z:100) and dropdown (z:99) so taps on those still register, but
+     taps anywhere else (chart, headline, scorecards beneath) close
+     the menu. Transparent: no visual dim — preserves the LUMEN
+     restraint and lets the page peek through faintly while the
+     menu is open. */
+  .route-nav-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    z-index: 98;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .route-nav-toggle {
     display: inline-flex;
     align-items: center;
