@@ -138,7 +138,7 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
     <section className="terminal-cards">
       <SystemCard system="volatility" />
       <GexPlaceholderCard data={data} />
-      <SystemCard system="structure" />
+      <VwapCard data={data} />
       <LevelsCard data={data} />
       <BreadthCard data={data} />
       <SynthesisCard data={data} />
@@ -166,6 +166,51 @@ function SystemCard({ system }: { system: InputSystem }) {
       </div>
       <div className="terminal-card-body">
         <span className="empty">Awaiting data.</span>
+      </div>
+    </div>
+  );
+}
+
+function VwapCard({ data }: { data: TerminalSnapshot | null }) {
+  const vwap = data?.vwap;
+  const hasAny =
+    vwap != null &&
+    (vwap.session_vwap != null || vwap.anchored.length > 0);
+
+  return (
+    <div className="terminal-card">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS.structure}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className="num placeholder">—</span>
+        <span className="slash">⁄</span>
+        <span className="denom">—</span>
+      </div>
+      <div className="terminal-card-body">
+        {hasAny ? (
+          <ul className="levels-list vwap-list">
+            <LevelRow label="Session" value={vwap!.session_vwap} />
+            {vwap!.anchored.map((a) => (
+              <LevelRow key={a.name} label={a.name} value={a.value} />
+            ))}
+            <li className="levels-row vwap-confluence-row">
+              <span className="levels-label">Confluence</span>
+              <span
+                className={`levels-value${
+                  vwap!.confluence_count >= 2 ? "" : " placeholder"
+                }`}
+              >
+                {vwap!.confluence_count >= 2 && vwap!.confluence_price != null
+                  ? `${vwap!.confluence_count} @ ${vwap!.confluence_price.toFixed(2)}`
+                  : "—"}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <span className="empty">Awaiting data.</span>
+        )}
       </div>
     </div>
   );
