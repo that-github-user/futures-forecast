@@ -43,7 +43,10 @@
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 500;
-  font-size: 168px;
+  /* Spec §2.3: --t-monument is clamp(140 → 240). Using a clamp here
+     instead of a hardcoded 168px also fixes the iPad-landscape gap
+     (~1024-1280px) where 168px was clipping the score block. */
+  font-size: clamp(140px, 12vw, 240px);
   line-height: 0.86;
   color: var(--lumen);
   letter-spacing: -0.04em;
@@ -471,13 +474,16 @@
 
   /* Regime + overrides re-cast as a single hairline-divided row
      beneath the score. This is the dashboard's "subtitle" on
-     mobile — operator's status read at a glance. */
+     mobile — operator's status read at a glance. The italic em
+     needs to outscale the surrounding mono by ~30% for the
+     "FT-style italic-inside-mono" punch (LUMEN signature §4.1) to
+     land — at 16px mono the em floors at 21px on tablet/phone. */
   .terminal-regime {
     font-size: 16px;
     letter-spacing: 0.06em;
   }
   .terminal-regime em {
-    font-size: 19px;
+    font-size: 21px;
     margin-left: 6px;
   }
 
@@ -553,11 +559,11 @@
   .terminal-chart-toggles::-webkit-scrollbar { display: none; }
   .terminal-chart-toggles .pill {
     flex: 0 0 auto;
-    /* Vertical padding bumped to land closer to iOS HIG's 44px
-       touch target — the pill row is a swipe-and-tap surface on
-       mobile, so the hit area matters. Visual height stays
+    /* Vertical padding bumped to clear iOS HIG's 44px touch target
+       — at 14px top/bottom + ~13px text line-height, the hit zone
+       lands ~41-44px depending on font metrics. Visual height stays
        restrained; only the touch zone grows. */
-    padding: 12px 14px 12px 0;
+    padding: 14px 14px 14px 0;
     margin-right: 14px;
     font-size: 10px;
     letter-spacing: 0.18em;
@@ -603,9 +609,14 @@
   }
   .terminal-card-score .num { font-size: 32px; }
   .terminal-card.synthesis .terminal-card-score .num {
-    /* Synthesis numeral stays sculptural even at smaller card size —
-       it mirrors the headline. */
-    font-size: 56px;
+    /* Synthesis numeral demoted on mobile (was 56px) — at this
+       composition the hero score and synthesis card stack vertically
+       with only the chart between them. Two large lumen-italic
+       numerals restating the same value would soften the hero's
+       "one chromatic moment" status (spec §6). 42px keeps the
+       synthesis card recognizable as the headline reduction without
+       competing with the hero. Lumen color stays per spec §4.5. */
+    font-size: 42px;
   }
 
   /* Levels card — keep two-column key/value but tighten the gap so
@@ -653,9 +664,10 @@
     min-height: 180px;
     font-size: 13px;
   }
-  /* Drop the regime serif size more — mobile portrait is too narrow
-     for the 19px italic to land with weight. */
+  /* Phone tier — keep the italic em above 20px so it still outscales
+     the surrounding 16px mono by ≥25% (the FT punch needs the size
+     contrast, not just the font switch). */
   .terminal-regime em {
-    font-size: 17px;
+    font-size: 20px;
   }
 }
