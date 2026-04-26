@@ -311,6 +311,17 @@
   font-weight: 400;
 }
 
+/* ── Breadth card — same grid, with semantic lead-signal coloring ── */
+.breadth-list .lead-pos {
+  color: var(--pos-cream);
+}
+.breadth-list .lead-neg {
+  color: var(--neg-persimmon);
+}
+.breadth-list .lead-neutral {
+  color: var(--ink-60);
+}
+
 /* ── GEX placeholder card ─────────────────────────────────── */
 .terminal-card.gex-placeholder .terminal-card-body .placeholder-msg {
   font-family: var(--font-display);

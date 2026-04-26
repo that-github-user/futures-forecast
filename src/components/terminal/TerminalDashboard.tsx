@@ -140,7 +140,7 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
       <GexPlaceholderCard data={data} />
       <SystemCard system="structure" />
       <LevelsCard data={data} />
-      <SystemCard system="breadth" />
+      <BreadthCard data={data} />
       <SynthesisCard data={data} />
     </section>
   );
@@ -224,6 +224,86 @@ function LevelRow({ label, value }: { label: string; value: number | null }) {
       </span>
     </li>
   );
+}
+
+function BreadthCard({ data }: { data: TerminalSnapshot | null }) {
+  const breadth = data?.breadth;
+  const hasAny =
+    breadth != null &&
+    (breadth.tick != null ||
+      breadth.trin != null ||
+      breadth.hyg_lqd_ratio != null ||
+      breadth.hyg_lqd_lead_signal !== "unknown");
+
+  const lead = breadth?.hyg_lqd_lead_signal ?? "unknown";
+  const leadClass =
+    lead === "bullish" ? "pos" : lead === "bearish" ? "neg" : "neutral";
+
+  return (
+    <div className="terminal-card">
+      <div className="terminal-card-title-row">
+        <span className="terminal-card-title">{SYSTEM_LABELS.breadth}</span>
+        <span className="terminal-card-ts">—</span>
+      </div>
+      <div className="terminal-card-score">
+        <span className="num placeholder">—</span>
+        <span className="slash">⁄</span>
+        <span className="denom">—</span>
+      </div>
+      <div className="terminal-card-body">
+        {hasAny ? (
+          <ul className="levels-list breadth-list">
+            <BreadthRow
+              label="TICK"
+              display={
+                breadth!.tick != null
+                  ? `${breadth!.tick > 0 ? "+" : ""}${breadth!.tick}`
+                  : null
+              }
+            />
+            <BreadthRow
+              label="TRIN"
+              display={breadth!.trin != null ? breadth!.trin.toFixed(2) : null}
+            />
+            <BreadthRow
+              label="HY/IG"
+              display={
+                breadth!.hyg_lqd_ratio != null
+                  ? breadth!.hyg_lqd_ratio.toFixed(4)
+                  : null
+              }
+            />
+            <li className="levels-row">
+              <span className="levels-label">Lead</span>
+              <span className={`levels-value lead-${leadClass}`}>
+                {formatLead(lead)}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <span className="empty">Awaiting data.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BreadthRow({ label, display }: { label: string; display: string | null }) {
+  return (
+    <li className="levels-row">
+      <span className="levels-label">{label}</span>
+      <span className={`levels-value${display == null ? " placeholder" : ""}`}>
+        {display ?? "—"}
+      </span>
+    </li>
+  );
+}
+
+function formatLead(lead: string): string {
+  if (lead === "bullish") return "Risk-on";
+  if (lead === "bearish") return "Risk-off";
+  if (lead === "neutral") return "Neutral";
+  return "—";
 }
 
 function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
