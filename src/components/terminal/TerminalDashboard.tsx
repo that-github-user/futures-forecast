@@ -51,11 +51,12 @@ export function TerminalDashboard() {
 function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const score = data?.synthesizer?.score;
   const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
-  // Score is in the [-10, +10] float range — show one decimal place
-  // so a +5.4 reads distinctly from a +6.1 instead of both rounding to
-  // 5/6. Match the SynthesisCard score precision.
+  // Per spec §4.1: the headline score is a 240px monumental Editorial
+  // Italic glyph — meant to read as a sculptural object, not telemetry.
+  // Integer rounding keeps the figure clean. The SynthesisCard body
+  // shows the same number with one decimal where precision matters.
   const scoreDisplay = hasScore
-    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
+    ? `${score! >= 0 ? "+" : ""}${Math.round(score!)}`
     : "—";
 
   const regimeLabel = data?.regime?.regime_label ?? "unknown";
@@ -466,16 +467,41 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
   );
 }
 
+// Per spec §4.5: SYNTHESIS card body is the weighted-contribution
+// matrix — bias / conviction / overrides live in the headline strip
+// (§4.1), not here. The card is just the score number reduction +
+// the 5-row contribution bars. Weights are shown in the row labels
+// per the spec ("Vol · 3 / Gam · 2 / …") as a transparency feature:
+// the operator gauges conviction by seeing which systems are doing
+// the lifting. The earlier privacy concern about exposing weights
+// was for DC strategies (per the privacy memo), not synthesizer
+// design constants — the spec calls for visible weights here.
+const SYSTEM_SHORT: Record<string, string> = {
+  volatility: "Vol",
+  gamma: "Gam",
+  structure: "Str",
+  levels: "Lvl",
+  breadth: "Brd",
+};
+const SYSTEM_WEIGHT: Record<string, string> = {
+  volatility: "3",
+  gamma: "2",
+  structure: "2",
+  levels: "1.5",
+  breadth: "1.5",
+};
+
 function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
   const synth = data?.synthesizer;
   const score = synth?.score ?? null;
   const bias = synth?.bias ?? "FLAT";
-  const conviction = synth?.conviction ?? "NONE";
   const contributions = synth?.contributions ?? [];
-  const overrides = synth?.overrides ?? [];
-  const confirms = synth?.confirms ?? 0;
 
   const hasScore = score != null && bias !== "FLAT";
+  // Per spec §4.5: SYNTHESIS card score uses Editorial Italic at 64px,
+  // mirroring the headline. Float-format with one decimal here since
+  // the card's smaller size benefits from precision; headline keeps
+  // its integer monumental glyph.
   const scoreDisplay = hasScore
     ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
     : score === 0
@@ -492,30 +518,12 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
         <span className={`num${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
       </div>
       <div className="terminal-card-body">
-        {synth != null ? (
-          <>
-            <div className="synth-meta">
-              <span className={`synth-bias bias-${bias.toLowerCase()}`}>{bias}</span>
-              <span className="synth-conv">{formatConviction(conviction)}</span>
-              <span className="synth-confirms">
-                {confirms}/{contributions.length} confirm
-              </span>
-            </div>
-            <ul className="synth-contributions">
-              {contributions.map((c) => (
-                <ContributionBar key={c.system} contribution={c} />
-              ))}
-            </ul>
-            {overrides.length > 0 && (
-              <div className="synth-overrides">
-                {overrides.map((o) => (
-                  <span key={o} className="synth-override-pill">
-                    {formatOverride(o)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </>
+        {synth != null && contributions.length > 0 ? (
+          <ul className="synth-contributions">
+            {contributions.map((c) => (
+              <ContributionBar key={c.system} contribution={c} />
+            ))}
+          </ul>
         ) : (
           <span className="empty">Awaiting input system scores.</span>
         )}
@@ -525,36 +533,26 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
 }
 
 function ContributionBar({ contribution }: { contribution: SynthesizerContribution }) {
-  const { system, share } = contribution;
+  const { system, contribution: value, share } = contribution;
   const widthPct = Math.abs(share) * 50; // share in [-1,1] → 0..50% of half-width
   const direction = share >= 0 ? "pos" : "neg";
+  const label = `${SYSTEM_SHORT[system] ?? system} · ${SYSTEM_WEIGHT[system] ?? "?"}`;
+  const valueDisplay =
+    value === 0
+      ? "0.0"
+      : `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(1)}`;
+  const valueClass = value > 0 ? "pos" : value < 0 ? "neg" : "zero";
   return (
     <li className="synth-contribution-row">
-      <span className="synth-contribution-label">
-        {SYSTEM_LABELS[system as keyof typeof SYSTEM_LABELS] ?? system}
-      </span>
+      <span className="synth-contribution-label">{label}</span>
       <div className="synth-contribution-track">
+        <div className="synth-contribution-centerline" />
         <div
           className={`synth-contribution-fill ${direction}`}
           style={{ width: `${widthPct}%` }}
         />
       </div>
+      <span className={`synth-contribution-value ${valueClass}`}>{valueDisplay}</span>
     </li>
   );
-}
-
-function formatConviction(c: string): string {
-  if (c === "HIGH") return "High conviction";
-  if (c === "MEDIUM") return "Medium conviction";
-  if (c === "LOW") return "Low conviction";
-  return "No conviction";
-}
-
-// Override names are category labels — public per the privacy
-// carve-out. Map the kebab-case backend identifier to a short display.
-function formatOverride(name: string): string {
-  if (name === "volatility-expansion") return "Vol expansion";
-  if (name === "vwap-divergent") return "VWAP divergent";
-  if (name === "regime-shift") return "Regime shift";
-  return name;
 }

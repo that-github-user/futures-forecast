@@ -322,66 +322,50 @@
   color: var(--ink-60);
 }
 
-/* ── Synthesis card body — bias chip + contribution bars + overrides ── */
-.synth-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--ink-60);
-  margin-bottom: 8px;
-}
-.synth-bias {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 13px;
-  letter-spacing: 0.04em;
-}
-.synth-bias.bias-long { color: var(--pos-cream); }
-.synth-bias.bias-short { color: var(--neg-persimmon); }
-.synth-bias.bias-flat { color: var(--ink-60); }
-.synth-conv {
-  color: var(--ink-80);
-}
-.synth-confirms {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-60);
-}
-
+/* ── Synthesis card body — weighted contribution bars (spec §4.5) ── */
+/* Spec mandates radius: 0 globally (§2.4). No border-radius anywhere. */
 .synth-contributions {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .synth-contribution-row {
   display: grid;
-  grid-template-columns: 80px 1fr;
+  grid-template-columns: 60px 1fr auto;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  column-gap: 10px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 .synth-contribution-label {
   color: var(--ink-60);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-/* Track is centered — 50% origin, fills extend left for negative,
-   right for positive shares. */
+/* Track is 8px tall, ink-20 background, with a 1px ink-40 vertical
+   centerline at 50% width marking score=0. Fill grows outward from
+   centerline: rightward for positive (cream), leftward for negative
+   (persimmon). Width proportional to |share| × 50% of bar width. */
 .synth-contribution-track {
   position: relative;
-  height: 6px;
-  background: var(--ink-08, rgba(255, 255, 255, 0.06));
-  border-radius: 3px;
+  height: 8px;
+  background: var(--ink-20, rgba(255, 255, 255, 0.12));
+}
+.synth-contribution-centerline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--ink-40, rgba(255, 255, 255, 0.24));
 }
 .synth-contribution-fill {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 3px;
 }
 .synth-contribution-fill.pos {
   left: 50%;
@@ -391,22 +375,15 @@
   right: 50%;
   background: var(--neg-persimmon);
 }
-
-.synth-overrides {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+.synth-contribution-value {
+  font-size: 11px;
+  font-family: var(--font-body, monospace);
+  min-width: 32px;
+  text-align: right;
 }
-.synth-override-pill {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
-  border: 1px solid var(--neg-persimmon);
-  color: var(--neg-persimmon);
-  border-radius: 2px;
-  text-transform: uppercase;
-}
+.synth-contribution-value.pos { color: var(--ink-100); }
+.synth-contribution-value.neg { color: var(--neg-persimmon); }
+.synth-contribution-value.zero { color: var(--ink-60); }
 
 /* ── GEX placeholder card ─────────────────────────────────── */
 .terminal-card.gex-placeholder .terminal-card-body .placeholder-msg {
