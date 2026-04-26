@@ -203,7 +203,7 @@ function RegimeCard({ data }: { data: TerminalSnapshot | null }) {
                 {formatRegimeLabel(label)}
               </span>
             </li>
-            <li className="levels-row">
+            <li className="levels-row" title={divergenceHoverHint(div)}>
               <span className="levels-label">ES/VIX</span>
               <span
                 className={`levels-value lead-${divClass}${
@@ -223,21 +223,33 @@ function RegimeCard({ data }: { data: TerminalSnapshot | null }) {
 }
 
 function formatRegimeLabel(label: string): string {
-  if (label === "trending") return "Trending";
-  if (label === "mean_reverting") return "Mean-revert";
+  // Vocabulary mirrors the design spec §4.1 headline-strip set
+  // (TREND / RANGE / VOLATILE) with "Quiet" as the carved-out
+  // sub-state when both VIX and SQN read calm.
+  if (label === "trending") return "Trend";
+  if (label === "mean_reverting") return "Range";
   if (label === "volatile") return "Volatile";
   if (label === "quiet") return "Quiet";
   return "—";
 }
 
-// Backend speaks positive/negative for the ES/VIX divergence. The
-// trader-facing framing is "distribution warning" (positive) and
-// "capitulation hint" (negative). Compress to short labels for the
-// card; the long form lives in the spec docs.
+function divergenceHoverHint(d: string): string {
+  if (d === "positive") return "Positive divergence — ES + VIX both rising, distribution warning";
+  if (d === "negative") return "Negative divergence — ES + VIX both falling, capitulation hint";
+  if (d === "none") return "ES and VIX moving inversely (normal regime)";
+  return "";
+}
+
 function formatDivergence(d: string): string {
-  if (d === "positive") return "Distribution";
-  if (d === "negative") return "Capitulation";
-  if (d === "none") return "Normal";
+  // Spec speaks "positive/negative divergence". We keep that
+  // vocabulary on the card; the risk-aware coloring (positive →
+  // persimmon because positive divergence is a distribution warning,
+  // negative → cream because it's a capitulation hint) is encoded in
+  // `divClass` above. Title attribute on the row provides the long
+  // form for hover.
+  if (d === "positive") return "Positive";
+  if (d === "negative") return "Negative";
+  if (d === "none") return "Aligned";
   return "—";
 }
 
