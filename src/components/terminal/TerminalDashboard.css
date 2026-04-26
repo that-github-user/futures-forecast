@@ -158,6 +158,16 @@
   margin-right: 16px;
   border-right: 1px solid var(--ink-40);
   position: relative;
+  /* Buttons are flush — no native UA chrome. */
+  background: transparent;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: color 120ms ease;
 }
 .terminal-chart-toggles .pill:last-child {
   border-right: none;
@@ -165,6 +175,17 @@
 }
 .terminal-chart-toggles .pill.on {
   color: var(--ink-100);
+}
+.terminal-chart-toggles .pill:hover:not(.disabled) {
+  color: var(--ink-80);
+}
+.terminal-chart-toggles .pill.on:hover {
+  color: var(--ink-100);
+}
+.terminal-chart-toggles .pill.disabled {
+  cursor: default;
+  color: var(--ink-40);
+  opacity: 0.6;
 }
 .terminal-chart-toggles .pill.on::after {
   content: "";
