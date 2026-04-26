@@ -322,6 +322,92 @@
   color: var(--ink-60);
 }
 
+/* ── Synthesis card body — bias chip + contribution bars + overrides ── */
+.synth-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--ink-60);
+  margin-bottom: 8px;
+}
+.synth-bias {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.synth-bias.bias-long { color: var(--pos-cream); }
+.synth-bias.bias-short { color: var(--neg-persimmon); }
+.synth-bias.bias-flat { color: var(--ink-60); }
+.synth-conv {
+  color: var(--ink-80);
+}
+.synth-confirms {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-60);
+}
+
+.synth-contributions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.synth-contribution-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.synth-contribution-label {
+  color: var(--ink-60);
+  letter-spacing: 0.02em;
+}
+/* Track is centered — 50% origin, fills extend left for negative,
+   right for positive shares. */
+.synth-contribution-track {
+  position: relative;
+  height: 6px;
+  background: var(--ink-08, rgba(255, 255, 255, 0.06));
+  border-radius: 3px;
+}
+.synth-contribution-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+.synth-contribution-fill.pos {
+  left: 50%;
+  background: var(--pos-cream);
+}
+.synth-contribution-fill.neg {
+  right: 50%;
+  background: var(--neg-persimmon);
+}
+
+.synth-overrides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.synth-override-pill {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--neg-persimmon);
+  color: var(--neg-persimmon);
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+
 /* ── GEX placeholder card ─────────────────────────────────── */
 .terminal-card.gex-placeholder .terminal-card-body .placeholder-msg {
   font-family: var(--font-display);

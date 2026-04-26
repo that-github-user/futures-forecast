@@ -14,7 +14,7 @@
  */
 
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
-import type { TerminalSnapshot } from "../../api/terminalTypes";
+import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
 
@@ -464,9 +464,20 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
 }
 
 function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
-  const score = data?.synthesizer?.score;
-  const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
-  const scoreDisplay = hasScore ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}` : "—";
+  const synth = data?.synthesizer;
+  const score = synth?.score ?? null;
+  const bias = synth?.bias ?? "FLAT";
+  const conviction = synth?.conviction ?? "NONE";
+  const contributions = synth?.contributions ?? [];
+  const overrides = synth?.overrides ?? [];
+  const confirms = synth?.confirms ?? 0;
+
+  const hasScore = score != null && bias !== "FLAT";
+  const scoreDisplay = hasScore
+    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
+    : score === 0
+      ? "0.0"
+      : "—";
 
   return (
     <div className="terminal-card synthesis">
@@ -478,8 +489,69 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
         <span className={`num${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
       </div>
       <div className="terminal-card-body">
-        <span className="empty">Awaiting input system scores.</span>
+        {synth != null ? (
+          <>
+            <div className="synth-meta">
+              <span className={`synth-bias bias-${bias.toLowerCase()}`}>{bias}</span>
+              <span className="synth-conv">{formatConviction(conviction)}</span>
+              <span className="synth-confirms">
+                {confirms}/{contributions.length} confirm
+              </span>
+            </div>
+            <ul className="synth-contributions">
+              {contributions.map((c) => (
+                <ContributionBar key={c.system} contribution={c} />
+              ))}
+            </ul>
+            {overrides.length > 0 && (
+              <div className="synth-overrides">
+                {overrides.map((o) => (
+                  <span key={o} className="synth-override-pill">
+                    {formatOverride(o)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <span className="empty">Awaiting input system scores.</span>
+        )}
       </div>
     </div>
   );
+}
+
+function ContributionBar({ contribution }: { contribution: SynthesizerContribution }) {
+  const { system, share } = contribution;
+  const widthPct = Math.abs(share) * 50; // share in [-1,1] → 0..50% of half-width
+  const direction = share >= 0 ? "pos" : "neg";
+  return (
+    <li className="synth-contribution-row">
+      <span className="synth-contribution-label">
+        {SYSTEM_LABELS[system as keyof typeof SYSTEM_LABELS] ?? system}
+      </span>
+      <div className="synth-contribution-track">
+        <div
+          className={`synth-contribution-fill ${direction}`}
+          style={{ width: `${widthPct}%` }}
+        />
+      </div>
+    </li>
+  );
+}
+
+function formatConviction(c: string): string {
+  if (c === "HIGH") return "High conviction";
+  if (c === "MEDIUM") return "Medium conviction";
+  if (c === "LOW") return "Low conviction";
+  return "No conviction";
+}
+
+// Override names are category labels — public per the privacy
+// carve-out. Map the kebab-case backend identifier to a short display.
+function formatOverride(name: string): string {
+  if (name === "volatility-expansion") return "Vol expansion";
+  if (name === "vwap-divergent") return "VWAP divergent";
+  if (name === "regime-shift") return "Regime shift";
+  return name;
 }
