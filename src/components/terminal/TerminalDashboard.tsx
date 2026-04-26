@@ -14,6 +14,7 @@
  */
 
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
+import { TerminalChartCanvas } from "./TerminalChartCanvas";
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
@@ -125,7 +126,7 @@ function MiddleBand() {
           <span className="pill">Opening Range</span>
           <span className="pill">ML Fan</span>
         </div>
-        <div className="terminal-chart-canvas">Awaiting live ES data — toggle pills activate when overlays land</div>
+        <TerminalChartCanvas />
       </div>
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>

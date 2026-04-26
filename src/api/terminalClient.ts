@@ -16,9 +16,12 @@ import type {
   RegimeData,
   SynthesizerData,
   TerminalHealth,
+  TerminalIntradayBarsResponse,
   TerminalSnapshot,
   VwapData,
 } from "./terminalTypes";
+
+export type { TerminalIntradayBar } from "./terminalTypes";
 
 const TERMINAL_API_URL = import.meta.env.VITE_TERMINAL_API_URL || "";
 const TERMINAL_API_KEY = import.meta.env.VITE_TERMINAL_API_KEY || "";
@@ -47,4 +50,14 @@ export const terminal = {
   levels: () => get<LevelsData>("/terminal/v1/levels"),
   breadth: () => get<BreadthData>("/terminal/v1/breadth"),
   synthesizer: () => get<SynthesizerData>("/terminal/v1/synthesizer"),
+  intradayBars: () =>
+    get<TerminalIntradayBarsResponse>("/terminal/v1/bars/es-intraday"),
 };
+
+/** Convenience wrapper for the chart canvas — returns the bars array
+ * (empty when API is offline / unauthorized / no bars yet) so the
+ * component doesn't have to handle the null-vs-empty distinction. */
+export async function fetchTerminalIntradayBars(): Promise<TerminalIntradayBarsResponse> {
+  const data = await terminal.intradayBars();
+  return data ?? { bars: [] };
+}
