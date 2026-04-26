@@ -13,9 +13,6 @@
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 300;
-  /* `position: relative` so the mobile dropdown panel can position
-     absolutely against the nav strip. No-op on desktop. */
-  position: relative;
 }
 
 /* Brand mark mirrors the lander's exactly per spec §3.2 — same α
@@ -113,19 +110,18 @@
   color: var(--ink-100);
 }
 
-/* Narrow view (≤768px) — hamburger + absolute-positioned dropdown.
-   The threshold is set generously at 768px (iPad portrait) because
-   the inline link strip's natural width at desktop styling
-   (~411px including brand wordmark + Terminal · Forecast · DC) sits
-   uncomfortably close to phone widths and was cutting off the right
-   edge on phone-class viewports between 481-768px. The hamburger is
-   the right primitive across this whole range; tablet portrait users
-   see it too, which is fine — the alternative was inline links
-   running off the right edge.
+/* Narrow view (≤768px) — viewport-pinned hamburger + dropdown.
+   Threshold is 768px (iPad portrait) because the inline link strip's
+   natural width at desktop styling (~411px) was cutting off the right
+   edge on phone-class viewports between 481-768px. Hamburger covers
+   the whole narrow range; tablet portrait sees it too.
 
-   The bar itself stays a flex row with brand on the left and toggle
-   on the right; the inline link strip is replaced by the dropdown
-   panel which absolute-positions beneath the bar at top:100%. */
+   Both the toggle and the dropdown panel use `position: fixed` so
+   they're viewport-anchored regardless of parent layout. RouteNav
+   is rendered into two incompatible parent contexts (terminal grid
+   + DC flex header) and prior position-absolute approaches failed
+   in one or the other. Fixed positioning bypasses both. See spec
+   §4.7 mobile carve-outs. */
 @media (max-width: 768px) {
   .route-nav {
     padding: 0 14px;
@@ -152,7 +148,9 @@
     align-items: center;
     justify-content: center;
     position: fixed;
-    top: 8px;
+    /* env(safe-area-inset-top) keeps the toggle below iOS notch /
+       status-bar chrome. Falls back to 0 on Android / desktop. */
+    top: calc(8px + env(safe-area-inset-top, 0px));
     right: 14px;
     margin: 0;
     /* z-index 100 sits above any chart canvas / synthesizer content
@@ -162,12 +160,15 @@
 
   /* Dropdown panel — also viewport-fixed so its width doesn't depend
      on the (potentially zero-width) RouteNav containing block. Spans
-     the full viewport width below the toggle. The 180ms fade matches
-     spec §5 motion #5 (drill-down cross-fade, opacity-only). */
+     the full viewport width. Top edge sits flush with the toggle's
+     bottom edge (8 + 44 = 52px) so the panel's top hairline reads as
+     a continuation of the strip's lower edge — the LUMEN hairline-
+     grammar move (spec §2.4). The 180ms fade matches spec §5 motion
+     #5 (drill-down cross-fade, opacity-only). */
   .route-nav-links {
     display: none;
     position: fixed;
-    top: 60px;
+    top: calc(52px + env(safe-area-inset-top, 0px));
     left: 0;
     right: 0;
     flex-direction: column;
