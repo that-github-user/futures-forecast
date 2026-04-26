@@ -34,6 +34,7 @@ interface Props {
 export function RouteNav({ current, showBrand = true }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
 
   // Close the menu when the user navigates (hash change). The user
   // just took the action they came for — no reason to leave the
@@ -61,7 +62,12 @@ export function RouteNav({ current, showBrand = true }: Props) {
 
   // Body scroll-lock while the dropdown is open — prevents the page
   // beneath from scrolling when the user tap-and-drags on the
-  // backdrop or panel. Restores prior overflow on close.
+  // backdrop or panel. Restores prior overflow on close. Note: this
+  // capture-and-restore pattern can clobber another modal's scroll-
+  // lock if two locks ever stack (this menu opens, then a different
+  // modal locks, then this menu closes → restores to "" instead of
+  // the modal's "hidden"). No other component currently locks body
+  // overflow; if one ever does, switch to a ref-counted helper.
   useEffect(() => {
     if (!menuOpen) return;
     const prev = document.body.style.overflow;
@@ -69,6 +75,37 @@ export function RouteNav({ current, showBrand = true }: Props) {
     return () => {
       document.body.style.overflow = prev;
     };
+  }, [menuOpen]);
+
+  // Focus trap while the dropdown is open. Without this, Tab past
+  // the last link moves focus to the obscured page content beneath
+  // the menu — keyboard users get stranded. Cycle Tab between the
+  // toggle and the dropdown links so focus stays in the menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const linkEls = menuRef.current?.querySelectorAll<HTMLAnchorElement>("a");
+      if (!linkEls || linkEls.length === 0) return;
+      const focusables = [
+        toggleRef.current,
+        ...Array.from(linkEls),
+      ].filter(
+        (el): el is HTMLButtonElement | HTMLAnchorElement => el !== null,
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
 
   return (
@@ -103,7 +140,7 @@ export function RouteNav({ current, showBrand = true }: Props) {
           onClick={() => setMenuOpen(false)}
         />
       )}
-      <ul className="route-nav-links" id="route-nav-menu">
+      <ul ref={menuRef} className="route-nav-links" id="route-nav-menu">
         {ROUTES.map((r, i) => {
           const isActive = r.key === current;
           return (
