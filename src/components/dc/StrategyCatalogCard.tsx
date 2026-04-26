@@ -32,17 +32,21 @@ const FAMILY_LABELS: Record<string, string> = {
   spy_straddles: "SPY Straddles",
 };
 
-// Family-specific accent colors. long_dte + hybrid_fm reuse shared
-// accents; short_dte (purple), spy_short_puts (cyan), spy_straddles
-// (pink) are category-specific visual tags — not in the shared
-// palette. Kept inline with this lookup so a future theme sweep sees
-// them as one block.
+// Family-specific accent colors — five LUMEN tokens spread across the
+// warm/cool palette so each strategy family carries a visually distinct
+// tag. lumen here is for the short_dte category mark only (NOT a
+// brand-thesis moment); the bend of spec §2.1's reservation rule is the
+// same exception ScenarioCluster takes for chart category swatches.
+// ink80 (bone-grey) used for spy_straddles since "neutral two-leg" reads
+// more accurately as bone than as pos-cream, AND keeps it visually
+// distinct from lumen (which would otherwise collide with pos-cream
+// at small swatch sizes — RGB-distance 29).
 const FAMILY_COLORS: Record<string, string> = {
-  long_dte: colors.accentBlue,
-  short_dte: "#a855f7",
-  hybrid_fm: colors.accentAmber,
-  spy_short_puts: "#06b6d4",  // cyan
-  spy_straddles: "#ec4899",   // pink
+  long_dte: colors.accentBlue,        // graphite-cool
+  short_dte: colors.lumen,            // warm bright amber-cream
+  hybrid_fm: colors.accentAmber,      // burnt amber
+  spy_short_puts: colors.accentRed,   // persimmon (protective puts)
+  spy_straddles: colors.ink80,        // bone-grey (neutral two-leg)
 };
 
 export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats, formatTime, tzLabel }: Props) {
