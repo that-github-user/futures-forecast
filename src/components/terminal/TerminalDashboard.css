@@ -393,3 +393,269 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ════════════════════════════════════════════════════════════
+   MOBILE COMPOSITION (≤ 768px)
+   ─────────────────────────────────────────────────────────────
+   The desktop spec composes 6 cards horizontally with a sidebar
+   feed. On mobile we re-compose as a magazine-cover hero (the
+   score still reads sculptural at ~22vw) → status strip → the
+   master synthesis card promoted to first position → chart →
+   stacked input cards → feed. The instrument-grade aesthetic
+   carries via type, hairlines, and stillness — only the spatial
+   organization changes.
+   ════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* Release the height: 100vh trap. Mobile scrolls vertically;
+     the hairline-grid background becomes a row gap instead of a
+     full grid background so card edges read crisp on touch. */
+  .terminal-root {
+    height: auto;
+    min-height: 100vh;
+    padding: 16px 14px 28px;
+    grid-template-rows: auto;
+    gap: 0;
+    background: var(--paper);
+    overflow: visible;
+    overflow-x: hidden;
+  }
+  .terminal-root > section {
+    margin-bottom: 14px;
+  }
+  .terminal-root > section:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ── Headline → magazine-cover hero ───────────────────────── */
+  /* Stack the four headline columns vertically. The score is the
+     sculptural object; everything else is set in editorial small
+     caps below it like a cover-line stack. */
+  .terminal-headline {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 22px 18px 24px;
+    gap: 14px;
+    min-height: auto;
+  }
+
+  .terminal-score-block {
+    grid-template-columns: auto;
+    grid-template-rows: auto auto;
+    column-gap: 0;
+    row-gap: 6px;
+    align-items: baseline;
+  }
+  .terminal-score {
+    grid-row: auto;
+    /* Mobile clamp — preserves the 0.86 line-height proportion of
+       the desktop monumental glyph but scales to viewport. iPhone
+       SE (375px) lands ~82px; iPhone 14 Pro Max (430px) lands ~95px;
+       iPad portrait (768px) lands ~140px. */
+    font-size: clamp(74px, 22vw, 140px);
+    line-height: 0.86;
+    letter-spacing: -0.045em;
+    /* Soften the lumen halo at smaller sizes — full desktop glow
+       reads as smudge on mobile. */
+    text-shadow: 0 0 22px rgba(239, 200, 139, 0.10);
+  }
+  .terminal-score-label {
+    font-size: 10px;
+    letter-spacing: 0.26em;
+    padding-bottom: 0;
+    /* Stack "Buy / Bias" inline as one cover-line row instead of
+       wrapping below the numeral. */
+    line-height: 1.2;
+  }
+
+  /* Regime + overrides re-cast as a single hairline-divided row
+     beneath the score. This is the dashboard's "subtitle" on
+     mobile — operator's status read at a glance. */
+  .terminal-regime {
+    font-size: 16px;
+    letter-spacing: 0.06em;
+  }
+  .terminal-regime em {
+    font-size: 19px;
+    margin-left: 6px;
+  }
+
+  .terminal-overrides {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0;
+    min-width: 0;
+    width: 100%;
+    padding-top: 12px;
+    border-top: 1px solid var(--ink-40);
+  }
+  .terminal-overrides-label {
+    font-size: 10px;
+    letter-spacing: 0.24em;
+  }
+  .terminal-overrides-body {
+    font-size: 13px;
+  }
+
+  /* ES price moves to its own row, full-width, baseline-aligned
+     to the regime line so the eye reads price as part of the
+     status strip, not a separate widget. */
+  .terminal-price-block {
+    align-items: flex-start;
+    width: 100%;
+    padding-top: 10px;
+    border-top: 1px solid var(--ink-40);
+  }
+  .terminal-price {
+    gap: 10px;
+    align-items: baseline;
+  }
+  .terminal-price-num {
+    font-size: 24px;
+  }
+  .terminal-price-chg {
+    font-size: 13px;
+  }
+
+  /* ── Middle band → chart full width, feed below ───────────── */
+  .terminal-middle {
+    grid-template-columns: 1fr;
+    gap: 0;
+    background: var(--paper);
+  }
+  .terminal-middle > div {
+    margin-bottom: 14px;
+  }
+  .terminal-middle > div:last-child {
+    margin-bottom: 0;
+  }
+
+  .terminal-chart {
+    padding: 18px 16px 16px;
+    gap: 12px;
+    min-height: 280px;
+  }
+  /* Toggle pills become a horizontal-scroll strip — the operator
+     swipes through overlay options. Right-borders adapt: only the
+     *visible* pill divider is meaningful when wrapped. */
+  .terminal-chart-toggles {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    /* Soft fade at right edge to signal scrollability — the LUMEN
+       way to whisper "more here" without a chrome scrollbar. */
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  }
+  .terminal-chart-toggles::-webkit-scrollbar { display: none; }
+  .terminal-chart-toggles .pill {
+    flex: 0 0 auto;
+    /* Vertical padding bumped to land closer to iOS HIG's 44px
+       touch target — the pill row is a swipe-and-tap surface on
+       mobile, so the hit area matters. Visual height stays
+       restrained; only the touch zone grows. */
+    padding: 12px 14px 12px 0;
+    margin-right: 14px;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+  }
+  .terminal-chart-canvas {
+    font-size: 14px;
+    text-align: center;
+    padding: 0 12px;
+    min-height: 220px;
+  }
+
+  .terminal-feed {
+    padding: 18px 18px 22px;
+    gap: 14px;
+  }
+
+  /* ── Scorecard grid → single-column stack, synthesis first ── */
+  /* Promote the synthesis card to top of the card stack (ahead of
+     the input scorecards) on mobile. It's the master — the operator
+     should see the headline reduction immediately under the chart,
+     not after scrolling past 5 input cards. */
+  .terminal-cards {
+    grid-template-columns: 1fr;
+    gap: 1px;
+    /* Background hairline becomes the inter-card divider on mobile,
+       same instrument-grade hairline rhythm as the desktop. */
+  }
+  .terminal-card {
+    padding: 18px 18px 20px;
+    gap: 12px;
+  }
+  /* Order on mobile: synthesis → volatility → structure → levels →
+     breadth → gamma. Synthesis lifted to top via `order: -1` because
+     it's the master / headline reduction. GEX (gamma) demoted to
+     last via `order: 1` because it's a placeholder until the
+     third-party feed lands; real-data cards should come first. */
+  .terminal-card.synthesis { order: -1; }
+  .terminal-card.gex-placeholder { order: 1; }
+
+  .terminal-card-title {
+    font-size: 10px;
+    letter-spacing: 0.24em;
+  }
+  .terminal-card-score .num { font-size: 32px; }
+  .terminal-card.synthesis .terminal-card-score .num {
+    /* Synthesis numeral stays sculptural even at smaller card size —
+       it mirrors the headline. */
+    font-size: 56px;
+  }
+
+  /* Levels card — keep two-column key/value but tighten the gap so
+     8 rows fit cleanly in the card body. */
+  .levels-list {
+    gap: 5px 14px;
+  }
+  .levels-row {
+    font-size: 12px;
+  }
+
+  /* Synthesizer contribution bars — bump label column slightly so
+     "Vol"/"Gam"/etc reads with breathing room on mobile. */
+  .synth-contribution-row {
+    grid-template-columns: 52px 1fr 40px;
+    column-gap: 8px;
+    font-size: 11px;
+  }
+  .synth-contribution-track {
+    height: 7px;
+  }
+}
+
+/* ── Phone tier (≤ 480px) — tighten further ───────────────────── */
+@media (max-width: 480px) {
+  .terminal-root {
+    padding: 12px 10px 24px;
+  }
+  .terminal-headline {
+    padding: 18px 14px 20px;
+  }
+  .terminal-score {
+    font-size: clamp(68px, 24vw, 96px);
+  }
+  .terminal-card {
+    padding: 16px 14px 18px;
+  }
+  /* Chart canvas is the floor of how short this can go before the
+     ML-fan / VWAP overlay loses meaning. Below 200px height, the
+     chart should hide rather than stub. */
+  .terminal-chart {
+    min-height: 240px;
+  }
+  .terminal-chart-canvas {
+    min-height: 180px;
+    font-size: 13px;
+  }
+  /* Drop the regime serif size more — mobile portrait is too narrow
+     for the 19px italic to land with weight. */
+  .terminal-regime em {
+    font-size: 17px;
+  }
+}

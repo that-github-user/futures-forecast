@@ -73,3 +73,30 @@
 .route-nav-item a.active {
   color: var(--ink-100);
 }
+
+/* Mobile — tighten horizontal padding, drop the brand to a glyph-only
+   mark, and bump the hit area on route links so they meet iOS HIG. */
+@media (max-width: 480px) {
+  .route-nav {
+    padding: 0 14px;
+    height: 52px;
+    font-size: 11px;
+  }
+  .route-nav-brand {
+    font-size: 0;        /* hide the "denoisedalpha" word at narrowest */
+  }
+  .route-nav-brand .alpha {
+    font-size: 22px;     /* α glyph alone, larger to read as a brand mark */
+    margin-right: 0;
+  }
+  .route-nav-item .sep {
+    margin: 0 8px;
+    font-size: 12px;
+  }
+  .route-nav-item a {
+    font-size: 15px;
+    /* Vertical padding pushes the touch zone toward 44px without
+       making the visual link any heavier. */
+    padding: 14px 0;
+  }
+}
