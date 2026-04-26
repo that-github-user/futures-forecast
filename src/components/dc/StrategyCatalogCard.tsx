@@ -37,12 +37,16 @@ const FAMILY_LABELS: Record<string, string> = {
 // tag. lumen here is for the short_dte category mark only (NOT a
 // brand-thesis moment); the bend of spec §2.1's reservation rule is the
 // same exception ScenarioCluster takes for chart category swatches.
+// ink80 (bone-grey) used for spy_straddles since "neutral two-leg" reads
+// more accurately as bone than as pos-cream, AND keeps it visually
+// distinct from lumen (which would otherwise collide with pos-cream
+// at small swatch sizes — RGB-distance 29).
 const FAMILY_COLORS: Record<string, string> = {
   long_dte: colors.accentBlue,        // graphite-cool
   short_dte: colors.lumen,            // warm bright amber-cream
   hybrid_fm: colors.accentAmber,      // burnt amber
   spy_short_puts: colors.accentRed,   // persimmon (protective puts)
-  spy_straddles: colors.accentGreen,  // pos-cream (neutral two-leg)
+  spy_straddles: colors.ink80,        // bone-grey (neutral two-leg)
 };
 
 export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stats, formatTime, tzLabel }: Props) {
