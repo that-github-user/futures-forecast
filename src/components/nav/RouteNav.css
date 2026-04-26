@@ -13,6 +13,9 @@
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 300;
+  /* `position: relative` so the mobile dropdown panel can position
+     absolutely against the nav strip. No-op on desktop. */
+  position: relative;
 }
 
 /* Brand mark mirrors the lander's exactly per spec §3.2 — same α
@@ -37,6 +40,39 @@
   margin-right: 14px;
   vertical-align: middle;
   display: inline-block;
+}
+
+/* Hamburger toggle — hidden on desktop, visible on phone tier.
+   Three hairlines stacked, 1px ink-100 each, 18px wide; centered
+   in a 44px-square tap target. The dropdown panel's presence is
+   the affordance for the open state — bars stay ink-100 across
+   open/closed (§2.1 reserves lumen for the brand-thesis register
+   only; "button hover / open-state cue" is explicitly forbidden).
+   On press, bars dim to ink-60 as silent-tap feedback (no lumen). */
+.route-nav-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.route-nav-toggle span {
+  display: block;
+  width: 18px;
+  height: 1px;
+  background: var(--ink-100);
+  transition: background 120ms ease;
+}
+.route-nav-toggle:active span {
+  background: var(--ink-60);
 }
 
 .route-nav-links {
@@ -74,18 +110,20 @@
   color: var(--ink-100);
 }
 
-/* Mobile — tighten horizontal padding, drop the wordmark to leave the
-   α glyph as the brand mark, and bump the hit area on route links so
-   they meet iOS HIG. */
+/* Mobile (≤480px) — hamburger + absolute-positioned dropdown panel.
+   The bar itself stays a flex row with brand on the left and toggle
+   on the right; the inline link strip is replaced by the dropdown
+   panel which absolute-positions beneath the bar at top:100%. The
+   panel overlays whatever content is below until dismissed. */
 @media (max-width: 480px) {
   .route-nav {
-    padding: 0 12px;
+    padding: 0 14px;
     height: 52px;
     font-size: 11px;
   }
-  /* Hide the wordmark explicitly — keeps the α glyph as a brand mark
-     while staying screen-reader-accessible (the wordmark text node
-     is preserved in DOM, just visually hidden). */
+  /* Brand: keep α visible as the brand mark; clip the wordmark
+     out via the standard sr-only pattern so screen readers still
+     announce "denoisedalpha". */
   .route-nav-brand .wordmark {
     position: absolute;
     width: 1px;
@@ -98,48 +136,78 @@
     border: 0;
   }
   .route-nav-brand .alpha {
-    font-size: 22px;     /* α glyph alone, larger to read as a brand mark */
+    font-size: 22px;
     margin-right: 0;
   }
-  .route-nav-item .sep {
-    margin: 0 6px;
-    font-size: 12px;
-  }
-  .route-nav-item a {
-    font-size: 14px;
-    /* Vertical padding pushes the touch zone toward 44px without
-       making the visual link any heavier. */
-    padding: 14px 0;
-  }
-  /* Safety net: if at any narrow viewport the natural width of the
-     links + α + padding still exceeds the available width, let the
-     nav scroll horizontally (touch-momentum) instead of clipping
-     content past the right edge. The DC link must always be reachable. */
-  .route-nav-links {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap;
-    /* min-width: 0 allows the flex child to shrink below its content
-       width — without it, the inline-flex container's intrinsic width
-       wins and overflow extends the parent. */
-    min-width: 0;
-    white-space: nowrap;
-  }
-  .route-nav-links::-webkit-scrollbar { display: none; }
-}
 
-/* Narrowest tier — older Androids and iPhone SE-class devices.
-   Tighten everything once more. */
-@media (max-width: 360px) {
-  .route-nav {
-    padding: 0 10px;
+  .route-nav-toggle {
+    display: flex;
+    margin-left: auto;
+  }
+
+  /* Inline link strip → dropdown panel. Closed by default. When
+     `.is-open`, the panel reveals as an absolutely-positioned column
+     that overlays the headline below the nav bar. The 180ms fade
+     matches the spec §5 drill-down cross-fade timing. */
+  .route-nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 0;
+    padding: 0;
+    background: var(--paper-deep);
+    border-top: 1px solid var(--ink-40);
+    border-bottom: 1px solid var(--ink-40);
+    /* Above the headline strip and any chart content beneath. */
+    z-index: 10;
+  }
+  .route-nav.is-open .route-nav-links {
+    display: flex;
+    /* Pure cross-fade matches spec §5 motion #5 (drill-down 180ms,
+       opacity-only). Earlier draft included a translateY slide which
+       would have been a 7th motion; per spec line 836 we don't add
+       motions without removing existing ones. */
+    animation: route-nav-fade-in 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Each list item becomes a full-width row. Hairline divider
+     between items replaces the inline middle-dot separator. */
+  .route-nav-item {
+    display: block;
+    border-bottom: 1px solid var(--ink-40);
+  }
+  .route-nav-item:last-child {
+    border-bottom: 0;
   }
   .route-nav-item .sep {
-    margin: 0 5px;
+    /* Inline separator dots aren't meaningful in a vertical list —
+       the hairline borders carry the divider grammar. */
+    display: none;
   }
   .route-nav-item a {
-    font-size: 13px;
+    display: block;
+    /* 16px vertical padding × 18px italic font ≈ 50px tap target,
+       comfortably above iOS HIG 44px. */
+    padding: 16px 18px;
+    font-size: 18px;
+    color: var(--ink-60);
+  }
+  .route-nav-item a.active {
+    color: var(--ink-100);
+    /* Leading-edge ink-100 hairline marks the active route in the
+       dropdown — the desktop strip uses color alone; in a vertical
+       stack the tiny indicator helps the eye land. Lumen is
+       forbidden for state cues per spec §2.1 (reserved for the
+       brand-thesis register only). */
+    box-shadow: inset 3px 0 0 var(--ink-100);
+  }
+
+  @keyframes route-nav-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
 }
