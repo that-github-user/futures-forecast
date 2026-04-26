@@ -87,6 +87,20 @@ export interface SynthesizerData {
   score_history_4h: number[];
 }
 
+export interface TerminalIntradayBar {
+  /** ISO-8601 UTC, Z-suffixed (e.g. "2026-04-26T22:01:00Z"). */
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface TerminalIntradayBarsResponse {
+  bars: TerminalIntradayBar[];
+}
+
 export interface TerminalSnapshot {
   timestamp: string;
   es_price: number | null;
