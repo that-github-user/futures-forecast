@@ -69,7 +69,7 @@ export function RouteNav({ current, showBrand = true }: Props) {
         className="route-nav-toggle"
         aria-expanded={menuOpen}
         aria-controls="route-nav-menu"
-        aria-label={menuOpen ? "Close routes menu" : "Open routes menu"}
+        aria-label={menuOpen ? "Hide routes" : "Show routes"}
         onClick={() => setMenuOpen((o) => !o)}
       >
         {/* U+2630 ☰ TRIGRAM FOR HEAVEN — renders natively as three
