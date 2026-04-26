@@ -79,7 +79,7 @@
    they meet iOS HIG. */
 @media (max-width: 480px) {
   .route-nav {
-    padding: 0 14px;
+    padding: 0 12px;
     height: 52px;
     font-size: 11px;
   }
@@ -102,13 +102,44 @@
     margin-right: 0;
   }
   .route-nav-item .sep {
-    margin: 0 8px;
+    margin: 0 6px;
     font-size: 12px;
   }
   .route-nav-item a {
-    font-size: 15px;
+    font-size: 14px;
     /* Vertical padding pushes the touch zone toward 44px without
        making the visual link any heavier. */
     padding: 14px 0;
+  }
+  /* Safety net: if at any narrow viewport the natural width of the
+     links + α + padding still exceeds the available width, let the
+     nav scroll horizontally (touch-momentum) instead of clipping
+     content past the right edge. The DC link must always be reachable. */
+  .route-nav-links {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    /* min-width: 0 allows the flex child to shrink below its content
+       width — without it, the inline-flex container's intrinsic width
+       wins and overflow extends the parent. */
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .route-nav-links::-webkit-scrollbar { display: none; }
+}
+
+/* Narrowest tier — older Androids and iPhone SE-class devices.
+   Tighten everything once more. */
+@media (max-width: 360px) {
+  .route-nav {
+    padding: 0 10px;
+  }
+  .route-nav-item .sep {
+    margin: 0 5px;
+  }
+  .route-nav-item a {
+    font-size: 13px;
   }
 }
