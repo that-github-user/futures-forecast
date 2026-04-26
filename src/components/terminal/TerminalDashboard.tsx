@@ -26,13 +26,11 @@ const SYSTEM_LABELS = {
   synthesis: "Synthesis",
 } as const;
 
-const SYSTEM_DENOMS = {
-  volatility: 3,
-  gamma: 2,
-  structure: 2,
-  levels: 1.5,
-  breadth: 1.5,
-} as const;
+// Per-system denominators are NOT hardcoded in the frontend — the
+// underlying weights are architecturally-sensitive design values per
+// the privacy threshold. Real values come from the backend response
+// (eventually via SynthesizerContribution.share for proportional bar
+// rendering). PR β renders "—" for the denominator everywhere.
 
 export function TerminalDashboard() {
   const { data } = useTerminalSnapshot();
@@ -136,11 +134,11 @@ function MiddleBand() {
 function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
   return (
     <section className="terminal-cards">
-      <SystemCard system="volatility" data={data} />
+      <SystemCard system="volatility" />
       <GexPlaceholderCard data={data} />
-      <SystemCard system="structure" data={data} />
-      <SystemCard system="levels" data={data} />
-      <SystemCard system="breadth" data={data} />
+      <SystemCard system="structure" />
+      <SystemCard system="levels" />
+      <SystemCard system="breadth" />
       <SynthesisCard data={data} />
     </section>
   );
@@ -148,10 +146,11 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
 
 type InputSystem = "volatility" | "structure" | "levels" | "breadth";
 
-function SystemCard({ system, data: _data }: { system: InputSystem; data: TerminalSnapshot | null }) {
-  const denom = SYSTEM_DENOMS[system];
+function SystemCard({ system }: { system: InputSystem }) {
   // PR β: no per-system score logic yet — that lands when individual
-  // systems wire up in PRs γ and δ.
+  // systems wire up in PRs γ and δ. Denominator stays `—` until the
+  // synthesizer endpoint exposes its share/contribution payload, since
+  // raw weights aren't shipped through the API per the privacy threshold.
   return (
     <div className="terminal-card">
       <div className="terminal-card-title-row">
@@ -161,7 +160,7 @@ function SystemCard({ system, data: _data }: { system: InputSystem; data: Termin
       <div className="terminal-card-score">
         <span className="num placeholder">—</span>
         <span className="slash">⁄</span>
-        <span className="denom">{denom}</span>
+        <span className="denom">—</span>
       </div>
       <div className="terminal-card-body">
         <span className="empty">Awaiting data.</span>
@@ -171,7 +170,7 @@ function SystemCard({ system, data: _data }: { system: InputSystem; data: Termin
 }
 
 function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
-  const message = data?.gex?.message ?? "GEX feed not subscribed.";
+  const message = data?.gex?.message ?? "GEX placeholder.";
   return (
     <div className="terminal-card gex-placeholder">
       <div className="terminal-card-title-row">
@@ -181,7 +180,7 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
       <div className="terminal-card-score">
         <span className="num placeholder">—</span>
         <span className="slash">⁄</span>
-        <span className="denom">2</span>
+        <span className="denom">—</span>
       </div>
       <div className="terminal-card-body">
         <span className="placeholder-msg">{message}</span>

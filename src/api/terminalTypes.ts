@@ -69,9 +69,12 @@ export type SystemKey = "volatility" | "gamma" | "structure" | "levels" | "bread
 
 export interface SynthesizerContribution {
   system: SystemKey;
-  weight: number;
+  /** System-internal score (signed). */
   score: number;
+  /** Signed contribution to the synthesizer total. */
   contribution: number;
+  /** Normalized share for proportional bar rendering, range -1..+1. */
+  share: number;
 }
 
 export interface SynthesizerData {
