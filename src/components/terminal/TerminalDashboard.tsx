@@ -173,9 +173,13 @@ function SystemCard({ system }: { system: InputSystem }) {
 
 function VwapCard({ data }: { data: TerminalSnapshot | null }) {
   const vwap = data?.vwap;
+  // Open the populated body only when at least one VWAP value is present.
+  // An anchored[] full of {value: null} entries shouldn't render a wall
+  // of dashes — fall back to the empty state.
   const hasAny =
     vwap != null &&
-    (vwap.session_vwap != null || vwap.anchored.length > 0);
+    (vwap.session_vwap != null ||
+      vwap.anchored.some((a) => a.value != null));
 
   return (
     <div className="terminal-card">
@@ -190,20 +194,20 @@ function VwapCard({ data }: { data: TerminalSnapshot | null }) {
       </div>
       <div className="terminal-card-body">
         {hasAny ? (
-          <ul className="levels-list vwap-list">
-            <LevelRow label="Session" value={vwap!.session_vwap} />
+          <ul className="levels-list">
+            <LevelRow label="Session VWAP" value={vwap!.session_vwap} />
             {vwap!.anchored.map((a) => (
               <LevelRow key={a.name} label={a.name} value={a.value} />
             ))}
-            <li className="levels-row vwap-confluence-row">
-              <span className="levels-label">Confluence</span>
+            <li className="levels-row">
+              <span className="levels-label">VWAP Confluence</span>
               <span
                 className={`levels-value${
                   vwap!.confluence_count >= 2 ? "" : " placeholder"
                 }`}
               >
                 {vwap!.confluence_count >= 2 && vwap!.confluence_price != null
-                  ? `${vwap!.confluence_count} @ ${vwap!.confluence_price.toFixed(2)}`
+                  ? `≥${vwap!.confluence_count} @ ${vwap!.confluence_price.toFixed(2)}`
                   : "—"}
               </span>
             </li>
