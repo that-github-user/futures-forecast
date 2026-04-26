@@ -14,7 +14,7 @@
  */
 
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
-import type { TerminalSnapshot } from "../../api/terminalTypes";
+import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
 
@@ -51,8 +51,12 @@ export function TerminalDashboard() {
 function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const score = data?.synthesizer?.score;
   const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
+  // Per spec §4.1: the headline score is a 240px monumental Editorial
+  // Italic glyph — meant to read as a sculptural object, not telemetry.
+  // Integer rounding keeps the figure clean. The SynthesisCard body
+  // shows the same number with one decimal where precision matters.
   const scoreDisplay = hasScore
-    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}`
+    ? `${score! >= 0 ? "+" : ""}${Math.round(score!)}`
     : "—";
 
   const regimeLabel = data?.regime?.regime_label ?? "unknown";
@@ -463,10 +467,43 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
   );
 }
 
+// SYNTHESIS card body is the weighted-contribution matrix — bias /
+// conviction / overrides live in the headline strip (§4.1), not here.
+// The card is just the score number reduction + the 5-row contribution
+// bars.
+//
+// PRIVACY DEVIATION FROM SPEC §4.5: spec mandates label format
+// "{system_short} · {weight}" with the actual numeric weight visible
+// (e.g. "Vol · 3"). We render only the system_short — the weights are
+// the synthesizer's "alpha" (the design's opinion of which signals
+// matter most), and exposing them in the public bundle is a leak of
+// proprietary research. The right-column numeric contribution still
+// shows magnitude per system; the operator can see relative
+// importance from contribution sizes without seeing the raw weight.
+const SYSTEM_SHORT: Record<string, string> = {
+  volatility: "Vol",
+  gamma: "Gam",
+  structure: "Str",
+  levels: "Lvl",
+  breadth: "Brd",
+};
+
 function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
-  const score = data?.synthesizer?.score;
-  const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
-  const scoreDisplay = hasScore ? `${score! >= 0 ? "+" : ""}${score!.toFixed(0)}` : "—";
+  const synth = data?.synthesizer;
+  const score = synth?.score ?? null;
+  const bias = synth?.bias ?? "FLAT";
+  const contributions = synth?.contributions ?? [];
+
+  const hasScore = score != null && bias !== "FLAT";
+  // Per spec §4.5: SYNTHESIS card score uses Editorial Italic at 64px,
+  // mirroring the headline. Float-format with one decimal here since
+  // the card's smaller size benefits from precision; headline keeps
+  // its integer monumental glyph.
+  const scoreDisplay = hasScore
+    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
+    : score === 0
+      ? "0.0"
+      : "—";
 
   return (
     <div className="terminal-card synthesis">
@@ -478,8 +515,41 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
         <span className={`num${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
       </div>
       <div className="terminal-card-body">
-        <span className="empty">Awaiting input system scores.</span>
+        {synth != null && contributions.length > 0 ? (
+          <ul className="synth-contributions">
+            {contributions.map((c) => (
+              <ContributionBar key={c.system} contribution={c} />
+            ))}
+          </ul>
+        ) : (
+          <span className="empty">Awaiting input system scores.</span>
+        )}
       </div>
     </div>
+  );
+}
+
+function ContributionBar({ contribution }: { contribution: SynthesizerContribution }) {
+  const { system, contribution: value, share } = contribution;
+  const widthPct = Math.abs(share) * 50; // share in [-1,1] → 0..50% of half-width
+  const direction = share >= 0 ? "pos" : "neg";
+  const label = SYSTEM_SHORT[system] ?? system;
+  const valueDisplay =
+    value === 0
+      ? "0.0"
+      : `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(1)}`;
+  const valueClass = value > 0 ? "pos" : value < 0 ? "neg" : "zero";
+  return (
+    <li className="synth-contribution-row">
+      <span className="synth-contribution-label">{label}</span>
+      <div className="synth-contribution-track">
+        <div className="synth-contribution-centerline" />
+        <div
+          className={`synth-contribution-fill ${direction}`}
+          style={{ width: `${widthPct}%` }}
+        />
+      </div>
+      <span className={`synth-contribution-value ${valueClass}`}>{valueDisplay}</span>
+    </li>
   );
 }
