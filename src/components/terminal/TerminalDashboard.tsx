@@ -13,8 +13,13 @@
  * Backend: vega-pilot/futures_terminal/ on terminal.denoisedalpha.com.
  */
 
+import { useState } from "react";
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
-import { TerminalChartCanvas } from "./TerminalChartCanvas";
+import {
+  TerminalChartCanvas,
+  type OverlayState,
+  DEFAULT_OVERLAYS,
+} from "./TerminalChartCanvas";
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
@@ -41,7 +46,7 @@ export function TerminalDashboard() {
     <div className="terminal-root">
       <RouteNav current="terminal" />
       <HeadlineStrip data={data} />
-      <MiddleBand />
+      <MiddleBand data={data} />
       <ScorecardGrid data={data} />
     </div>
   );
@@ -113,26 +118,63 @@ function formatRegime(label: string): React.ReactNode {
 
 /* ── Middle band: chart + system feed (spec §4.2 + §4.3) ──── */
 
-function MiddleBand() {
+function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
+  const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
+  const toggle = (key: keyof OverlayState) =>
+    setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
+
   return (
     <section className="terminal-middle">
       <div className="terminal-chart">
         <div className="terminal-chart-toggles">
-          <span className="pill">Session VWAP</span>
-          <span className="pill">AVWAP</span>
-          <span className="pill">Gamma Flip</span>
-          <span className="pill">POC / VAH / VAL</span>
-          <span className="pill">Prior Day HLC</span>
-          <span className="pill">Opening Range</span>
-          <span className="pill">ML Fan</span>
+          <ToggleButton active={overlays.sessionVwap} onClick={() => toggle("sessionVwap")}>
+            Session VWAP
+          </ToggleButton>
+          <ToggleButton active={overlays.avwaps} onClick={() => toggle("avwaps")}>
+            AVWAP
+          </ToggleButton>
+          {/* Gamma Flip: no data yet (third-party feed), kept disabled. */}
+          <span className="pill disabled">Gamma Flip</span>
+          <ToggleButton active={overlays.pocVa} onClick={() => toggle("pocVa")}>
+            POC / VAH / VAL
+          </ToggleButton>
+          <ToggleButton active={overlays.priorHlc} onClick={() => toggle("priorHlc")}>
+            Prior Day HLC
+          </ToggleButton>
+          <ToggleButton active={overlays.openingRange} onClick={() => toggle("openingRange")}>
+            Opening Range
+          </ToggleButton>
+          {/* ML Fan: PR η scope; kept disabled. */}
+          <span className="pill disabled">ML Fan</span>
         </div>
-        <TerminalChartCanvas />
+        <TerminalChartCanvas snapshot={data} overlays={overlays} />
       </div>
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
         <div className="terminal-feed-empty">Awaiting events.</div>
       </aside>
     </section>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`pill${active ? " on" : ""}`}
+      onClick={onClick}
+      aria-pressed={active}
+    >
+      {children}
+    </button>
   );
 }
 
