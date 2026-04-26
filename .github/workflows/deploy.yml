@@ -34,6 +34,8 @@ jobs:
           VITE_DC_API_URL: ${{ vars.DC_API_URL }}
           VITE_DC_API_KEY: ${{ secrets.DC_API_KEY }}
           VITE_DC_PASSWORD_HASH: ${{ vars.DC_PASSWORD_HASH }}
+          VITE_TERMINAL_API_URL: ${{ vars.TERMINAL_API_URL }}
+          VITE_TERMINAL_API_KEY: ${{ secrets.TERMINAL_API_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
