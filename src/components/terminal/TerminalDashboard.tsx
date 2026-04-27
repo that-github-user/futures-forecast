@@ -132,7 +132,7 @@ function formatRegime(label: string): React.ReactNode {
 function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
-  const { tz, setTz, formatChartTime, tzLabel } = useTimezone();
+  const { tz, setTz, formatChartTime, formatChartDay, tzLabel } = useTimezone();
   const toggleBool = (key: "pocVa" | "priorHlc" | "openingRange") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
   const setVwap = (next: VwapOverlayState) =>
@@ -176,6 +176,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           overlays={overlays}
           timeframe={timeframe}
           formatBarTime={formatChartTime}
+          formatBarDay={formatChartDay}
           tzLabel={tzLabel}
         />
       </div>
