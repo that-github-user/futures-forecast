@@ -232,7 +232,13 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
   // twice and the second run sees a stale `false` if we mutated inline.
   const option = useMemo(() => {
     if (!aggregatedBars || aggregatedBars.length === 0) return null;
-    const opt = buildEChartsOption(aggregatedBars, snapshot, overlays, palette);
+    const opt = buildEChartsOption(
+      aggregatedBars,
+      snapshot,
+      overlays,
+      palette,
+      TIMEFRAME_MINUTES[timeframe],
+    );
     if (initialMountRef.current) {
       opt.dataZoom = [
         {
@@ -243,7 +249,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       ];
     }
     return opt;
-  }, [aggregatedBars, snapshot, overlays, palette]);
+  }, [aggregatedBars, snapshot, overlays, palette, timeframe]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
@@ -303,13 +309,14 @@ function buildEChartsOption(
   snapshot: TerminalSnapshot | null,
   overlays: OverlayState,
   palette: LumenPalette,
+  timeframeMin: number,
 ): EChartsOption {
   // ECharts candlestick expects [open, close, low, high]
   const data = bars.map((b) => [b.open, b.close, b.low, b.high]);
   const times = bars.map((b) => formatBarTime(b.time));
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBand = buildOpeningRangeBand(snapshot, overlays);
-  const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette);
+  const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
 
   return {
     backgroundColor: "transparent",
@@ -549,17 +556,27 @@ function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
 
 /**
  * Compute cumulative VWAP and stddev bands from `anchorIdx` onward.
- * Ports the TradingView ta.vwap()/ta.stdev() formula 1:1:
+ * Ports the volume-weighted variant of TradingView's anchored-VWAP +
+ * VWSD bands (matches the user's verified TV reference):
  *   typical = (high + low + close) / 3
  *   VWAP[i]   = cumsum(typ × vol) / cumsum(vol)
  *   stddev[i] = sqrt(max(0, cumsum(typ² × vol)/cumsum(vol) − VWAP²))
  *
- * Returns an array aligned 1:1 with `bars`. Pre-anchor entries are
- * `null`; post-anchor entries carry the running {vwap, stddev}.
+ * `inScope` (optional) gates which post-anchor bars contribute to the
+ * cumulants AND emit a value. RTH passes a "Mon-Fri 09:30-16:00 ET"
+ * predicate so the line only renders during cash-session bars and
+ * doesn't drift during ETH (where neither RTH volume nor RTH typical
+ * prices belong in the running VWAP). Out-of-scope bars stay null —
+ * `connectNulls: false` on the line series turns this into a clean
+ * gap during ETH that re-anchors at next RTH open.
+ *
+ * Returns an array aligned 1:1 with `bars`. Pre-anchor and
+ * out-of-scope entries are `null`.
  */
 function vwapWithBandsSeries(
   bars: TerminalIntradayBar[],
   anchorIdx: number,
+  inScope?: (bar: TerminalIntradayBar) => boolean,
 ): ({ vwap: number; stddev: number } | null)[] {
   const out: ({ vwap: number; stddev: number } | null)[] = new Array(bars.length).fill(null);
   if (anchorIdx < 0 || anchorIdx >= bars.length) return out;
@@ -568,6 +585,7 @@ function vwapWithBandsSeries(
   let cumTpSqVol = 0;
   for (let i = anchorIdx; i < bars.length; i++) {
     const b = bars[i];
+    if (inScope && !inScope(b)) continue;
     const typ = (b.high + b.low + b.close) / 3;
     const vol = b.volume > 0 ? b.volume : 1;
     cumTpVol += typ * vol;
@@ -638,6 +656,46 @@ function findRecentEtMomentMs(
 // Thu 18:00, weekend's is Thu 18:00.
 const GLOBEX_DAILY_OPEN_DAYS: ReadonlySet<string> = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
 const RTH_DAYS: ReadonlySet<string> = new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]);
+
+/**
+ * Whether a bar's bucket [bar.time, bar.time + timeframeMin) overlaps
+ * the RTH cash-session window (09:30 ≤ ET clock < 16:00 on Mon-Fri).
+ *
+ * Sub-hour timeframes (1m / 5m / 15m): buckets nest cleanly inside or
+ * outside RTH, so the predicate's start- and end-of-bucket checks
+ * agree. At hour-aligned timeframes (1h / 4h), buckets straddle the
+ * 09:30 boundary — e.g. a 1h bucket at 09:00 ET covers 09:00-10:00 ET
+ * (30 min ETH + 30 min RTH). Returning `true` when the bucket
+ * overlaps RTH includes the straddling bucket so the AVWAP line
+ * begins at the bucket containing 09:30. The tradeoff: that first
+ * bucket's aggregated OHLCV silently includes the pre-09:30 portion,
+ * mildly contaminating cumulants. This caveat already applies to the
+ * `aggregateBars` UTC-bucket alignment and is acceptable for the
+ * "structure read" use of coarse timeframes; precise RTH cumulants
+ * require the 1m / 5m timeframe.
+ *
+ * Holiday early closes (1pm ET) are not encoded — those bars 13:00 ET
+ * onward will still cumulate. Acceptable for now.
+ */
+function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
+  const startMs = Date.parse(bar.time);
+  if (!Number.isFinite(startMs)) return false;
+  // The bucket's last-instant timestamp (1ms before the next bucket
+  // start) — formatToParts on this gives the right ET clock for the
+  // close edge, even when the bucket spans a DST transition.
+  const lastMs = startMs + timeframeMin * 60_000 - 1;
+
+  const inRth = (ms: number): boolean => {
+    const parts = ET_FMT.formatToParts(new Date(ms));
+    if (!RTH_DAYS.has(etPart(parts, "weekday"))) return false;
+    const hh = parseInt(etPart(parts, "hour"), 10);
+    const mm = parseInt(etPart(parts, "minute"), 10);
+    const minutes = hh * 60 + mm;
+    return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+  };
+
+  return inRth(startMs) || inRth(lastMs);
+}
 
 /**
  * Map an anchor-moment (UTC ms) to the largest aggregated-bar index
@@ -715,6 +773,19 @@ function findAnchorIdx(key: VwapAnchorKey, bars: TerminalIntradayBar[]): number 
   }
 }
 
+// Per-anchor in-scope predicate. RTH only counts bars during the
+// cash session (Mon-Fri 09:30-16:00 ET) — without this, the running
+// VWAP would drift across ETH bars even though "RTH VWAP" should
+// freeze (or vanish) outside cash hours. Week and Daily Globex run
+// continuously through their respective sessions, so no predicate.
+// Predicate takes the bar's timeframe in minutes so it can correctly
+// classify hour-aligned buckets that straddle the 09:30 boundary.
+const VWAP_IN_SCOPE: Partial<
+  Record<VwapAnchorKey, (bar: TerminalIntradayBar, timeframeMin: number) => boolean>
+> = {
+  rth: isRthBar,
+};
+
 type EChartsLineSeries = {
   type: "line";
   name: string;
@@ -738,6 +809,7 @@ function buildAvwapSeries(
   bars: TerminalIntradayBar[],
   vwapState: VwapOverlayState,
   palette: LumenPalette,
+  timeframeMin: number,
 ): EChartsLineSeries[] {
   const out: EChartsLineSeries[] = [];
   for (const { key } of VWAP_ANCHORS) {
@@ -749,7 +821,11 @@ function buildAvwapSeries(
     let series: ({ vwap: number; stddev: number } | null)[] | null = null;
     if (anyOn) {
       const idx = findAnchorIdx(key, bars);
-      if (idx >= 0) series = vwapWithBandsSeries(bars, idx);
+      if (idx >= 0) {
+        const inScopeFactory = VWAP_IN_SCOPE[key];
+        const inScope = inScopeFactory ? (b: TerminalIntradayBar) => inScopeFactory(b, timeframeMin) : undefined;
+        series = vwapWithBandsSeries(bars, idx, inScope);
+      }
     }
 
     const vwapData = state.vwap && series ? series.map((s) => (s ? s.vwap : null)) : [];
@@ -775,7 +851,11 @@ function buildAvwapSeries(
         name: `VWAP ${style.label}`,
         data: vwapData,
         showSymbol: false,
-        sampling: "lttb",
+        // LTTB downsampling drops representative points to thin dense
+        // lines, but with sparse-null patterns (RTH gaps in ETH, etc.)
+        // it can drop the bar adjacent to a transition and visually
+        // merge two stripes into one sloped segment. Skip sampling so
+        // null gaps render as honest discontinuities.
         smooth: false,
         connectNulls: false,
         lineStyle: baseStyle,
