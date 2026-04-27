@@ -400,14 +400,16 @@ function buildEChartsOption(
   // user's TZ) when its day differs from the previous bar's. This
   // catches midnight crossings AND the Friday→Sunday weekend reopen
   // in one rule — both manifest as "the day-of-month changed". All
-  // other bars get the usual HH:MM label. (DataZoom + axisLabel
-  // hideOverlap drop most of these at coarse zoom; the day markers
-  // survive because ECharts spaces by string content, and "DD" is
-  // shorter than "HH:MM" so the date markers stay legible.)
+  // other bars get the usual HH:MM label. The first bar (i=0) has
+  // no prior to compare against, so it always gets HH:MM — accepted
+  // edge case (the date is implicit from the chart's anchor).
+  //
+  // Day strings precomputed once per bar; the rich-text formatter
+  // below uses them to render day markers in a different style than
+  // time markers so they stand visually distinct on the axis.
+  const days = bars.map((b) => formatBarDay(b.time));
   const times = bars.map((b, i) => {
-    if (i > 0 && formatBarDay(b.time) !== formatBarDay(bars[i - 1].time)) {
-      return formatBarDay(b.time);
-    }
+    if (i > 0 && days[i] !== days[i - 1]) return days[i];
     return formatBarTime(b.time);
   });
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
@@ -444,6 +446,23 @@ function buildEChartsOption(
         fontSize: 10,
         fontFamily: "var(--font-mono, monospace)",
         hideOverlap: true,
+        // Day-changeover labels (bare 2-digit "27") get a heavier
+        // ink-100 treatment via the `rich.day` style; time labels
+        // (5-char "HH:MM") inherit the default ink-60 axisLabel
+        // tone. The regex match is tight — anything that's exactly
+        // 2 digits is a day marker, everything else (HH:MM, HH:MM:SS)
+        // stays normal. Differentiates day markers from time markers
+        // typographically so a lone "27" doesn't read as a price.
+        formatter: (value: string) =>
+          /^\d{2}$/.test(value) ? `{day|${value}}` : value,
+        rich: {
+          day: {
+            color: palette.ink100,
+            fontSize: 10,
+            fontWeight: "bold",
+            fontFamily: "var(--font-mono, monospace)",
+          },
+        },
       },
       axisTick: { show: false },
       splitLine: { show: false },
@@ -606,14 +625,22 @@ function buildEChartsOption(
             align: "left",
           },
           data: [
-            // RTH session vertical strips
+            // RTH session vertical strips. 3% ink-100 (vs the OR
+            // band's 5%) — keeps the OR band's spec §4.2-reserved
+            // 5% identity as the louder wash where they overlap.
+            // `coord: [idx, "min/max"]` is used instead of the
+            // simpler `xAxis: idx` because ECharts on a string-typed
+            // category axis can interpret a numeric value as the
+            // category VALUE not the index, and our `times` array
+            // has duplicates (e.g. "09:30" appears every day). The
+            // explicit coord form guarantees index-based lookup.
             ...rthRanges.map(([s, e]) => [
               {
-                xAxis: s,
-                itemStyle: { color: hexToRgba(palette.ink100, 0.05) },
+                coord: [s, "min"],
+                itemStyle: { color: hexToRgba(palette.ink100, 0.03) },
                 label: { show: false },
               },
-              { xAxis: e },
+              { coord: [e, "max"] },
             ]),
             // OR band — horizontal band with corner labels
             ...(orBand
