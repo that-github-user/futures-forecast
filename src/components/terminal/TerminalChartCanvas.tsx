@@ -799,16 +799,15 @@ function buildEChartsOption(
                         itemStyle: { color: "transparent", borderWidth: 0 },
                         label: {
                           show: true,
-                          // Diagonal placement vs ORH: ORH at top-right
-                          // (insideTopRight), ORL at bottom-LEFT
-                          // (insideBottomLeft). markArea uses
-                          // TopLeft/TopRight/BottomLeft/BottomRight
-                          // keywords — NOT Start/End (which are
-                          // markLine-only). The earlier
-                          // insideEnd*/insideStart* values were
-                          // silently ignored by ECharts and labels
-                          // fell back to a default position.
-                          position: "insideBottomLeft",
+                          // ORL at the band's lower-RIGHT, mirror of
+                          // ORH at upper-right. Both stacks share the
+                          // band's right edge so the operator's eye
+                          // tracks down a single column to read both
+                          // boundaries. markArea uses Top/Bottom +
+                          // Left/Right keywords (NOT Start/End — those
+                          // are markLine-only and fall back to a
+                          // default if used here).
+                          position: "insideBottomRight",
                           offset: [0, dyBottom],
                           formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                         },
