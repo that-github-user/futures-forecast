@@ -76,11 +76,69 @@ function getLocalETOffsetHours(): number {
   return diff;
 }
 
+// IANA timezone names for each TZOption. Used by `formatChartTime`
+// to convert ISO UTC timestamps via Intl.DateTimeFormat (which
+// auto-handles DST, unlike the fixed-offset `formatTime` for the
+// DC route's already-ET-local HH:MM strings).
+const TZ_IANA: Record<Exclude<TZOption, "local">, string> = {
+  ET: "America/New_York",
+  CT: "America/Chicago",
+  MT: "America/Denver",
+  PT: "America/Los_Angeles",
+};
+
+// Module-level formatter cache. The chart's `bars.map(formatBarTime)`
+// runs ~600 times per option-rebuild; instantiating an
+// Intl.DateTimeFormat per call (even though formatters are interned
+// in V8) showed up as a meaningful slice of render time. One
+// formatter per tz option is sufficient — locale "en-GB" is
+// load-bearing: it defaults to `hourCycle: "h23"` which produces
+// "00:00" at midnight; "en-US" + hour12:false produces "24:00" on
+// some impls. The replace() in formatChartTime is the safety net.
+const chartFormatters = new Map<TZOption, Intl.DateTimeFormat>();
+const chartFormattersSec = new Map<TZOption, Intl.DateTimeFormat>();
+
+function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeFormat {
+  const opts: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
+    ...(withSeconds ? { second: "2-digit" } : {}),
+  };
+  return new Intl.DateTimeFormat("en-GB", opts);
+}
+
+function getChartFormatter(tz: TZOption): Intl.DateTimeFormat {
+  let f = chartFormatters.get(tz);
+  if (!f) {
+    f = buildChartFormatter(tz, false);
+    chartFormatters.set(tz, f);
+  }
+  return f;
+}
+
+function getChartFormatterSec(tz: TZOption): Intl.DateTimeFormat {
+  let f = chartFormattersSec.get(tz);
+  if (!f) {
+    f = buildChartFormatter(tz, true);
+    chartFormattersSec.set(tz, f);
+  }
+  return f;
+}
+
 export interface TimezoneApi {
   tz: TZOption;
   setTz: (tz: TZOption) => void;
   /** Convert an "HH:MM" string from ET to the user's selected timezone. */
   formatTime: (hhmmET: string | null) => string;
+  /**
+   * Format an ISO UTC timestamp as "HH:MM" (or "HH:MM:SS" with seconds)
+   * in the user's selected timezone via Intl.DateTimeFormat. DST-aware
+   * because IANA zones are queried directly, not derived via a fixed
+   * offset table.
+   */
+  formatChartTime: (iso: string, withSeconds?: boolean) => string;
   /** Display label for the current timezone ("ET", "PT", "PDT", etc.) */
   tzLabel: string;
 }
@@ -122,7 +180,21 @@ export function useTimezone(): TimezoneApi {
     [tz],
   );
 
+  const formatChartTime = useCallback(
+    (iso: string, withSeconds: boolean = false): string => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const fmt = withSeconds ? getChartFormatterSec(tz) : getChartFormatter(tz);
+      // V8 emits "24:00" (and "24:00:00") at midnight under en-US +
+      // hour12: false. en-GB defaults to hourCycle "h23" which avoids
+      // that — but the regex stays as belt-and-suspenders in case the
+      // Intl impl ever changes.
+      return fmt.format(d).replace(/^24:/, "00:");
+    },
+    [tz],
+  );
+
   const tzLabel = tz === "local" ? getLocalTZLabel() : TZ_DISPLAY_LABELS[tz];
 
-  return { tz, setTz, formatTime, tzLabel };
+  return { tz, setTz, formatTime, formatChartTime, tzLabel };
 }

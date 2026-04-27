@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
+import { useTimezone, type TZOption } from "../../hooks/useTimezone";
 import {
   TerminalChartCanvas,
   VWAP_ANCHORS,
@@ -26,6 +27,8 @@ import {
   DEFAULT_OVERLAYS,
   DEFAULT_TIMEFRAME,
 } from "./TerminalChartCanvas";
+
+const TZ_OPTIONS: TZOption[] = ["ET", "CT", "MT", "PT", "local"];
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h"];
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
@@ -129,6 +132,7 @@ function formatRegime(label: string): React.ReactNode {
 function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
+  const { tz, setTz, formatChartTime, tzLabel } = useTimezone();
   const toggleBool = (key: "pocVa" | "priorHlc" | "openingRange") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
   const setVwap = (next: VwapOverlayState) =>
@@ -149,6 +153,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
               {tf}
             </button>
           ))}
+          <ChartTzSelector tz={tz} setTz={setTz} tzLabel={tzLabel} />
         </div>
         <div className="terminal-chart-toggles">
           <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
@@ -166,13 +171,58 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
         </div>
-        <TerminalChartCanvas snapshot={data} overlays={overlays} timeframe={timeframe} />
+        <TerminalChartCanvas
+          snapshot={data}
+          overlays={overlays}
+          timeframe={timeframe}
+          formatBarTime={formatChartTime}
+          tzLabel={tzLabel}
+        />
       </div>
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
         <div className="terminal-feed-empty">Awaiting events.</div>
       </aside>
     </section>
+  );
+}
+
+/* ── Timezone selector ─────────────────────────────────────────────
+ *
+ * Sits at the right end of the timeframe-pill row. Native <select>
+ * styled to match the LUMEN tone (small-caps, paper-deep chip, ink-40
+ * hairline). Reuses the shared `useTimezone` hook so the user's
+ * timezone preference (storage key `dc.timezone`) flows across both
+ * /dc and /app. "local" surfaces the browser's resolved abbreviation
+ * (e.g. "PDT") in the option label.
+ */
+function ChartTzSelector({
+  tz,
+  setTz,
+  tzLabel,
+}: {
+  tz: TZOption;
+  setTz: (next: TZOption) => void;
+  tzLabel: string;
+}) {
+  return (
+    // Prefixing the closed-state value with "TZ · " makes the
+    // affordance + category visible at a glance — the bare 2-letter
+    // chip alongside 1m / 5m / 15m / 1h / 4h read as a sixth
+    // timeframe pill in early review.
+    <select
+      className="terminal-chart-tz"
+      value={tz}
+      onChange={(e) => setTz(e.target.value as TZOption)}
+      aria-label="Chart timezone"
+      title={`Display chart times in ${tzLabel}`}
+    >
+      {TZ_OPTIONS.map((o) => (
+        <option key={o} value={o}>
+          {o === "local" ? `TZ · Local · ${tzLabel}` : `TZ · ${o}`}
+        </option>
+      ))}
+    </select>
   );
 }
 

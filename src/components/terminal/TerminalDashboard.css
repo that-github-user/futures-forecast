@@ -196,6 +196,40 @@
   right: 0;
 }
 
+/* Chart timezone selector — sits at the right end of the timeframe
+   pill row. Native <select> stripped of UA chrome and re-tonalized
+   to match the LUMEN small-caps grammar. */
+.terminal-chart-tf .terminal-chart-tz {
+  margin-left: auto;
+  background: var(--paper-deep);
+  border: 1px solid var(--ink-40);
+  color: var(--ink-80);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 3px 22px 3px 8px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  /* Chevron drawn via data-URI SVG. Hex `#8c877c` is hard-coded as
+     the LUMEN `--ink-60` value because data-URIs can't reference
+     CSS variables, and `<select>` rejects `::after` (replaced
+     element). KEEP IN SYNC with `--ink-60` in the global token
+     sheet — if that token changes, this hex must follow. */
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'><path d='M0 0 L4 6 L8 0 Z' fill='%238c877c'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.terminal-chart-tf .terminal-chart-tz:hover {
+  color: var(--ink-100);
+  border-color: var(--ink-80);
+}
+.terminal-chart-tf .terminal-chart-tz:focus-visible {
+  outline: 1px solid var(--ink-80);
+  outline-offset: 1px;
+}
+
 .terminal-chart-toggles {
   display: flex;
   gap: 0;
