@@ -589,35 +589,68 @@ function buildEChartsOption(
             padding: [2, 4],
             align: "left",
           },
-          data: overlayLines.map((line, i) => {
-            const dy = labelOffsets[i] ?? 0;
-            return {
-              yAxis: line.value,
-              lineStyle: {
-                color: line.color,
-                type: line.style,
-                width: line.width,
-              },
-              label: {
-                formatter: `${line.label}\n${line.value.toFixed(2)}`,
-                color: line.color,
-                // Vertical pixel offset applied by the post-render
-                // collision pass (see computeCollisionOffsets). 0 when
-                // no nearby labels would overlap. Chips moved away
-                // from their actual y rely on color match + dash
-                // pattern + proximity for visual association.
-                offset: dy !== 0 ? [0, dy] : undefined,
-              },
-            };
-          }),
+          data: [
+            ...overlayLines.map((line, i) => {
+              const dy = labelOffsets[i] ?? 0;
+              return {
+                yAxis: line.value,
+                lineStyle: {
+                  color: line.color,
+                  type: line.style,
+                  width: line.width,
+                },
+                label: {
+                  formatter: `${line.label}\n${line.value.toFixed(2)}`,
+                  color: line.color,
+                  // Vertical pixel offset applied by the post-render
+                  // collision pass (see computeCollisionOffsets). 0
+                  // when no nearby labels would overlap. Chips moved
+                  // away from their actual y rely on color match +
+                  // dash pattern + proximity for visual association.
+                  offset: dy !== 0 ? [0, dy] : undefined,
+                },
+              };
+            }),
+            // Session-boundary verticals — 1px ink-40 hairlines at
+            // each ETH-strip's L (and R, when not the last bar in
+            // the buffer) edge. Drawn as markLines (xAxis-only,
+            // spans full y) instead of as markArea borders, because
+            // ECharts strokes all four sides of a markArea border —
+            // the T/B edges would render as visible horizontal
+            // hairlines across the chart top/bottom (the artifact
+            // the user reported as "shoddy"). markLines have no
+            // such issue: a single-coord xAxis entry draws ONE
+            // vertical line at that category index.
+            ...ethRanges.flatMap(([s, e]) => {
+              const lines: Array<Record<string, unknown>> = [
+                {
+                  xAxis: s,
+                  lineStyle: { color: palette.ink40, type: "solid", width: 1 },
+                  label: { show: false },
+                },
+              ];
+              // R-edge boundary only if there's a bar after this
+              // ETH range — i.e. the run isn't the open trailing
+              // run at the end of the buffer (where there's no RTH
+              // restart to mark).
+              if (e + 1 < bars.length) {
+                lines.push({
+                  xAxis: e,
+                  lineStyle: { color: palette.ink40, type: "solid", width: 1 },
+                  label: { show: false },
+                });
+              }
+              return lines;
+            }),
+          ],
         },
-        // Combined markArea: RTH-session shading (vertical strips)
-        // + OR band (horizontal strip). Both inherit the default
-        // styling from `itemStyle` but each data item can override.
-        // Spec §4.2: OR band at 5% ink-100. RTH shading at 5% ink-100
-        // is the same intensity but reads less prominent because it's
-        // a wider swath; the visual demarcation between RTH and ETH
-        // is the *boundary*, not the absolute brightness.
+        // Combined markArea: ETH-session shading (vertical strips at
+        // 8% ink-100) + OR band (horizontal strip at 5% ink-100,
+        // spec §4.2). Each data item can override the inherited
+        // `itemStyle`/`label`. Session-boundary hairlines are drawn
+        // separately as markLines to avoid the markArea border
+        // artifact (ECharts strokes all four sides; T/B borders
+        // would land as horizontal lines at the chart edges).
         markArea: {
           silent: true,
           itemStyle: {
@@ -663,14 +696,6 @@ function buildEChartsOption(
                 yAxis: "min",
                 itemStyle: {
                   color: hexToRgba(palette.ink100, 0.08),
-                  // Crisp 1px ink-40 hairline border per §2.4 — the
-                  // wash gives the section its tonal identity, the
-                  // border gives the boundary a sharp demarcation
-                  // line. Avoids the "low-opacity fill drifting into
-                  // the candles" look that read as half-baked at 3-6%.
-                  borderColor: palette.ink40,
-                  borderWidth: 1,
-                  borderType: "solid",
                 },
                 label: { show: false },
               },
