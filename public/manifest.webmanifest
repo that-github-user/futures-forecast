@@ -1,7 +1,7 @@
 {
-  "name": "ES Futures Forecast",
-  "short_name": "ES Forecast",
-  "description": "Real-time probabilistic ensemble forecasts for /ES futures plus the SPX DC trading dashboard.",
+  "name": "Denoised Alpha",
+  "short_name": "Denoised Alpha",
+  "description": "Denoised Alpha — instrument-grade terminal for the ES session: live signals, probabilistic forecasts, and DC monitoring.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
