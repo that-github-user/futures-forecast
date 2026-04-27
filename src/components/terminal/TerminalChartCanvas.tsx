@@ -187,6 +187,11 @@ interface Props {
   // instance owns the storage-key state and the parent's selector
   // and the chart stay in lockstep.
   formatBarTime: (iso: string, withSeconds?: boolean) => string;
+  // Day-of-month formatter (returns "DD"). Used by the x-axis label
+  // generator: when bar i's day differs from bar i-1's, that bar
+  // gets "DD" instead of "HH:MM" — a TradingView-style date marker
+  // at midnight crossings and the Friday→Sunday weekend reopen.
+  formatBarDay: (iso: string) => string;
   // Short label for the active timezone (e.g. "PT", "PDT"). Suffixed
   // onto the tooltip header so the user always knows what timezone
   // they're reading without glancing back at the selector.
@@ -198,6 +203,7 @@ export function TerminalChartCanvas({
   overlays,
   timeframe,
   formatBarTime,
+  formatBarDay,
   tzLabel,
 }: Props) {
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
@@ -263,6 +269,7 @@ export function TerminalChartCanvas({
       TIMEFRAME_MINUTES[timeframe],
       labelOffsets,
       formatBarTime,
+      formatBarDay,
       tzLabel,
     );
     if (initialMountRef.current) {
@@ -275,7 +282,7 @@ export function TerminalChartCanvas({
       ];
     }
     return opt;
-  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets, formatBarTime, tzLabel]);
+  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets, formatBarTime, formatBarDay, tzLabel]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
@@ -384,14 +391,35 @@ function buildEChartsOption(
   timeframeMin: number,
   labelOffsets: number[],
   formatBarTime: (iso: string, withSeconds?: boolean) => string,
+  formatBarDay: (iso: string) => string,
   tzLabel: string,
 ): EChartsOption {
   // ECharts candlestick expects [open, close, low, high]
   const data = bars.map((b) => [b.open, b.close, b.low, b.high]);
-  const times = bars.map((b) => formatBarTime(b.time));
+  // Day-aware x-axis labels: a bar gets its DD (day-of-month, in the
+  // user's TZ) when its day differs from the previous bar's. This
+  // catches midnight crossings AND the Friday→Sunday weekend reopen
+  // in one rule — both manifest as "the day-of-month changed". All
+  // other bars get the usual HH:MM label. The first bar (i=0) has
+  // no prior to compare against, so it always gets HH:MM — accepted
+  // edge case (the date is implicit from the chart's anchor).
+  //
+  // Day strings precomputed once per bar; the rich-text formatter
+  // below uses them to render day markers in a different style than
+  // time markers so they stand visually distinct on the axis.
+  const days = bars.map((b) => formatBarDay(b.time));
+  const times = bars.map((b, i) => {
+    if (i > 0 && days[i] !== days[i - 1]) return days[i];
+    return formatBarTime(b.time);
+  });
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBand = buildOpeningRangeBand(snapshot, overlays);
   const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
+  // RTH-session shading: subtle ink-100 wash over each contiguous
+  // run of cash-session bars (Mon-Fri 09:30-16:00 ET). Reuses the
+  // bucket-overlap predicate so the shading is consistent with the
+  // RTH AVWAP gating at every timeframe (1m / 5m / 15m / 1h / 4h).
+  const rthRanges = buildRthShadeRanges(bars, timeframeMin);
 
   return {
     backgroundColor: "transparent",
@@ -418,6 +446,23 @@ function buildEChartsOption(
         fontSize: 10,
         fontFamily: "var(--font-mono, monospace)",
         hideOverlap: true,
+        // Day-changeover labels (bare 2-digit "27") get a heavier
+        // ink-100 treatment via the `rich.day` style; time labels
+        // (5-char "HH:MM") inherit the default ink-60 axisLabel
+        // tone. The regex match is tight — anything that's exactly
+        // 2 digits is a day marker, everything else (HH:MM, HH:MM:SS)
+        // stays normal. Differentiates day markers from time markers
+        // typographically so a lone "27" doesn't read as a price.
+        formatter: (value: string) =>
+          /^\d{2}$/.test(value) ? `{day|${value}}` : value,
+        rich: {
+          day: {
+            color: palette.ink100,
+            fontSize: 10,
+            fontWeight: "bold",
+            fontFamily: "var(--font-mono, monospace)",
+          },
+        },
       },
       axisTick: { show: false },
       splitLine: { show: false },
@@ -552,23 +597,21 @@ function buildEChartsOption(
             };
           }),
         },
-        // Opening range — spec §4.2 calls for a shaded band at 5%
-        // ink-100 opacity, not two dashed lines. ECharts markArea
-        // renders a horizontal band between the [low, high] pair.
-        // ORH / ORL labels sit at the inside-end-top and
-        // inside-end-bottom corners of the band so they don't
-        // require gutter space (the band itself terminates at the
-        // plot edge).
+        // Combined markArea: RTH-session shading (vertical strips)
+        // + OR band (horizontal strip). Both inherit the default
+        // styling from `itemStyle` but each data item can override.
+        // Spec §4.2: OR band at 5% ink-100. RTH shading at 5% ink-100
+        // is the same intensity but reads less prominent because it's
+        // a wider swath; the visual demarcation between RTH and ETH
+        // is the *boundary*, not the absolute brightness.
         markArea: {
           silent: true,
           itemStyle: {
             color: hexToRgba(palette.ink100, 0.05),
             borderWidth: 0,
           },
-          // OR band corner labels follow the same two-line spec §4.2
-          // grammar (code + value) but anchor inside the band corners
-          // (the band itself terminates at the plot edge, so the band
-          // doesn't need gutter space).
+          // Default label config (used by the OR band corners). RTH
+          // shade items override with `label.show: false`.
           label: {
             show: true,
             color: palette.ink60,
@@ -581,26 +624,46 @@ function buildEChartsOption(
             padding: [2, 4],
             align: "left",
           },
-          data: orBand
-            ? [
-                [
-                  {
-                    yAxis: orBand.low,
-                    label: {
-                      position: "insideEndBottom",
-                      formatter: `ORL\n${orBand.low.toFixed(2)}`,
+          data: [
+            // RTH session vertical strips. 3% ink-100 (vs the OR
+            // band's 5%) — keeps the OR band's spec §4.2-reserved
+            // 5% identity as the louder wash where they overlap.
+            // `coord: [idx, "min/max"]` is used instead of the
+            // simpler `xAxis: idx` because ECharts on a string-typed
+            // category axis can interpret a numeric value as the
+            // category VALUE not the index, and our `times` array
+            // has duplicates (e.g. "09:30" appears every day). The
+            // explicit coord form guarantees index-based lookup.
+            ...rthRanges.map(([s, e]) => [
+              {
+                coord: [s, "min"],
+                itemStyle: { color: hexToRgba(palette.ink100, 0.03) },
+                label: { show: false },
+              },
+              { coord: [e, "max"] },
+            ]),
+            // OR band — horizontal band with corner labels
+            ...(orBand
+              ? [
+                  [
+                    {
+                      yAxis: orBand.low,
+                      label: {
+                        position: "insideEndBottom",
+                        formatter: `ORL\n${orBand.low.toFixed(2)}`,
+                      },
                     },
-                  },
-                  {
-                    yAxis: orBand.high,
-                    label: {
-                      position: "insideEndTop",
-                      formatter: `ORH\n${orBand.high.toFixed(2)}`,
+                    {
+                      yAxis: orBand.high,
+                      label: {
+                        position: "insideEndTop",
+                        formatter: `ORH\n${orBand.high.toFixed(2)}`,
+                      },
                     },
-                  },
-                ],
-              ]
-            : [],
+                  ],
+                ]
+              : []),
+          ],
         },
       },
       // AVWAP series — up to 3 anchors × 5 series each (vwap line,
@@ -979,6 +1042,33 @@ function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
   };
 
   return inRth(startMs) || inRth(lastMs);
+}
+
+/**
+ * Walk the bar buffer and collect [startIdx, endIdx] pairs for each
+ * contiguous run of cash-session (RTH) bars. Used by `buildEChartsOption`
+ * to render a subtle ink-100 wash over the RTH portions of the chart so
+ * the operator can see the RTH ↔ ETH transitions at a glance.
+ *
+ * Reuses `isRthBar`'s bucket-overlap predicate so the shading lines up
+ * with the RTH AVWAP gating at every timeframe.
+ */
+function buildRthShadeRanges(
+  bars: TerminalIntradayBar[],
+  timeframeMin: number,
+): [number, number][] {
+  const ranges: [number, number][] = [];
+  let runStart = -1;
+  for (let i = 0; i < bars.length; i++) {
+    const inRth = isRthBar(bars[i], timeframeMin);
+    if (inRth && runStart === -1) runStart = i;
+    else if (!inRth && runStart !== -1) {
+      ranges.push([runStart, i - 1]);
+      runStart = -1;
+    }
+  }
+  if (runStart !== -1) ranges.push([runStart, bars.length - 1]);
+  return ranges;
 }
 
 /**

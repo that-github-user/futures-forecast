@@ -97,6 +97,7 @@ const TZ_IANA: Record<Exclude<TZOption, "local">, string> = {
 // some impls. The replace() in formatChartTime is the safety net.
 const chartFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 const chartFormattersSec = new Map<TZOption, Intl.DateTimeFormat>();
+const chartDayFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 
 function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeFormat {
   const opts: Intl.DateTimeFormatOptions = {
@@ -105,6 +106,14 @@ function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeF
     hour12: false,
     ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
     ...(withSeconds ? { second: "2-digit" } : {}),
+  };
+  return new Intl.DateTimeFormat("en-GB", opts);
+}
+
+function buildChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
   };
   return new Intl.DateTimeFormat("en-GB", opts);
 }
@@ -127,6 +136,15 @@ function getChartFormatterSec(tz: TZOption): Intl.DateTimeFormat {
   return f;
 }
 
+function getChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
+  let f = chartDayFormatters.get(tz);
+  if (!f) {
+    f = buildChartDayFormatter(tz);
+    chartDayFormatters.set(tz, f);
+  }
+  return f;
+}
+
 export interface TimezoneApi {
   tz: TZOption;
   setTz: (tz: TZOption) => void;
@@ -139,6 +157,14 @@ export interface TimezoneApi {
    * offset table.
    */
   formatChartTime: (iso: string, withSeconds?: boolean) => string;
+  /**
+   * Format an ISO UTC timestamp as a 2-digit day-of-month ("27") in
+   * the user's selected timezone. Used by the chart's x-axis label
+   * generator to mark day-changeover bars (midnight crossings AND
+   * the Friday→Sunday weekend reopen — both are detected as the
+   * day-of-month differing from the previous bar).
+   */
+  formatChartDay: (iso: string) => string;
   /** Display label for the current timezone ("ET", "PT", "PDT", etc.) */
   tzLabel: string;
 }
@@ -194,7 +220,16 @@ export function useTimezone(): TimezoneApi {
     [tz],
   );
 
+  const formatChartDay = useCallback(
+    (iso: string): string => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return getChartDayFormatter(tz).format(d);
+    },
+    [tz],
+  );
+
   const tzLabel = tz === "local" ? getLocalTZLabel() : TZ_DISPLAY_LABELS[tz];
 
-  return { tz, setTz, formatTime, formatChartTime, tzLabel };
+  return { tz, setTz, formatTime, formatChartTime, formatChartDay, tzLabel };
 }
