@@ -133,12 +133,13 @@
   outline: none;
 }
 .terminal-overrides-help-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 50;
+  /* position: fixed escapes the headline strip's overflow:hidden
+     (which clips an absolute popover where it extends down into
+     the chart pane). top/left set inline from JS-computed coords. */
+  position: fixed;
+  z-index: 1000;
   width: 320px;
-  max-width: 90vw;
+  max-width: calc(100vw - 16px);
   background: var(--paper-deep);
   border: 1px solid var(--ink-40);
   padding: 14px 16px;

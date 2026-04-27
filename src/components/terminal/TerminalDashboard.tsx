@@ -135,7 +135,31 @@ function OverridesSection({
   overridesBody: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [popPos, setPopPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // The headline strip has `overflow: hidden` (load-bearing for the
+  // sweep-line and brand-thesis chrome) — an `position: absolute`
+  // popover anchored inside the strip gets clipped where it extends
+  // below the strip into the chart pane. Position `fixed` escapes
+  // any ancestor overflow / stacking context. Coords are computed
+  // from the trigger's getBoundingClientRect at open time and clamped
+  // to keep the panel inside the viewport with an 8px gutter.
+  const POP_W = 320;
+  const VIEWPORT_GUTTER = 8;
+  const computePos = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const left = Math.max(
+      VIEWPORT_GUTTER,
+      Math.min(r.left, vw - POP_W - VIEWPORT_GUTTER),
+    );
+    const top = r.bottom + 6;
+    setPopPos({ top, left });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -147,17 +171,24 @@ function OverridesSection({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // Re-anchor the popover on viewport resize so a rotation /
+    // window-resize doesn't strand it.
+    const onResize = () => computePos();
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 
-  // Acknowledge the overrides count in the help button's aria-label
-  // so screen readers don't lose the state context when the popover
-  // is closed. e.g. "Overrides: clear, what does this mean?"
+  const handleToggle = () => {
+    if (!open) computePos();
+    setOpen((o) => !o);
+  };
+
   const stateAria = overrides.length === 0 ? "clear" : `${overrides.length} firing`;
 
   return (
@@ -165,9 +196,10 @@ function OverridesSection({
       <span className="terminal-overrides-label">
         Overrides
         <button
+          ref={triggerRef}
           type="button"
           className="terminal-overrides-help-trigger"
-          onClick={() => setOpen((o) => !o)}
+          onClick={handleToggle}
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls="overrides-help-panel"
@@ -183,6 +215,7 @@ function OverridesSection({
           className="terminal-overrides-help-pop"
           role="dialog"
           aria-label="Overrides explained"
+          style={{ top: popPos.top, left: popPos.left }}
         >
           <p className="terminal-overrides-help-lead">
             Risk flags that invalidate the headline score.

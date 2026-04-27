@@ -422,6 +422,12 @@ function buildEChartsOption(
   // the bucket-overlap predicate (negated) so the shading lines up
   // with the RTH AVWAP gating at every timeframe.
   const ethRanges = buildEthShadeRanges(bars, timeframeMin);
+  // OR band is computed from today's first 5 min of RTH — its
+  // levels are only meaningful within today's RTH session. Bound
+  // the band's x-extent to the most-recent RTH session so it
+  // doesn't render across overnight ETH (where the levels mean
+  // nothing for current-session structure).
+  const latestRthRange = buildLatestRthRange(bars, timeframeMin);
 
   return {
     backgroundColor: "transparent",
@@ -492,6 +498,12 @@ function buildEChartsOption(
         fontFamily: "var(--font-mono, monospace)",
       },
       axisTick: { show: false },
+      // splitNumber: 10 (default 5) gives a denser grid that makes
+      // candle prices easier to read at a glance. ECharts still
+      // picks "nice" rounded interval values, and re-evaluates on
+      // pan/zoom so the gridline density stays sensible across
+      // y-axis range changes (TradingView-style adaptive ticks).
+      splitNumber: 10,
       splitLine: { lineStyle: { color: palette.ink20 } },
     },
     tooltip: {
@@ -710,11 +722,15 @@ function buildEChartsOption(
                 xAxis: e,
               },
             ]),
-            // OR band — horizontal band with corner labels
-            ...(orBand
+            // OR band — bounded rectangle confined to the most-recent
+            // RTH session (the OR levels are only valid for today's
+            // session, not overnight ETH). Falls back to no rendering
+            // when no RTH bars are in the buffer.
+            ...(orBand && latestRthRange
               ? [
                   [
                     {
+                      xAxis: latestRthRange[0],
                       yAxis: orBand.low,
                       label: {
                         position: "insideEndBottom",
@@ -722,6 +738,7 @@ function buildEChartsOption(
                       },
                     },
                     {
+                      xAxis: latestRthRange[1],
                       yAxis: orBand.high,
                       label: {
                         position: "insideEndTop",
@@ -1127,6 +1144,30 @@ function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
  * Reuses `isRthBar`'s bucket-overlap predicate (negated) so the
  * shading lines up with the RTH AVWAP gating at every timeframe.
  */
+/**
+ * Find the most-recent contiguous run of RTH bars in the buffer.
+ * Returns [startIdx, endIdx] of the latest run, or null if no RTH
+ * bars exist. Used to bound the Opening Range markArea — the OR
+ * levels are only meaningful within today's RTH session.
+ */
+function buildLatestRthRange(
+  bars: TerminalIntradayBar[],
+  timeframeMin: number,
+): [number, number] | null {
+  let last: [number, number] | null = null;
+  let runStart = -1;
+  for (let i = 0; i < bars.length; i++) {
+    const inRth = isRthBar(bars[i], timeframeMin);
+    if (inRth && runStart === -1) runStart = i;
+    else if (!inRth && runStart !== -1) {
+      last = [runStart, i - 1];
+      runStart = -1;
+    }
+  }
+  if (runStart !== -1) last = [runStart, bars.length - 1];
+  return last;
+}
+
 function buildEthShadeRanges(
   bars: TerminalIntradayBar[],
   timeframeMin: number,
