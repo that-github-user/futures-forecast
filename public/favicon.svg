@@ -6,33 +6,15 @@
       <stop offset="55%" stop-color="#0d0c0a"/>
       <stop offset="100%" stop-color="#06050a"/>
     </radialGradient>
-    <radialGradient id="halo" cx="50%" cy="50%" r="55%">
-      <stop offset="0%" stop-color="#f5efe2" stop-opacity="0.16"/>
-      <stop offset="60%" stop-color="#efc88b" stop-opacity="0.06"/>
+    <radialGradient id="halo" cx="50%" cy="55%" r="50%">
+      <stop offset="0%" stop-color="#f5efe2" stop-opacity="0.14"/>
+      <stop offset="55%" stop-color="#efc88b" stop-opacity="0.05"/>
       <stop offset="100%" stop-color="#efc88b" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="512" height="512" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="240" fill="url(#halo)"/>
-  <text
-    x="256" y="420"
-    font-family="EB Garamond, Garamond, Georgia, 'Times New Roman', serif"
-    font-style="italic"
-    font-weight="500"
-    font-size="600"
-    text-anchor="middle"
-    fill="#f5efe2"
-    fill-opacity="0.16"
-    letter-spacing="-0.02em"
-  >α</text>
-  <text
-    x="256" y="420"
-    font-family="EB Garamond, Garamond, Georgia, 'Times New Roman', serif"
-    font-style="italic"
-    font-weight="500"
-    font-size="600"
-    text-anchor="middle"
-    fill="#efc88b"
-    letter-spacing="-0.02em"
-  >α</text>
+  <circle cx="256" cy="280" r="220" fill="url(#halo)"/>
+  <g transform="translate(25.60, 465.92) scale(1.0240, -1.0240)">
+    <path d="M58 -15Q41 -15 28.5 -4.5Q16 6 9.5 24.5Q3 43 3 66Q3 102 18.0 146.0Q33 190 58.0 234.5Q83 279 114.0 316.5Q145 354 177.0 377.0Q209 400 238 400Q269 400 282.5 375.5Q296 351 299.5 314.5Q303 278 303 243Q303 240 304.5 240.0Q306 240 307 243Q330 281 351.5 323.0Q373 365 395 406Q400 416 404.5 420.5Q409 425 414 425Q423 425 430.5 417.5Q438 410 442.5 399.0Q447 388 447 379Q447 373 446.5 368.5Q446 364 445 361Q441 346 421.0 312.0Q401 278 369.0 235.0Q337 192 297 148Q298 107 312.0 87.5Q326 68 346 68Q366 68 390.5 82.5Q415 97 426 110Q431 116 434.0 118.0Q437 120 440 120Q444 120 445.0 119.0Q446 118 446 116Q446 98 435.0 75.5Q424 53 405.0 33.0Q386 13 363.0 -0.5Q340 -14 316 -14Q285 -14 274.0 7.0Q263 28 263 55Q263 72 265.5 90.5Q268 109 272 122Q238 88 198.0 56.5Q158 25 121.5 5.0Q85 -15 58 -15ZM62 31Q88 31 117.0 45.5Q146 60 177.0 88.0Q208 116 239 154Q249 166 258.0 178.5Q267 191 273 205Q277 252 269.0 286.5Q261 321 237 321Q214 321 187.5 303.0Q161 285 135.0 256.5Q109 228 88.0 194.0Q67 160 54.0 127.0Q41 94 41 68Q41 52 46.5 41.5Q52 31 62 31Z" fill="#efc88b"/>
+  </g>
 </svg>
