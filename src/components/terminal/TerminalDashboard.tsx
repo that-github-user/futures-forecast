@@ -594,6 +594,41 @@ function ScorecardGrid({ data }: { data: TerminalSnapshot | null }) {
   );
 }
 
+/* ── Card score helper ───────────────────────────────────────────
+ *
+ * Per spec §4.5: card score format is "{score} ⁄ {weight}". Per the
+ * user's privacy threshold (synthesizer weights are proprietary
+ * alpha), the denominator stays as "—" — the operator sees the
+ * numerator (the system's signed contribution to the synthesizer
+ * total) but not the weight that scaled it.
+ *
+ * The synthesizer's `contributions` array carries one entry per
+ * system; this helper looks up the entry by system key and
+ * formats the contribution value with one decimal.
+ */
+function getSystemContribution(
+  data: TerminalSnapshot | null,
+  system: "volatility" | "gamma" | "structure" | "levels" | "breadth",
+): number | null {
+  const c = data?.synthesizer?.contributions?.find((x) => x.system === system);
+  return c ? c.contribution : null;
+}
+
+function CardScore({ value }: { value: number | null }) {
+  const has = value != null;
+  const display = has
+    ? `${value! >= 0 ? "+" : ""}${value!.toFixed(1)}`
+    : "—";
+  const cls = has ? (value! > 0 ? "pos" : value! < 0 ? "neg" : "zero") : "placeholder";
+  return (
+    <div className="terminal-card-score">
+      <span className={`num ${cls}`}>{display}</span>
+      <span className="slash">⁄</span>
+      <span className="denom">—</span>
+    </div>
+  );
+}
+
 function RegimeCard({ data }: { data: TerminalSnapshot | null }) {
   const regime = data?.regime;
   const hasAny =
@@ -622,11 +657,7 @@ function RegimeCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-title">{SYSTEM_LABELS.volatility}</span>
         <span className="terminal-card-ts">—</span>
       </div>
-      <div className="terminal-card-score">
-        <span className="num placeholder">—</span>
-        <span className="slash">⁄</span>
-        <span className="denom">—</span>
-      </div>
+      <CardScore value={getSystemContribution(data, "volatility")} />
       <div className="terminal-card-body">
         {hasAny ? (
           <ul className="levels-list breadth-list">
@@ -717,11 +748,7 @@ function VwapCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-title">{SYSTEM_LABELS.structure}</span>
         <span className="terminal-card-ts">—</span>
       </div>
-      <div className="terminal-card-score">
-        <span className="num placeholder">—</span>
-        <span className="slash">⁄</span>
-        <span className="denom">—</span>
-      </div>
+      <CardScore value={getSystemContribution(data, "structure")} />
       <div className="terminal-card-body">
         {hasAny ? (
           <ul className="levels-list">
@@ -771,11 +798,7 @@ function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-title">{SYSTEM_LABELS.levels}</span>
         <span className="terminal-card-ts">—</span>
       </div>
-      <div className="terminal-card-score">
-        <span className="num placeholder">—</span>
-        <span className="slash">⁄</span>
-        <span className="denom">—</span>
-      </div>
+      <CardScore value={getSystemContribution(data, "levels")} />
       <div className="terminal-card-body">
         {hasAny ? (
           <ul className="levels-list">
@@ -832,11 +855,7 @@ function BreadthCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-title">{SYSTEM_LABELS.breadth}</span>
         <span className="terminal-card-ts">—</span>
       </div>
-      <div className="terminal-card-score">
-        <span className="num placeholder">—</span>
-        <span className="slash">⁄</span>
-        <span className="denom">—</span>
-      </div>
+      <CardScore value={getSystemContribution(data, "breadth")} />
       <div className="terminal-card-body">
         {hasAny ? (
           <ul className="levels-list breadth-list">
@@ -905,11 +924,7 @@ function GexPlaceholderCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-title">{SYSTEM_LABELS.gamma}</span>
         <span className="terminal-card-ts">—</span>
       </div>
-      <div className="terminal-card-score">
-        <span className="num placeholder">—</span>
-        <span className="slash">⁄</span>
-        <span className="denom">—</span>
-      </div>
+      <CardScore value={getSystemContribution(data, "gamma")} />
       <div className="terminal-card-body">
         <span className="placeholder-msg">{message}</span>
       </div>
