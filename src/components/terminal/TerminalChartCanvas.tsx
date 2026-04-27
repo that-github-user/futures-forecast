@@ -601,30 +601,43 @@ function etPart(parts: Intl.DateTimeFormatPart[], type: string): string {
 
 /**
  * Walk back minute-by-minute from `latestMs` until ET clock matches
- * the target hh:mm (and optionally a weekday filter). Caps at 8 days
- * lookback (≥1 trading week of safety) — returns null if no match.
+ * the target hh:mm (and optionally a weekday filter). Caps at 14 days
+ * lookback (≥1 trading week of safety, holiday-tolerant) — returns
+ * null if no match. `allowedWeekdays` is the set of 3-letter ET names
+ * that are valid; pass `null` to allow any.
  */
 function findRecentEtMomentMs(
   latestMs: number,
   targetHour: number,
   targetMin: number,
-  weekdaysOnly: boolean,
+  allowedWeekdays: ReadonlySet<string> | null,
 ): number | null {
-  const MAX_MIN = 8 * 24 * 60;
+  const MAX_MIN = 14 * 24 * 60;
   for (let offset = 0; offset < MAX_MIN; offset++) {
     const ms = latestMs - offset * 60_000;
     const parts = ET_FMT.formatToParts(new Date(ms));
     const hh = parseInt(etPart(parts, "hour"), 10);
     const mm = parseInt(etPart(parts, "minute"), 10);
     if (hh !== targetHour || mm !== targetMin) continue;
-    if (weekdaysOnly) {
+    if (allowedWeekdays) {
       const wk = etPart(parts, "weekday");
-      if (wk === "Sat" || wk === "Sun") continue;
+      if (!allowedWeekdays.has(wk)) continue;
     }
     return ms;
   }
   return null;
 }
+
+// Globex is closed Fri 17:00 ET → Sun 18:00 ET. Without filtering, the
+// daily anchor's "most recent 18:00 ET" can land on Sat or Fri evening
+// (closed-market times); `indexForAnchorMs` then resolves to the bar
+// just before the Friday-evening halt — i.e. Friday-close — which is
+// stale by ~50 hours over the weekend. Restricting to Sun-Thu (the
+// days that actually start a Globex daily session) keeps the anchor
+// honest. Mon's daily anchor is Sun 18:00, …, Fri's daily anchor is
+// Thu 18:00, weekend's is Thu 18:00.
+const GLOBEX_DAILY_OPEN_DAYS: ReadonlySet<string> = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
+const RTH_DAYS: ReadonlySet<string> = new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]);
 
 /**
  * Map an anchor-moment (UTC ms) to the largest aggregated-bar index
@@ -664,7 +677,7 @@ function findDailyGlobexAnchorIdx(bars: TerminalIntradayBar[]): number {
   if (bars.length === 0) return -1;
   const latestMs = Date.parse(bars[bars.length - 1].time);
   if (!Number.isFinite(latestMs)) return -1;
-  const ms = findRecentEtMomentMs(latestMs, 18, 0, false);
+  const ms = findRecentEtMomentMs(latestMs, 18, 0, GLOBEX_DAILY_OPEN_DAYS);
   if (ms == null) return -1;
   return indexForAnchorMs(bars, ms);
 }
@@ -673,7 +686,7 @@ function findRthAnchorIdx(bars: TerminalIntradayBar[]): number {
   if (bars.length === 0) return -1;
   const latestMs = Date.parse(bars[bars.length - 1].time);
   if (!Number.isFinite(latestMs)) return -1;
-  const ms = findRecentEtMomentMs(latestMs, 9, 30, true);
+  const ms = findRecentEtMomentMs(latestMs, 9, 30, RTH_DAYS);
   if (ms == null) return -1;
   return indexForAnchorMs(bars, ms);
 }

@@ -196,7 +196,9 @@ function AvwapPopover({
 
   useEffect(() => {
     if (!open) return;
-    const onDocDown = (e: MouseEvent) => {
+    // Use pointerdown (not mousedown) so iOS/Android touch dismiss
+    // fires before the chart's gesture handlers steal the event.
+    const onPointerDown = (e: PointerEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
@@ -204,10 +206,10 @@ function AvwapPopover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -232,13 +234,19 @@ function AvwapPopover({
         type="button"
         className={`pill${anyOn ? " on" : ""}`}
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls="avwap-pop-panel"
       >
         AVWAP{anyOn ? ` · ${activeAnchorCount}` : ""}
       </button>
       {open && (
-        <div className="avwap-pop" role="menu">
+        <div
+          className="avwap-pop"
+          id="avwap-pop-panel"
+          role="dialog"
+          aria-label="AVWAP overlays"
+        >
           <div className="avwap-pop-head">
             <span className="avwap-pop-anchor-col">Anchor</span>
             <span>VWAP</span>

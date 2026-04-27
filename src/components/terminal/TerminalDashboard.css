@@ -318,7 +318,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 120ms ease, background 120ms ease;
 }
 .avwap-pop-check:hover {
   border-color: var(--ink-80);
