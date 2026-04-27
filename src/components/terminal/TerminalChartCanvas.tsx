@@ -73,7 +73,7 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
 };
 
 /**
- * Bin 1-min bars into N-minute aggregated bars using clock-aligned
+ * Bin 1-min bars into N-minute aggregated bars using UTC-clock-aligned
  * bucket boundaries (e.g. 5m → 09:30, 09:35, 09:40 …). Across-session
  * gaps don't span buckets because the session-open timestamp lands in
  * its own bucket. Each bar's bucket is the floor of `time / N` × N.
@@ -81,6 +81,12 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
  * `time` of the aggregated bar is the bucket-start ISO; OHLC follows
  * the standard convention (open = first bar's open, high/low =
  * extrema, close = last bar's close, volume = sum).
+ *
+ * Caveat for 4h: UTC-aligned 4h buckets (00/04/08/12/16/20 UTC) don't
+ * line up with ET RTH-open at 13:30 UTC — RTH open lands mid-bucket
+ * inside the 12:00-15:59 UTC bar. Acceptable for "structure read"
+ * use of 4h; if RTH-open precision matters we'd need ET-anchored
+ * bucketing for 4h only. Tracked as a follow-up.
  */
 function aggregateBars(
   bars: TerminalIntradayBar[],

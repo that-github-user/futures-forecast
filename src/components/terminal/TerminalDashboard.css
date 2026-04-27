@@ -145,16 +145,19 @@
 }
 /* Timeframe row — sits above the indicator-toggle row. Single-select
    pills (1m / 5m / 15m / 1h / 4h). Same hairline-grammar as the
-   indicator pills below but slightly tighter so the two rows
-   read as a single toolbar block. */
+   indicator pills below but tighter (10px font, 0.14em letter-spacing)
+   so the row genuinely recedes visually — timeframe is "frame, not
+   signal." Without the letter-spacing reduction, 0.18em on a 10px
+   glyph gave more per-glyph presence than the 11px indicator row,
+   undercutting the hierarchy intent. */
 .terminal-chart-tf {
   display: flex;
   align-items: center;
   gap: 0;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  margin-bottom: 6px;
+  letter-spacing: 0.14em;
+  margin-bottom: 4px;
 }
 .terminal-chart-tf .tf-pill {
   background: transparent;
