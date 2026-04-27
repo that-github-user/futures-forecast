@@ -58,6 +58,74 @@ export const DEFAULT_OVERLAYS: OverlayState = {
   openingRange: true,
 };
 
+// ── Timeframe ──────────────────────────────────────────────────────
+
+export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h";
+
+export const DEFAULT_TIMEFRAME: Timeframe = "5m";
+
+const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
+  "1m": 1,
+  "5m": 5,
+  "15m": 15,
+  "1h": 60,
+  "4h": 240,
+};
+
+/**
+ * Bin 1-min bars into N-minute aggregated bars using clock-aligned
+ * bucket boundaries (e.g. 5m → 09:30, 09:35, 09:40 …). Across-session
+ * gaps don't span buckets because the session-open timestamp lands in
+ * its own bucket. Each bar's bucket is the floor of `time / N` × N.
+ *
+ * `time` of the aggregated bar is the bucket-start ISO; OHLC follows
+ * the standard convention (open = first bar's open, high/low =
+ * extrema, close = last bar's close, volume = sum).
+ */
+function aggregateBars(
+  bars: TerminalIntradayBar[],
+  minutes: number,
+): TerminalIntradayBar[] {
+  if (minutes <= 1 || bars.length === 0) return bars;
+  const intervalMs = minutes * 60_000;
+  const buckets = new Map<number, TerminalIntradayBar[]>();
+  for (const b of bars) {
+    const t = Date.parse(b.time);
+    if (!Number.isFinite(t)) continue;
+    const key = Math.floor(t / intervalMs) * intervalMs;
+    let group = buckets.get(key);
+    if (!group) {
+      group = [];
+      buckets.set(key, group);
+    }
+    group.push(b);
+  }
+  const sortedKeys = [...buckets.keys()].sort((a, b) => a - b);
+  const out: TerminalIntradayBar[] = [];
+  for (const key of sortedKeys) {
+    const group = buckets.get(key)!;
+    if (group.length === 0) continue;
+    const time = new Date(key).toISOString().replace(/\.\d{3}Z$/, "Z");
+    let high = group[0].high;
+    let low = group[0].low;
+    let volume = 0;
+    for (const b of group) {
+      if (b.high > high) high = b.high;
+      if (b.low < low) low = b.low;
+      volume += b.volume;
+    }
+    out.push({
+      time,
+      open: group[0].open,
+      high,
+      low,
+      close: group[group.length - 1].close,
+      volume,
+    });
+  }
+  return out;
+}
+
 // ── LUMEN palette resolution ────────────────────────────────────────
 
 function resolveLumenPalette() {
@@ -86,13 +154,22 @@ type LumenPalette = ReturnType<typeof resolveLumenPalette>;
 interface Props {
   snapshot: TerminalSnapshot | null;
   overlays: OverlayState;
+  timeframe: Timeframe;
 }
 
-export function TerminalChartCanvas({ snapshot, overlays }: Props) {
+export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const palette = useMemo(() => resolveLumenPalette(), []);
   const initialMountRef = useRef(true);
+
+  // Aggregate the raw 1-min bars into the user-selected timeframe. All
+  // downstream math (VWAP, default-zoom span, candle rendering) reads
+  // `aggregatedBars` so the rest of the pipeline is timeframe-agnostic.
+  const aggregatedBars = useMemo(
+    () => (bars ? aggregateBars(bars, TIMEFRAME_MINUTES[timeframe]) : null),
+    [bars, timeframe],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -127,28 +204,28 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
   // avoids the StrictMode-double-render bug where useMemo's factory runs
   // twice and the second run sees a stale `false` if we mutated inline.
   const option = useMemo(() => {
-    if (!bars || bars.length === 0) return null;
-    const opt = buildEChartsOption(bars, snapshot, overlays, palette);
+    if (!aggregatedBars || aggregatedBars.length === 0) return null;
+    const opt = buildEChartsOption(aggregatedBars, snapshot, overlays, palette);
     if (initialMountRef.current) {
       opt.dataZoom = [
         {
           type: "inside",
-          start: computeDefaultZoomStart(bars),
+          start: computeDefaultZoomStart(aggregatedBars),
           end: 100,
         },
       ];
     }
     return opt;
-  }, [bars, snapshot, overlays, palette]);
+  }, [aggregatedBars, snapshot, overlays, palette]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
   // the user's pan/zoom state isn't reset on each 30s poll.
   useEffect(() => {
-    if (bars && bars.length > 0 && initialMountRef.current) {
+    if (aggregatedBars && aggregatedBars.length > 0 && initialMountRef.current) {
       initialMountRef.current = false;
     }
-  }, [bars]);
+  }, [aggregatedBars]);
 
   if (error && !bars) {
     return (
@@ -157,14 +234,14 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
       </div>
     );
   }
-  if (!bars) {
+  if (!aggregatedBars) {
     return (
       <div className="terminal-chart-canvas">
         <span className="empty">Loading ES bars…</span>
       </div>
     );
   }
-  if (bars.length === 0) {
+  if (aggregatedBars.length === 0) {
     return (
       <div className="terminal-chart-canvas">
         <span className="empty">No bars available — IBKR may be reconnecting.</span>

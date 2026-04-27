@@ -18,8 +18,12 @@ import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
 import {
   TerminalChartCanvas,
   type OverlayState,
+  type Timeframe,
   DEFAULT_OVERLAYS,
+  DEFAULT_TIMEFRAME,
 } from "./TerminalChartCanvas";
+
+const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h"];
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import "./TerminalDashboard.css";
@@ -120,12 +124,26 @@ function formatRegime(label: string): React.ReactNode {
 
 function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
+  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
   const toggle = (key: keyof OverlayState) =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
     <section className="terminal-middle">
       <div className="terminal-chart">
+        <div className="terminal-chart-tf">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf}
+              type="button"
+              className={`tf-pill${timeframe === tf ? " on" : ""}`}
+              onClick={() => setTimeframe(tf)}
+              aria-pressed={timeframe === tf}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
         <div className="terminal-chart-toggles">
           <ToggleButton active={overlays.sessionVwap} onClick={() => toggle("sessionVwap")}>
             Session VWAP
@@ -147,7 +165,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
         </div>
-        <TerminalChartCanvas snapshot={data} overlays={overlays} />
+        <TerminalChartCanvas snapshot={data} overlays={overlays} timeframe={timeframe} />
       </div>
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
