@@ -273,14 +273,15 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
   // Re-derive overlay lines, ask the chart instance for each line's
   // pixel y, cluster overlapping chips, and store per-line vertical
   // offsets. Triggered both on data updates (bars / snapshot /
-  // overlays change) and on user pan/zoom (`dataZoom` event), so
-  // offsets stay accurate as the y-axis auto-scales to the visible
-  // window.
+  // overlays change) and on user pan/zoom (`dataZoom` event via the
+  // `onEvents` prop on ReactEChartsCore — re-binds automatically if
+  // the underlying instance is recreated).
   //
-  // Updates use array-equality so a no-op compute doesn't cause a
-  // render loop. The dependency on `labelOffsets` is intentionally
-  // omitted from the recompute callback — including it would defeat
-  // the equality guard.
+  // The state-update guard is the array equality on labelOffsets
+  // (see setLabelOffsets call below). `labelOffsets` is intentionally
+  // not a dep of this useCallback — `setLabelOffsets((prev) => …)`
+  // already gives us the latest value, and including labelOffsets
+  // would invalidate the listener identity on every settle.
   const recomputeLabelOffsets = useCallback(() => {
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
@@ -297,18 +298,18 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
     return () => window.cancelAnimationFrame(id);
   }, [aggregatedBars, recomputeLabelOffsets]);
 
-  useEffect(() => {
-    const inst = chartRef.current?.getEchartsInstance();
-    if (!inst) return;
+  // Debounced dataZoom handler. ReactEChartsCore's `onEvents` prop
+  // wires this through the canonical event-binding lifecycle so it
+  // re-binds automatically if ECharts recreates the underlying
+  // instance (vs `inst.on` which would leak a handler bound to a
+  // stale instance).
+  const onChartEvents = useMemo(() => {
     let timer = 0;
-    const onZoom = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(recomputeLabelOffsets, 80);
-    };
-    inst.on("dataZoom", onZoom);
-    return () => {
-      window.clearTimeout(timer);
-      inst.off("dataZoom", onZoom);
+    return {
+      dataZoom: () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(recomputeLabelOffsets, 80);
+      },
     };
   }, [recomputeLabelOffsets]);
 
@@ -348,6 +349,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
         // and markLine update normally.
         notMerge={false}
         lazyUpdate={true}
+        onEvents={onChartEvents}
       />
     </div>
   );
@@ -670,6 +672,11 @@ function buildOpeningRangeBand(
 // Approximate chip height in pixels: 2 lines × 12px lineHeight + 2×2
 // padding + 2×1 border + 2px breathing. Used as the cluster-merge
 // threshold (any two chips within this pixel distance overlap).
+//
+// Keep in sync with the markLine.label config in `buildEChartsOption`
+// — if the chip's lineHeight, padding, borderWidth, or fontSize
+// changes there, this constant must be recomputed. A future
+// follow-up should compute it from text metrics rather than hand-tune.
 const LABEL_CHIP_PIXEL_HEIGHT = 32;
 
 interface EChartsInstanceLike {
