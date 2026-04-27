@@ -211,9 +211,11 @@
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  /* Tiny chevron drawn via SVG so the dropdown affordance is visible
-     even with appearance:none. ink-60, 8px wide, inset 6px from the
-     right edge. */
+  /* Chevron drawn via data-URI SVG. Hex `#8c877c` is hard-coded as
+     the LUMEN `--ink-60` value because data-URIs can't reference
+     CSS variables, and `<select>` rejects `::after` (replaced
+     element). KEEP IN SYNC with `--ink-60` in the global token
+     sheet — if that token changes, this hex must follow. */
   background-image:
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'><path d='M0 0 L4 6 L8 0 Z' fill='%238c877c'/></svg>");
   background-repeat: no-repeat;

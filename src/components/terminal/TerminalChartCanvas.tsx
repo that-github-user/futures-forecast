@@ -187,6 +187,10 @@ interface Props {
   // instance owns the storage-key state and the parent's selector
   // and the chart stay in lockstep.
   formatBarTime: (iso: string, withSeconds?: boolean) => string;
+  // Short label for the active timezone (e.g. "PT", "PDT"). Suffixed
+  // onto the tooltip header so the user always knows what timezone
+  // they're reading without glancing back at the selector.
+  tzLabel: string;
 }
 
 export function TerminalChartCanvas({
@@ -194,6 +198,7 @@ export function TerminalChartCanvas({
   overlays,
   timeframe,
   formatBarTime,
+  tzLabel,
 }: Props) {
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +263,7 @@ export function TerminalChartCanvas({
       TIMEFRAME_MINUTES[timeframe],
       labelOffsets,
       formatBarTime,
+      tzLabel,
     );
     if (initialMountRef.current) {
       opt.dataZoom = [
@@ -269,7 +275,7 @@ export function TerminalChartCanvas({
       ];
     }
     return opt;
-  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets, formatBarTime]);
+  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets, formatBarTime, tzLabel]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
@@ -378,6 +384,7 @@ function buildEChartsOption(
   timeframeMin: number,
   labelOffsets: number[],
   formatBarTime: (iso: string, withSeconds?: boolean) => string,
+  tzLabel: string,
 ): EChartsOption {
   // ECharts candlestick expects [open, close, low, high]
   const data = bars.map((b) => [b.open, b.close, b.low, b.high]);
@@ -452,7 +459,7 @@ function buildEChartsOption(
         if (!b) return "";
         const fmt = (n: number) => n.toFixed(2);
         const lines = [
-          `<div style="opacity:0.6;font-size:10px;letter-spacing:0.08em">${formatBarTime(b.time, true)}</div>`,
+          `<div style="opacity:0.6;font-size:10px;letter-spacing:0.08em">${formatBarTime(b.time, true)} ${tzLabel}</div>`,
           `O ${fmt(b.open)}  H ${fmt(b.high)}`,
           `L ${fmt(b.low)}  C ${fmt(b.close)}`,
           `<div style="opacity:0.55;font-size:10px;margin-top:2px">vol ${b.volume.toFixed(0)}</div>`,

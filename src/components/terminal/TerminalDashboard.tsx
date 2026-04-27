@@ -176,6 +176,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           overlays={overlays}
           timeframe={timeframe}
           formatBarTime={formatChartTime}
+          tzLabel={tzLabel}
         />
       </div>
       <aside className="terminal-feed">
@@ -205,6 +206,10 @@ function ChartTzSelector({
   tzLabel: string;
 }) {
   return (
+    // Prefixing the closed-state value with "TZ · " makes the
+    // affordance + category visible at a glance — the bare 2-letter
+    // chip alongside 1m / 5m / 15m / 1h / 4h read as a sixth
+    // timeframe pill in early review.
     <select
       className="terminal-chart-tz"
       value={tz}
@@ -214,7 +219,7 @@ function ChartTzSelector({
     >
       {TZ_OPTIONS.map((o) => (
         <option key={o} value={o}>
-          {o === "local" ? `Local · ${tzLabel}` : o}
+          {o === "local" ? `TZ · Local · ${tzLabel}` : `TZ · ${o}`}
         </option>
       ))}
     </select>
