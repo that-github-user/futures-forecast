@@ -690,10 +690,17 @@ function buildEChartsOption(
             // ECharts on a string-typed category x-axis interprets a
             // numeric `xAxis` value as the category INDEX in v5.x —
             // no value-vs-index ambiguity in practice for our case.
+            // OMIT yAxis entirely — when only xAxis is specified, ECharts
+            // makes the markArea span the full visible y-axis height
+            // (re-evaluated on every redraw, including pan/zoom).
+            // Earlier attempts used `coord: [s, "min"]` and
+            // `yAxis: "min"/"max"` — both bound the strip to DATA
+            // extents (lowest low to highest high among visible bars
+            // + markLine values), so the shading clipped at the OR /
+            // POC / VAL levels rather than going edge-to-edge.
             ...ethRanges.map(([s, e]) => [
               {
                 xAxis: s,
-                yAxis: "min",
                 itemStyle: {
                   color: hexToRgba(palette.ink100, 0.08),
                 },
@@ -701,7 +708,6 @@ function buildEChartsOption(
               },
               {
                 xAxis: e,
-                yAxis: "max",
               },
             ]),
             // OR band — horizontal band with corner labels
