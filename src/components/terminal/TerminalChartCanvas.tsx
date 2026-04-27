@@ -59,13 +59,25 @@ export const VWAP_ANCHORS: { key: VwapAnchorKey; label: string }[] = [
   { key: "rth", label: "RTH" },
 ];
 
+// ── Opening Range overlay state ─────────────────────────────────────
+
+export type OrWindowKey = "m1" | "m5" | "m15";
+
+export type OrOverlayState = Record<OrWindowKey, boolean>;
+
+export const OR_WINDOWS: { key: OrWindowKey; label: string; minutes: number }[] = [
+  { key: "m1", label: "1m", minutes: 1 },
+  { key: "m5", label: "5m", minutes: 5 },
+  { key: "m15", label: "15m", minutes: 15 },
+];
+
 // ── Overlay state shape ─────────────────────────────────────────────
 
 export type OverlayState = {
   vwap: VwapOverlayState;
   pocVa: boolean;
   priorHlc: boolean;
-  openingRange: boolean;
+  openingRange: OrOverlayState;
 };
 
 export const DEFAULT_OVERLAYS: OverlayState = {
@@ -76,7 +88,7 @@ export const DEFAULT_OVERLAYS: OverlayState = {
   },
   pocVa: true,
   priorHlc: true,
-  openingRange: true,
+  openingRange: { m1: false, m5: true, m15: false },
 };
 
 // ── Timeframe ──────────────────────────────────────────────────────
@@ -413,7 +425,7 @@ function buildEChartsOption(
     return formatBarTime(b.time);
   });
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
-  const orBand = buildOpeningRangeBand(snapshot, overlays);
+  const orBands = buildOpeningRangeBands(snapshot, overlays);
   const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
   // ETH (off-hours) shading: subtle ink-100 wash over each contiguous
   // run of extended-hours bars. RTH (cash session) stays at the
@@ -422,6 +434,12 @@ function buildEChartsOption(
   // the bucket-overlap predicate (negated) so the shading lines up
   // with the RTH AVWAP gating at every timeframe.
   const ethRanges = buildEthShadeRanges(bars, timeframeMin);
+  // OR band is computed from today's first 5 min of RTH — its
+  // levels are only meaningful within today's RTH session. Bound
+  // the band's x-extent to the most-recent RTH session so it
+  // doesn't render across overnight ETH (where the levels mean
+  // nothing for current-session structure).
+  const latestRthRange = buildLatestRthRange(bars, timeframeMin);
 
   return {
     backgroundColor: "transparent",
@@ -492,6 +510,12 @@ function buildEChartsOption(
         fontFamily: "var(--font-mono, monospace)",
       },
       axisTick: { show: false },
+      // splitNumber: 10 (default 5) gives a denser grid that makes
+      // candle prices easier to read at a glance. ECharts still
+      // picks "nice" rounded interval values, and re-evaluates on
+      // pan/zoom so the gridline density stays sensible across
+      // y-axis range changes (TradingView-style adaptive ticks).
+      splitNumber: 10,
       splitLine: { lineStyle: { color: palette.ink20 } },
     },
     tooltip: {
@@ -710,26 +734,48 @@ function buildEChartsOption(
                 xAxis: e,
               },
             ]),
-            // OR band — horizontal band with corner labels
-            ...(orBand
-              ? [
-                  [
+            // OR bands — one bounded rectangle per active window
+            // (1m / 5m / 15m), confined to the most-recent RTH session.
+            // The OR levels are only valid for today's session, not
+            // overnight ETH. Each band gets a window-tagged label
+            // (ORH-1 / ORH-5 / ORH-15) so multiple active windows
+            // remain readable when stacked. 4% wash leaves headroom
+            // for additive-stacked nesting (1m inside 5m inside 15m
+            // = inner-most rendered up to ~12% combined alpha — a
+            // natural visual hierarchy).
+            ...(latestRthRange
+              ? orBands.map((b, i) => {
+                  // Stagger labels per window-index so when two
+                  // windows have identical highs (or lows) the chips
+                  // don't overdraw at insideEndTop/Bottom. Each
+                  // index pushes the chip ~30px further in
+                  // (innermost band's labels sit at the band edge,
+                  // outer bands' labels nudged toward the chart's
+                  // interior). 30px ≈ chip-height + 4px gap.
+                  const dyTop = i * 30;
+                  const dyBottom = -i * 30;
+                  return [
                     {
-                      yAxis: orBand.low,
+                      xAxis: latestRthRange[0],
+                      yAxis: b.low,
+                      itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
                       label: {
                         position: "insideEndBottom",
-                        formatter: `ORL\n${orBand.low.toFixed(2)}`,
+                        offset: [0, dyBottom],
+                        formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                       },
                     },
                     {
-                      yAxis: orBand.high,
+                      xAxis: latestRthRange[1],
+                      yAxis: b.high,
                       label: {
                         position: "insideEndTop",
-                        formatter: `ORH\n${orBand.high.toFixed(2)}`,
+                        offset: [0, dyTop],
+                        formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
                       },
                     },
-                  ],
-                ]
+                  ];
+                })
               : []),
           ],
         },
@@ -804,17 +850,31 @@ function buildOverlayLines(
   return lines;
 }
 
-// Opening range is rendered as a SHADED BAND, not lines — spec §4.2
-// "shaded band at 5% --ink-100 opacity." Returns the [low, high] pair
-// or null if either bound is missing.
-function buildOpeningRangeBand(
+// Opening-range bands per active window. Returns one entry per
+// active OR window {1m, 5m, 15m} with the corresponding high+low
+// from the snapshot. Each entry carries a `label` suffix (e.g. "5")
+// so the chart can render distinct ORH/ORL chips per window.
+type OrBand = { window: OrWindowKey; label: string; low: number; high: number };
+
+function buildOpeningRangeBands(
   snapshot: TerminalSnapshot | null,
   overlays: OverlayState,
-): { low: number; high: number } | null {
-  if (!snapshot || !overlays.openingRange) return null;
+): OrBand[] {
+  if (!snapshot) return [];
   const lv = snapshot.levels;
-  if (lv.or_low == null || lv.or_high == null) return null;
-  return { low: lv.or_low, high: lv.or_high };
+  const out: OrBand[] = [];
+  const lookup: Record<OrWindowKey, { low: number | null; high: number | null }> = {
+    m1: { low: lv.or_1m_low, high: lv.or_1m_high },
+    m5: { low: lv.or_5m_low, high: lv.or_5m_high },
+    m15: { low: lv.or_15m_low, high: lv.or_15m_high },
+  };
+  for (const { key, label } of OR_WINDOWS) {
+    if (!overlays.openingRange[key]) continue;
+    const { low, high } = lookup[key];
+    if (low == null || high == null) continue;
+    out.push({ window: key, label, low, high });
+  }
+  return out;
 }
 
 // ── Label collision pass ────────────────────────────────────────────
@@ -1127,6 +1187,30 @@ function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
  * Reuses `isRthBar`'s bucket-overlap predicate (negated) so the
  * shading lines up with the RTH AVWAP gating at every timeframe.
  */
+/**
+ * Find the most-recent contiguous run of RTH bars in the buffer.
+ * Returns [startIdx, endIdx] of the latest run, or null if no RTH
+ * bars exist. Used to bound the Opening Range markArea — the OR
+ * levels are only meaningful within today's RTH session.
+ */
+function buildLatestRthRange(
+  bars: TerminalIntradayBar[],
+  timeframeMin: number,
+): [number, number] | null {
+  let last: [number, number] | null = null;
+  let runStart = -1;
+  for (let i = 0; i < bars.length; i++) {
+    const inRth = isRthBar(bars[i], timeframeMin);
+    if (inRth && runStart === -1) runStart = i;
+    else if (!inRth && runStart !== -1) {
+      last = [runStart, i - 1];
+      runStart = -1;
+    }
+  }
+  if (runStart !== -1) last = [runStart, bars.length - 1];
+  return last;
+}
+
 function buildEthShadeRanges(
   bars: TerminalIntradayBar[],
   timeframeMin: number,

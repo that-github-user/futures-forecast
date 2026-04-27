@@ -53,6 +53,16 @@ export interface LevelsData {
   poc: number | null;
   vah: number | null;
   val: number | null;
+  // Per-window opening-range high/low. Frontend renders any combo
+  // via the OR popover-checklist.
+  or_1m_high: number | null;
+  or_1m_low: number | null;
+  or_5m_high: number | null;
+  or_5m_low: number | null;
+  or_15m_high: number | null;
+  or_15m_low: number | null;
+  // Legacy aliases for the 5m window (kept for back-compat with
+  // any consumer still reading these — synthesizer scoring etc).
   or_high: number | null;
   or_low: number | null;
 }
