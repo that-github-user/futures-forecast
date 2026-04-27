@@ -99,19 +99,7 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
       <div className={`terminal-regime${hasRegime ? "" : " placeholder"}`}>
         {hasRegime ? formatRegime(regimeLabel) : "—"}
       </div>
-      <div
-        className="terminal-overrides"
-        title={
-          "Hard-stop conditions that invalidate the headline score (e.g. " +
-          "gamma-flip lost, weekly VWAP lost, backwardation, VIX spike). " +
-          "When 'clear', no overrides are firing — the score reads as the " +
-          "weighted synthesis of the input systems. When firing, the " +
-          "headline transforms and the override messages display here."
-        }
-      >
-        <span className="terminal-overrides-label">Overrides</span>
-        <span className="terminal-overrides-body">{overridesBody}</span>
-      </div>
+      <OverridesSection overrides={overrides} overridesBody={overridesBody} />
       <div className="terminal-price-block">
         <div className="terminal-price">
           <span className={`terminal-price-num${price == null ? " placeholder" : ""}`}>
@@ -127,6 +115,89 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/* ── Overrides section (with help popover) ─────────────────
+ *
+ * Native `title` tooltips don't fire on mobile-Firefox tap (the
+ * primary surface), so the explanation is dead code without a tap-
+ * triggered affordance. Instead: small `ⓘ` glyph next to the
+ * "Overrides" label opens a popover with two-layer copy — plain
+ * lead sentence first, then the named conditions for the user who
+ * wants the full list.
+ */
+function OverridesSection({
+  overrides,
+  overridesBody,
+}: {
+  overrides: string[];
+  overridesBody: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Acknowledge the overrides count in the help button's aria-label
+  // so screen readers don't lose the state context when the popover
+  // is closed. e.g. "Overrides: clear, what does this mean?"
+  const stateAria = overrides.length === 0 ? "clear" : `${overrides.length} firing`;
+
+  return (
+    <div className="terminal-overrides" ref={wrapRef}>
+      <span className="terminal-overrides-label">
+        Overrides
+        <button
+          type="button"
+          className="terminal-overrides-help-trigger"
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls="overrides-help-panel"
+          aria-label={`Overrides ${stateAria}, what does this mean?`}
+        >
+          ⓘ
+        </button>
+      </span>
+      <span className="terminal-overrides-body">{overridesBody}</span>
+      {open && (
+        <div
+          id="overrides-help-panel"
+          className="terminal-overrides-help-pop"
+          role="dialog"
+          aria-label="Overrides explained"
+        >
+          <p className="terminal-overrides-help-lead">
+            Risk flags that invalidate the headline score.
+            {" "}
+            <strong>Clear</strong> means none are firing — read the
+            score normally.
+          </p>
+          <p className="terminal-overrides-help-list">
+            Conditions: gamma-flip lost · weekly VWAP lost ·
+            backwardation · VIX spike. When one fires, the score
+            dims and the flag appears in the body of this row.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
