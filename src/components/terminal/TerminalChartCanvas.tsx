@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
-import { CandlestickChart } from "echarts/charts";
+import { CandlestickChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -29,6 +29,7 @@ import type { TerminalSnapshot } from "../../api/terminalTypes";
 
 echarts.use([
   CandlestickChart,
+  LineChart,
   GridComponent,
   TooltipComponent,
   DataZoomComponent,
@@ -117,8 +118,8 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
   }, []);
 
   // Build the option. On the FIRST emission (with bars present), include
-  // dataZoom defaults so the chart lands on the recent ~25%. On
-  // subsequent emissions, omit dataZoom so the user's pan/zoom state
+  // dataZoom defaults so the chart lands on a sensible recent window.
+  // On subsequent emissions, omit dataZoom so the user's pan/zoom state
   // survives merge updates.
   //
   // Reading `initialMountRef.current` during render is fine; the mutation
@@ -132,9 +133,7 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
       opt.dataZoom = [
         {
           type: "inside",
-          // Default view: rightmost ~25% of the buffer = ~12h of 1-min
-          // bars. User lands on most-recent action and can scroll back.
-          start: 75,
+          start: computeDefaultZoomStart(bars),
           end: 100,
         },
       ];
@@ -206,6 +205,13 @@ function buildEChartsOption(
   const times = bars.map((b) => formatBarTime(b.time));
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBand = buildOpeningRangeBand(snapshot, overlays);
+  // Cumulative VWAP series — anchored at the most recent week-start
+  // bar (Sunday 6pm ET Globex open / Monday RTH open / after-break).
+  // Bars predating the anchor get null so the line doesn't render
+  // there; bars at-or-after the anchor get the running VWAP value.
+  const sessionVwapSeries = overlays.sessionVwap
+    ? buildWeeklyVwapSeries(bars)
+    : null;
 
   return {
     backgroundColor: "transparent",
@@ -257,20 +263,30 @@ function buildEChartsOption(
         const arr = params as Array<{
           seriesType: string;
           dataIndex: number;
-          data: number[];
+          data: number[] | number | null;
         }>;
-        const item = arr.find((p) => p.seriesType === "candlestick");
-        if (!item) return "";
-        const i = item.dataIndex;
+        const candle = arr.find((p) => p.seriesType === "candlestick");
+        if (!candle) return "";
+        const i = candle.dataIndex;
         const b = bars[i];
         if (!b) return "";
         const fmt = (n: number) => n.toFixed(2);
-        return [
+        const lines = [
           `<div style="opacity:0.6;font-size:10px;letter-spacing:0.08em">${formatBarTime(b.time, true)}</div>`,
           `O ${fmt(b.open)}  H ${fmt(b.high)}`,
           `L ${fmt(b.low)}  C ${fmt(b.close)}`,
           `<div style="opacity:0.55;font-size:10px;margin-top:2px">vol ${b.volume.toFixed(0)}</div>`,
-        ].join("<br/>");
+        ];
+        // Append VWAP value at this bar if the series is rendered.
+        const lineSeries = arr.find(
+          (p) => p.seriesType === "line" && typeof p.data === "number",
+        );
+        if (lineSeries && typeof lineSeries.data === "number") {
+          lines.push(
+            `<div style="margin-top:2px;opacity:0.85">VWAP ${fmt(lineSeries.data)}</div>`,
+          );
+        }
+        return lines.join("<br/>");
       },
     },
     series: [
@@ -324,6 +340,25 @@ function buildEChartsOption(
             : [],
         },
       },
+      // Session VWAP as a cumulative time-varying line, anchored at the
+      // current week's Globex open. Spec §4.2: ink-100, 1.5px solid.
+      // ECharts merges series by index — when overlay toggles off,
+      // pushing an empty data array hides the line. We always include
+      // the series so the index stays stable across renders.
+      {
+        type: "line",
+        data: sessionVwapSeries ?? [],
+        showSymbol: false,
+        sampling: "lttb",
+        smooth: false,
+        connectNulls: false,
+        lineStyle: {
+          color: palette.ink100,
+          width: 1.5,
+        },
+        z: 5,
+        silent: true,
+      },
     ],
   };
 }
@@ -352,11 +387,11 @@ function buildOverlayLines(
   const v = snapshot.vwap;
   const lv = snapshot.levels;
 
-  // Spec §4.2: Session VWAP → ink-100, 1.5px solid. The canonical
-  // anchor of the day; gets the heaviest weight + brightest tone.
-  if (overlays.sessionVwap && v.session_vwap != null) {
-    lines.push({ value: v.session_vwap, color: palette.ink100, style: "solid", width: 1.5 });
-  }
+  // Note: Session VWAP is rendered as a separate cumulative line
+  // series (see `buildWeeklyVwapSeries` and the `series[1]` line in
+  // the option builder), NOT as a static markLine. A flat horizontal
+  // line at the current VWAP value would be wrong — VWAP evolves
+  // through the session.
 
   // Spec §4.2: AVWAPs → ink-80, 1px dashed.
   if (overlays.avwaps) {
@@ -407,6 +442,76 @@ function buildOpeningRangeBand(
   const lv = snapshot.levels;
   if (lv.or_low == null || lv.or_high == null) return null;
   return { low: lv.or_low, high: lv.or_high };
+}
+
+// ── Default zoom — keeps visible window ~12h regardless of buffer ───
+
+/**
+ * Compute the dataZoom `start` percentage so the visible window on
+ * first paint is ~12h, regardless of how much history the backend
+ * returned. Without this, a 168h buffer at the prior `start: 75`
+ * default would render ~42h of bars in the visible band — sub-pixel
+ * candle widths at typical viewport sizes. The user can still
+ * pan/zoom back through the full buffer.
+ */
+function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
+  const VISIBLE_MS = 12 * 60 * 60 * 1000;
+  if (bars.length < 2) return 0;
+  const first = Date.parse(bars[0].time);
+  const last = Date.parse(bars[bars.length - 1].time);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last <= first) {
+    return 0;
+  }
+  const spanMs = last - first;
+  if (spanMs <= VISIBLE_MS) return 0;
+  return Math.max(0, Math.min(99, 100 - (VISIBLE_MS / spanMs) * 100));
+}
+
+// ── Cumulative weekly-anchored VWAP ────────────────────────────────
+
+/**
+ * Compute the running VWAP series anchored at the most recent week
+ * boundary. Ports the TradingView ta.vwap() formula 1:1:
+ *   typical = (high + low + close) / 3
+ *   VWAP[i] = cumsum(typical × vol) / cumsum(vol), reset at week start
+ *
+ * Returns an array aligned 1:1 with `bars`. Bars predating the current
+ * week's anchor get `null` so ECharts doesn't render the line there
+ * (with `connectNulls: false`); bars at-or-after the anchor get the
+ * running VWAP value.
+ *
+ * Anchor detection: the most-recent ≥36h gap between consecutive bars
+ * (= the weekend halt: Friday 5pm ET → Sunday 6pm ET). Falls back to
+ * the first bar if no such gap exists in the buffer.
+ */
+function buildWeeklyVwapSeries(bars: TerminalIntradayBar[]): (number | null)[] {
+  if (bars.length === 0) return [];
+
+  // Find the most-recent week anchor index by scanning backward for
+  // a ≥36h gap between consecutive bars.
+  const ANCHOR_GAP_MS = 36 * 60 * 60 * 1000;
+  let anchorIdx = 0;
+  for (let i = bars.length - 1; i > 0; i--) {
+    const t = Date.parse(bars[i].time);
+    const tPrev = Date.parse(bars[i - 1].time);
+    if (Number.isFinite(t) && Number.isFinite(tPrev) && t - tPrev >= ANCHOR_GAP_MS) {
+      anchorIdx = i;
+      break;
+    }
+  }
+
+  const out: (number | null)[] = new Array(bars.length).fill(null);
+  let cumTpVol = 0;
+  let cumVol = 0;
+  for (let i = anchorIdx; i < bars.length; i++) {
+    const b = bars[i];
+    const typical = (b.high + b.low + b.close) / 3;
+    const vol = b.volume > 0 ? b.volume : 1;
+    cumTpVol += typical * vol;
+    cumVol += vol;
+    out[i] = cumVol > 0 ? cumTpVol / cumVol : null;
+  }
+  return out;
 }
 
 // Convert "#rrggbb" or "#rgb" → "rgba(r,g,b,a)" so we can apply the
