@@ -59,13 +59,25 @@ export const VWAP_ANCHORS: { key: VwapAnchorKey; label: string }[] = [
   { key: "rth", label: "RTH" },
 ];
 
+// ── Opening Range overlay state ─────────────────────────────────────
+
+export type OrWindowKey = "m1" | "m5" | "m15";
+
+export type OrOverlayState = Record<OrWindowKey, boolean>;
+
+export const OR_WINDOWS: { key: OrWindowKey; label: string; minutes: number }[] = [
+  { key: "m1", label: "1m", minutes: 1 },
+  { key: "m5", label: "5m", minutes: 5 },
+  { key: "m15", label: "15m", minutes: 15 },
+];
+
 // ── Overlay state shape ─────────────────────────────────────────────
 
 export type OverlayState = {
   vwap: VwapOverlayState;
   pocVa: boolean;
   priorHlc: boolean;
-  openingRange: boolean;
+  openingRange: OrOverlayState;
 };
 
 export const DEFAULT_OVERLAYS: OverlayState = {
@@ -76,7 +88,7 @@ export const DEFAULT_OVERLAYS: OverlayState = {
   },
   pocVa: true,
   priorHlc: true,
-  openingRange: true,
+  openingRange: { m1: false, m5: true, m15: false },
 };
 
 // ── Timeframe ──────────────────────────────────────────────────────
@@ -413,7 +425,7 @@ function buildEChartsOption(
     return formatBarTime(b.time);
   });
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
-  const orBand = buildOpeningRangeBand(snapshot, overlays);
+  const orBands = buildOpeningRangeBands(snapshot, overlays);
   const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
   // ETH (off-hours) shading: subtle ink-100 wash over each contiguous
   // run of extended-hours bars. RTH (cash session) stays at the
@@ -722,31 +734,35 @@ function buildEChartsOption(
                 xAxis: e,
               },
             ]),
-            // OR band — bounded rectangle confined to the most-recent
-            // RTH session (the OR levels are only valid for today's
-            // session, not overnight ETH). Falls back to no rendering
-            // when no RTH bars are in the buffer.
-            ...(orBand && latestRthRange
-              ? [
-                  [
-                    {
-                      xAxis: latestRthRange[0],
-                      yAxis: orBand.low,
-                      label: {
-                        position: "insideEndBottom",
-                        formatter: `ORL\n${orBand.low.toFixed(2)}`,
-                      },
+            // OR bands — one bounded rectangle per active window
+            // (1m / 5m / 15m), confined to the most-recent RTH session.
+            // The OR levels are only valid for today's session, not
+            // overnight ETH. Each band gets a window-tagged label
+            // (ORH-1 / ORH-5 / ORH-15) so multiple active windows
+            // remain readable when stacked. 4% wash leaves headroom
+            // for additive-stacked nesting (1m inside 5m inside 15m
+            // = inner-most rendered up to ~12% combined alpha — a
+            // natural visual hierarchy).
+            ...(latestRthRange
+              ? orBands.map((b) => [
+                  {
+                    xAxis: latestRthRange[0],
+                    yAxis: b.low,
+                    itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
+                    label: {
+                      position: "insideEndBottom",
+                      formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                     },
-                    {
-                      xAxis: latestRthRange[1],
-                      yAxis: orBand.high,
-                      label: {
-                        position: "insideEndTop",
-                        formatter: `ORH\n${orBand.high.toFixed(2)}`,
-                      },
+                  },
+                  {
+                    xAxis: latestRthRange[1],
+                    yAxis: b.high,
+                    label: {
+                      position: "insideEndTop",
+                      formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
                     },
-                  ],
-                ]
+                  },
+                ])
               : []),
           ],
         },
@@ -821,17 +837,31 @@ function buildOverlayLines(
   return lines;
 }
 
-// Opening range is rendered as a SHADED BAND, not lines — spec §4.2
-// "shaded band at 5% --ink-100 opacity." Returns the [low, high] pair
-// or null if either bound is missing.
-function buildOpeningRangeBand(
+// Opening-range bands per active window. Returns one entry per
+// active OR window {1m, 5m, 15m} with the corresponding high+low
+// from the snapshot. Each entry carries a `label` suffix (e.g. "5")
+// so the chart can render distinct ORH/ORL chips per window.
+type OrBand = { window: OrWindowKey; label: string; low: number; high: number };
+
+function buildOpeningRangeBands(
   snapshot: TerminalSnapshot | null,
   overlays: OverlayState,
-): { low: number; high: number } | null {
-  if (!snapshot || !overlays.openingRange) return null;
+): OrBand[] {
+  if (!snapshot) return [];
   const lv = snapshot.levels;
-  if (lv.or_low == null || lv.or_high == null) return null;
-  return { low: lv.or_low, high: lv.or_high };
+  const out: OrBand[] = [];
+  const lookup: Record<OrWindowKey, { low: number | null; high: number | null }> = {
+    m1: { low: lv.or_1m_low, high: lv.or_1m_high },
+    m5: { low: lv.or_5m_low, high: lv.or_5m_high },
+    m15: { low: lv.or_15m_low, high: lv.or_15m_high },
+  };
+  for (const { key, label } of OR_WINDOWS) {
+    if (!overlays.openingRange[key]) continue;
+    const { low, high } = lookup[key];
+    if (low == null || high == null) continue;
+    out.push({ window: key, label, low, high });
+  }
+  return out;
 }
 
 // ── Label collision pass ────────────────────────────────────────────

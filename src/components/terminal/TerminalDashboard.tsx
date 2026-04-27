@@ -19,11 +19,14 @@ import { useTimezone, type TZOption } from "../../hooks/useTimezone";
 import {
   TerminalChartCanvas,
   VWAP_ANCHORS,
+  OR_WINDOWS,
   type OverlayState,
   type Timeframe,
   type VwapAnchorKey,
   type VwapAnchorState,
   type VwapOverlayState,
+  type OrOverlayState,
+  type OrWindowKey,
   DEFAULT_OVERLAYS,
   DEFAULT_TIMEFRAME,
 } from "./TerminalChartCanvas";
@@ -246,10 +249,12 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
   const { tz, setTz, formatChartTime, formatChartDay, tzLabel } = useTimezone();
-  const toggleBool = (key: "pocVa" | "priorHlc" | "openingRange") =>
+  const toggleBool = (key: "pocVa" | "priorHlc") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
   const setVwap = (next: VwapOverlayState) =>
     setOverlays((prev) => ({ ...prev, vwap: next }));
+  const setOpeningRange = (next: OrOverlayState) =>
+    setOverlays((prev) => ({ ...prev, openingRange: next }));
 
   return (
     <section className="terminal-middle">
@@ -278,9 +283,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           <ToggleButton active={overlays.priorHlc} onClick={() => toggleBool("priorHlc")}>
             Prior Day HLC
           </ToggleButton>
-          <ToggleButton active={overlays.openingRange} onClick={() => toggleBool("openingRange")}>
-            Opening Range
-          </ToggleButton>
+          <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
         </div>
@@ -465,6 +468,87 @@ function AvwapCheck({
     >
       {checked ? "✓" : ""}
     </button>
+  );
+}
+
+/* ── Opening Range popover (multi-window checklist) ────────────────
+ *
+ * Replaces the single Opening-Range pill. Lets the operator turn on
+ * any combination of {1m, 5m, 15m} OR windows. Pill reads
+ * "OR · n" where n counts active windows; click outside or press
+ * Escape to dismiss.
+ */
+function OpeningRangePopover({
+  or,
+  setOr,
+}: {
+  or: OrOverlayState;
+  setOr: (next: OrOverlayState) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const activeCount = OR_WINDOWS.reduce((n, w) => n + (or[w.key] ? 1 : 0), 0);
+  const anyOn = activeCount > 0;
+
+  const setWindowOn = (key: OrWindowKey, value: boolean) => {
+    setOr({ ...or, [key]: value });
+  };
+
+  return (
+    <div className="avwap-pop-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`pill${anyOn ? " on" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="or-pop-panel"
+      >
+        Opening Range{anyOn ? ` · ${activeCount}` : ""}
+      </button>
+      {open && (
+        <div
+          className="avwap-pop or-pop"
+          id="or-pop-panel"
+          role="dialog"
+          aria-label="Opening range overlays"
+        >
+          <div className="avwap-pop-head">
+            <span className="avwap-pop-anchor-col">Window</span>
+            <span>Show</span>
+          </div>
+          {OR_WINDOWS.map(({ key, label }) => (
+            <div className="avwap-pop-row" key={key}>
+              <span className="avwap-pop-anchor-col">{label}</span>
+              <AvwapCheck
+                checked={or[key]}
+                onChange={(v) => setWindowOn(key, v)}
+                ariaLabel={`${label} opening range`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -670,8 +754,10 @@ function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
       levels.poc != null ||
       levels.vah != null ||
       levels.val != null ||
-      levels.or_high != null ||
-      levels.or_low != null);
+      levels.or_5m_high != null ||
+      levels.or_5m_low != null ||
+      levels.or_1m_high != null ||
+      levels.or_15m_high != null);
 
   return (
     <div className="terminal-card">
@@ -693,8 +779,12 @@ function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
             <LevelRow label="Prior H" value={levels!.pd_high} />
             <LevelRow label="Prior L" value={levels!.pd_low} />
             <LevelRow label="Prior C" value={levels!.pd_close} />
-            <LevelRow label="OR High" value={levels!.or_high} />
-            <LevelRow label="OR Low" value={levels!.or_low} />
+            <LevelRow label="OR-1 H" value={levels!.or_1m_high} />
+            <LevelRow label="OR-1 L" value={levels!.or_1m_low} />
+            <LevelRow label="OR-5 H" value={levels!.or_5m_high} />
+            <LevelRow label="OR-5 L" value={levels!.or_5m_low} />
+            <LevelRow label="OR-15 H" value={levels!.or_15m_high} />
+            <LevelRow label="OR-15 L" value={levels!.or_15m_low} />
           </ul>
         ) : (
           <span className="empty">Awaiting data.</span>

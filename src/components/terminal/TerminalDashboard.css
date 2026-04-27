@@ -424,6 +424,13 @@
   background: rgba(245, 239, 226, 0.06);
 }
 
+/* OR popover variant — single-window-per-row checklist (vs AVWAP's
+   3-anchor × 3-treatment grid). Reuses the .avwap-pop chrome and
+   overrides only the column template. */
+.avwap-pop.or-pop {
+  grid-template-columns: 56px 36px;
+}
+
 .terminal-chart-canvas {
   flex: 1;
   display: flex;
