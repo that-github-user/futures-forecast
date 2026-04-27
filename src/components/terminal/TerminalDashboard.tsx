@@ -99,7 +99,16 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
       <div className={`terminal-regime${hasRegime ? "" : " placeholder"}`}>
         {hasRegime ? formatRegime(regimeLabel) : "—"}
       </div>
-      <div className="terminal-overrides">
+      <div
+        className="terminal-overrides"
+        title={
+          "Hard-stop conditions that invalidate the headline score (e.g. " +
+          "gamma-flip lost, weekly VWAP lost, backwardation, VIX spike). " +
+          "When 'clear', no overrides are firing — the score reads as the " +
+          "weighted synthesis of the input systems. When firing, the " +
+          "headline transforms and the override messages display here."
+        }
+      >
         <span className="terminal-overrides-label">Overrides</span>
         <span className="terminal-overrides-body">{overridesBody}</span>
       </div>
