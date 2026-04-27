@@ -13,7 +13,7 @@
  * user's pan/zoom state survives bar-data refreshes.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { CandlestickChart, LineChart } from "echarts/charts";
@@ -189,6 +189,14 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
   const [error, setError] = useState<string | null>(null);
   const palette = useMemo(() => resolveLumenPalette(), []);
   const initialMountRef = useRef(true);
+  // ECharts instance handle for the post-render collision pass on
+  // markLine label chips. We need pixel coords (not data y) to
+  // detect chip overlap; the chart instance exposes convertToPixel.
+  const chartRef = useRef<ReactEChartsCore | null>(null);
+  // Per-overlay-line vertical offset in pixels, indexed by the order
+  // produced by buildOverlayLines. 0 = no offset; positive = chip
+  // pushed down, negative = chip pushed up.
+  const [labelOffsets, setLabelOffsets] = useState<number[]>([]);
 
   // Aggregate the raw 1-min bars into the user-selected timeframe. All
   // downstream math (VWAP, default-zoom span, candle rendering) reads
@@ -238,6 +246,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       overlays,
       palette,
       TIMEFRAME_MINUTES[timeframe],
+      labelOffsets,
     );
     if (initialMountRef.current) {
       opt.dataZoom = [
@@ -249,7 +258,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       ];
     }
     return opt;
-  }, [aggregatedBars, snapshot, overlays, palette, timeframe]);
+  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
@@ -259,6 +268,50 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       initialMountRef.current = false;
     }
   }, [aggregatedBars]);
+
+  // Post-render collision pass on the right-edge label chips.
+  // Re-derive overlay lines, ask the chart instance for each line's
+  // pixel y, cluster overlapping chips, and store per-line vertical
+  // offsets. Triggered both on data updates (bars / snapshot /
+  // overlays change) and on user pan/zoom (`dataZoom` event via the
+  // `onEvents` prop on ReactEChartsCore — re-binds automatically if
+  // the underlying instance is recreated).
+  //
+  // The state-update guard is the array equality on labelOffsets
+  // (see setLabelOffsets call below). `labelOffsets` is intentionally
+  // not a dep of this useCallback — `setLabelOffsets((prev) => …)`
+  // already gives us the latest value, and including labelOffsets
+  // would invalidate the listener identity on every settle.
+  const recomputeLabelOffsets = useCallback(() => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const lines = buildOverlayLines(snapshot, overlays, palette);
+    const next = computeCollisionOffsets(lines, inst);
+    setLabelOffsets((prev) => (arraysEqual(prev, next) ? prev : next));
+  }, [snapshot, overlays, palette]);
+
+  useEffect(() => {
+    if (!aggregatedBars || aggregatedBars.length === 0) return;
+    // Run on the next paint so the chart has flushed its render and
+    // convertToPixel returns valid coordinates.
+    const id = window.requestAnimationFrame(recomputeLabelOffsets);
+    return () => window.cancelAnimationFrame(id);
+  }, [aggregatedBars, recomputeLabelOffsets]);
+
+  // Debounced dataZoom handler. ReactEChartsCore's `onEvents` prop
+  // wires this through the canonical event-binding lifecycle so it
+  // re-binds automatically if ECharts recreates the underlying
+  // instance (vs `inst.on` which would leak a handler bound to a
+  // stale instance).
+  const onChartEvents = useMemo(() => {
+    let timer = 0;
+    return {
+      dataZoom: () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(recomputeLabelOffsets, 80);
+      },
+    };
+  }, [recomputeLabelOffsets]);
 
   if (error && !bars) {
     return (
@@ -285,6 +338,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
   return (
     <div className="terminal-chart-canvas">
       <ReactEChartsCore
+        ref={chartRef}
         echarts={echarts}
         option={option!}
         style={{ width: "100%", height: "100%" }}
@@ -295,6 +349,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
         // and markLine update normally.
         notMerge={false}
         lazyUpdate={true}
+        onEvents={onChartEvents}
       />
     </div>
   );
@@ -310,6 +365,7 @@ function buildEChartsOption(
   overlays: OverlayState,
   palette: LumenPalette,
   timeframeMin: number,
+  labelOffsets: number[],
 ): EChartsOption {
   // ECharts candlestick expects [open, close, low, high]
   const data = bars.map((b) => [b.open, b.close, b.low, b.high]);
@@ -455,18 +511,27 @@ function buildEChartsOption(
             padding: [2, 4],
             align: "left",
           },
-          data: overlayLines.map((line) => ({
-            yAxis: line.value,
-            lineStyle: {
-              color: line.color,
-              type: line.style,
-              width: line.width,
-            },
-            label: {
-              formatter: `${line.label}\n${line.value.toFixed(2)}`,
-              color: line.color,
-            },
-          })),
+          data: overlayLines.map((line, i) => {
+            const dy = labelOffsets[i] ?? 0;
+            return {
+              yAxis: line.value,
+              lineStyle: {
+                color: line.color,
+                type: line.style,
+                width: line.width,
+              },
+              label: {
+                formatter: `${line.label}\n${line.value.toFixed(2)}`,
+                color: line.color,
+                // Vertical pixel offset applied by the post-render
+                // collision pass (see computeCollisionOffsets). 0 when
+                // no nearby labels would overlap. Chips moved away
+                // from their actual y rely on color match + dash
+                // pattern + proximity for visual association.
+                offset: dy !== 0 ? [0, dy] : undefined,
+              },
+            };
+          }),
         },
         // Opening range — spec §4.2 calls for a shaded band at 5%
         // ink-100 opacity, not two dashed lines. ECharts markArea
@@ -600,6 +665,119 @@ function buildOpeningRangeBand(
   const lv = snapshot.levels;
   if (lv.or_low == null || lv.or_high == null) return null;
   return { low: lv.or_low, high: lv.or_high };
+}
+
+// ── Label collision pass ────────────────────────────────────────────
+
+// Approximate chip height in pixels: 2 lines × 12px lineHeight + 2×2
+// padding + 2×1 border + 2px breathing. Used as the cluster-merge
+// threshold (any two chips within this pixel distance overlap).
+//
+// Keep in sync with the markLine.label config in `buildEChartsOption`
+// — if the chip's lineHeight, padding, borderWidth, or fontSize
+// changes there, this constant must be recomputed. A future
+// follow-up should compute it from text metrics rather than hand-tune.
+const LABEL_CHIP_PIXEL_HEIGHT = 32;
+
+interface EChartsInstanceLike {
+  convertToPixel(
+    finder: { yAxisIndex: number } | { xAxisIndex: number } | string,
+    value: number | string,
+  ): number | number[];
+}
+
+/**
+ * Project each overlay line's data y onto the chart's pixel-y axis,
+ * cluster overlapping chips, then distribute each cluster's labels
+ * symmetrically around the cluster's mean. Returns an array indexed
+ * parallel to `lines` — entry i is the pixel offset to apply to
+ * line i's chip via ECharts `label.offset: [0, dy]`.
+ *
+ * Pixel-aware (not data-aware) so the result tracks user pan/zoom:
+ * when the y-axis auto-scales to a tighter range, levels that were
+ * "close enough to collide" at 12h zoom may no longer collide at
+ * tight 1h zoom (and vice versa).
+ *
+ * Algorithm: iterative cluster-merge with centered-block placement.
+ * Treat each chip as occupying [meanY - n/2·H, meanY + n/2·H] where
+ * H is the chip height and n is the cluster size. Adjacent clusters
+ * whose blocks overlap are merged (cluster mean recomputed as the
+ * average of all member original-y values). Repeat until stable.
+ * Within a cluster of size n, the k-th member is placed at
+ * meanY + (k − (n−1)/2) · H — preserving top-to-bottom screen order.
+ *
+ * This approach minimizes total displacement subject to no-overlap:
+ * a long chain of near-collisions is recognized as one centered
+ * block, rather than letting greedy single-pass clustering snowball
+ * a 6-item chain into a 192px stack anchored at the topmost item.
+ */
+function computeCollisionOffsets(
+  lines: OverlayLine[],
+  inst: EChartsInstanceLike,
+): number[] {
+  const offsets = new Array(lines.length).fill(0);
+  if (lines.length < 2) return offsets;
+
+  type Item = { i: number; pixelY: number };
+  type Cluster = { members: Item[]; meanY: number };
+
+  const items: Item[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    let px: number;
+    try {
+      const result = inst.convertToPixel({ yAxisIndex: 0 }, lines[i].value);
+      px = typeof result === "number" ? result : NaN;
+    } catch {
+      px = NaN;
+    }
+    if (Number.isFinite(px)) items.push({ i, pixelY: px });
+  }
+  if (items.length < 2) return offsets;
+  items.sort((a, b) => a.pixelY - b.pixelY);
+
+  let clusters: Cluster[] = items.map((it) => ({ members: [it], meanY: it.pixelY }));
+
+  // Iteratively merge any pair of adjacent clusters whose centered
+  // blocks overlap. Bounded by the number of items (each iteration
+  // strictly reduces the cluster count, or terminates).
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const next: Cluster[] = [];
+    for (const c of clusters) {
+      if (next.length === 0) {
+        next.push(c);
+        continue;
+      }
+      const prev = next[next.length - 1];
+      const prevMaxY = prev.meanY + (prev.members.length / 2) * LABEL_CHIP_PIXEL_HEIGHT;
+      const curMinY = c.meanY - (c.members.length / 2) * LABEL_CHIP_PIXEL_HEIGHT;
+      if (curMinY < prevMaxY) {
+        const all = [...prev.members, ...c.members];
+        const sumY = all.reduce((s, m) => s + m.pixelY, 0);
+        next[next.length - 1] = { members: all, meanY: sumY / all.length };
+        changed = true;
+      } else {
+        next.push(c);
+      }
+    }
+    clusters = next;
+  }
+
+  for (const c of clusters) {
+    const n = c.members.length;
+    c.members.forEach((m, k) => {
+      const placed = c.meanY + (k - (n - 1) / 2) * LABEL_CHIP_PIXEL_HEIGHT;
+      offsets[m.i] = placed - m.pixelY;
+    });
+  }
+  return offsets;
+}
+
+function arraysEqual(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // ── Responsive gutter ──────────────────────────────────────────────
