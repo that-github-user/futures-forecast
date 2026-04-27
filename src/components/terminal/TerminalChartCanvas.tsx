@@ -41,6 +41,12 @@ echarts.use([
 
 const POLL_INTERVAL_MS = 30_000;
 
+// Per-window stagger for OR-band corner labels (chip-height ≈ 28 px
+// + 2 px breathing). When multiple OR windows have coincident
+// highs/lows, each band's labels nudge `i * OR_LABEL_STAGGER_PX`
+// further inside the band so chips don't overdraw at the same corner.
+const OR_LABEL_STAGGER_PX = 30;
+
 // ── AVWAP anchor configuration ─────────────────────────────────────
 
 export type VwapAnchorKey = "week" | "daily" | "rth";
@@ -734,46 +740,52 @@ function buildEChartsOption(
                 xAxis: e,
               },
             ]),
-            // OR bands — one bounded rectangle per active window
-            // (1m / 5m / 15m), confined to the most-recent RTH session.
-            // The OR levels are only valid for today's session, not
-            // overnight ETH. Each band gets a window-tagged label
-            // (ORH-1 / ORH-5 / ORH-15) so multiple active windows
-            // remain readable when stacked. 4% wash leaves headroom
-            // for additive-stacked nesting (1m inside 5m inside 15m
-            // = inner-most rendered up to ~12% combined alpha — a
-            // natural visual hierarchy).
+            // OR bands — one per active window {1m, 5m, 15m},
+            // confined to the most-recent RTH session (OR levels are
+            // only valid for today's session, not overnight ETH).
+            // Each window emits TWO markArea entries (ECharts only
+            // honors the start-point's label config, so we need a
+            // second entry with transparent fill to render the
+            // bottom-edge label). 4% wash leaves headroom for
+            // additive nesting when 1m+5m+15m all on (~12% combined
+            // at the innermost area — a natural visual hierarchy).
+            // Per-window-index stagger via label.offset prevents
+            // chip overdraw when bands have coincident highs / lows.
             ...(latestRthRange
-              ? orBands.map((b, i) => {
-                  // Stagger labels per window-index so when two
-                  // windows have identical highs (or lows) the chips
-                  // don't overdraw at insideEndTop/Bottom. Each
-                  // index pushes the chip ~30px further in
-                  // (innermost band's labels sit at the band edge,
-                  // outer bands' labels nudged toward the chart's
-                  // interior). 30px ≈ chip-height + 4px gap.
-                  const dyTop = i * 30;
-                  const dyBottom = -i * 30;
+              ? orBands.flatMap((b, i) => {
+                  const dyTop = i * OR_LABEL_STAGGER_PX;
+                  const dyBottom = -i * OR_LABEL_STAGGER_PX;
                   return [
-                    {
-                      xAxis: latestRthRange[0],
-                      yAxis: b.low,
-                      itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
-                      label: {
-                        position: "insideEndBottom",
-                        offset: [0, dyBottom],
-                        formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+                    // Top-edge label (ORH) + the visible fill
+                    [
+                      {
+                        xAxis: latestRthRange[0],
+                        yAxis: b.low,
+                        itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
+                        label: {
+                          show: true,
+                          position: "insideEndTop",
+                          offset: [0, dyTop],
+                          formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                        },
                       },
-                    },
-                    {
-                      xAxis: latestRthRange[1],
-                      yAxis: b.high,
-                      label: {
-                        position: "insideEndTop",
-                        offset: [0, dyTop],
-                        formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                      { xAxis: latestRthRange[1], yAxis: b.high },
+                    ],
+                    // Bottom-edge label (ORL) — transparent fill
+                    [
+                      {
+                        xAxis: latestRthRange[0],
+                        yAxis: b.low,
+                        itemStyle: { color: "transparent", borderWidth: 0 },
+                        label: {
+                          show: true,
+                          position: "insideEndBottom",
+                          offset: [0, dyBottom],
+                          formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+                        },
                       },
-                    },
+                      { xAxis: latestRthRange[1], yAxis: b.high },
+                    ],
                   ];
                 })
               : []),
