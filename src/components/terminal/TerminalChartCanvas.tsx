@@ -761,12 +761,19 @@ function buildEChartsOption(
             // bottom-edge label). 4% wash leaves headroom for
             // additive nesting when 1m+5m+15m all on (~12% combined
             // at the innermost area — a natural visual hierarchy).
-            // Per-window-index stagger via label.offset prevents
-            // chip overdraw when bands have coincident highs / lows.
+            // Labels anchor OUTSIDE the band edges — ORH chip flush
+            // above the band's top, ORL chip flush below the band's
+            // bottom. Guarantees vertical separation regardless of
+            // band-pixel-height (a 10-pt OR at 12h zoom is only ~28px
+            // tall, smaller than the chip; inside-band positioning
+            // would overlap). Multi-window stacks outward: each
+            // subsequent (i+1) pushes another chip-height further
+            // from the band edge, so coincident highs/lows across
+            // bands stay readable.
             ...(latestRthRange
               ? orBands.flatMap((b, i) => {
-                  const dyTop = i * OR_LABEL_STAGGER_PX;
-                  const dyBottom = -i * OR_LABEL_STAGGER_PX;
+                  const dyTop = -(i + 1) * OR_LABEL_STAGGER_PX;
+                  const dyBottom = (i + 1) * OR_LABEL_STAGGER_PX;
                   return [
                     // Top-edge label (ORH) + the visible fill
                     [
