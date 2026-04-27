@@ -446,6 +446,18 @@ function buildEChartsOption(
   // doesn't render across overnight ETH (where the levels mean
   // nothing for current-session structure).
   const latestRthRange = buildLatestRthRange(bars, timeframeMin);
+  // The OR band's right edge sits at `latestRthRange[1]` (center of
+  // the LAST RTH bar). The RTH→ETH dividing line is drawn one bar
+  // to the right at `latestRthRange[1] + 1` (center of the FIRST
+  // post-RTH ETH bar). To meet the divider visually, extend the
+  // OR band's right boundary to that next-bar index when it exists.
+  // For the trailing-open RTH run (still in progress at the last
+  // bar of the buffer), keep the original index so the band doesn't
+  // overshoot into nonexistent territory.
+  const orRightX =
+    latestRthRange != null && latestRthRange[1] + 1 < bars.length
+      ? latestRthRange[1] + 1
+      : latestRthRange?.[1];
 
   return {
     backgroundColor: "transparent",
@@ -769,7 +781,7 @@ function buildEChartsOption(
                           formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
                         },
                       },
-                      { xAxis: latestRthRange[1], yAxis: b.high },
+                      { xAxis: orRightX, yAxis: b.high },
                     ],
                     // Bottom-edge label (ORL) — transparent fill
                     [
@@ -784,7 +796,7 @@ function buildEChartsOption(
                           formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                         },
                       },
-                      { xAxis: latestRthRange[1], yAxis: b.high },
+                      { xAxis: orRightX, yAxis: b.high },
                     ],
                   ];
                 })
