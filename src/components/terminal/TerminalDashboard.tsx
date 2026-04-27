@@ -13,12 +13,16 @@
  * Backend: vega-pilot/futures_terminal/ on terminal.denoisedalpha.com.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
 import {
   TerminalChartCanvas,
+  VWAP_ANCHORS,
   type OverlayState,
   type Timeframe,
+  type VwapAnchorKey,
+  type VwapAnchorState,
+  type VwapOverlayState,
   DEFAULT_OVERLAYS,
   DEFAULT_TIMEFRAME,
 } from "./TerminalChartCanvas";
@@ -125,8 +129,10 @@ function formatRegime(label: string): React.ReactNode {
 function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
-  const toggle = (key: keyof OverlayState) =>
+  const toggleBool = (key: "pocVa" | "priorHlc" | "openingRange") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
+  const setVwap = (next: VwapOverlayState) =>
+    setOverlays((prev) => ({ ...prev, vwap: next }));
 
   return (
     <section className="terminal-middle">
@@ -145,21 +151,16 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           ))}
         </div>
         <div className="terminal-chart-toggles">
-          <ToggleButton active={overlays.sessionVwap} onClick={() => toggle("sessionVwap")}>
-            Session VWAP
-          </ToggleButton>
-          <ToggleButton active={overlays.avwaps} onClick={() => toggle("avwaps")}>
-            AVWAP
-          </ToggleButton>
+          <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
           {/* Gamma Flip: no data yet (third-party feed), kept disabled. */}
           <span className="pill disabled">Gamma Flip</span>
-          <ToggleButton active={overlays.pocVa} onClick={() => toggle("pocVa")}>
+          <ToggleButton active={overlays.pocVa} onClick={() => toggleBool("pocVa")}>
             POC / VAH / VAL
           </ToggleButton>
-          <ToggleButton active={overlays.priorHlc} onClick={() => toggle("priorHlc")}>
+          <ToggleButton active={overlays.priorHlc} onClick={() => toggleBool("priorHlc")}>
             Prior Day HLC
           </ToggleButton>
-          <ToggleButton active={overlays.openingRange} onClick={() => toggle("openingRange")}>
+          <ToggleButton active={overlays.openingRange} onClick={() => toggleBool("openingRange")}>
             Opening Range
           </ToggleButton>
           {/* ML Fan: PR η scope; kept disabled. */}
@@ -172,6 +173,126 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
         <div className="terminal-feed-empty">Awaiting events.</div>
       </aside>
     </section>
+  );
+}
+
+/* ── AVWAP popover (multi-anchor checklist) ────────────────────────
+ *
+ * Replaces the Session-VWAP and AVWAP pills. Lets the operator turn
+ * on any combination of {Week, Daily, RTH} × {VWAP, ±1σ, ±2σ}. The
+ * pill reads "AVWAP · n" where n counts the number of currently-on
+ * anchors (any series active under that anchor). Clicking outside
+ * dismisses the popover.
+ */
+function AvwapPopover({
+  vwap,
+  setVwap,
+}: {
+  vwap: VwapOverlayState;
+  setVwap: (next: VwapOverlayState) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const activeAnchorCount = VWAP_ANCHORS.reduce((n, a) => {
+    const s = vwap[a.key];
+    return n + (s.vwap || s.band1 || s.band2 ? 1 : 0);
+  }, 0);
+  const anyOn = activeAnchorCount > 0;
+
+  const setAnchorField = (
+    anchor: VwapAnchorKey,
+    field: keyof VwapAnchorState,
+    value: boolean,
+  ) => {
+    setVwap({ ...vwap, [anchor]: { ...vwap[anchor], [field]: value } });
+  };
+
+  return (
+    <div className="avwap-pop-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`pill${anyOn ? " on" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        AVWAP{anyOn ? ` · ${activeAnchorCount}` : ""}
+      </button>
+      {open && (
+        <div className="avwap-pop" role="menu">
+          <div className="avwap-pop-head">
+            <span className="avwap-pop-anchor-col">Anchor</span>
+            <span>VWAP</span>
+            <span>±1σ</span>
+            <span>±2σ</span>
+          </div>
+          {VWAP_ANCHORS.map(({ key, label }) => {
+            const state = vwap[key];
+            return (
+              <div className="avwap-pop-row" key={key}>
+                <span className="avwap-pop-anchor-col">{label}</span>
+                <AvwapCheck
+                  checked={state.vwap}
+                  onChange={(v) => setAnchorField(key, "vwap", v)}
+                  ariaLabel={`${label} VWAP line`}
+                />
+                <AvwapCheck
+                  checked={state.band1}
+                  onChange={(v) => setAnchorField(key, "band1", v)}
+                  ariaLabel={`${label} ±1σ band`}
+                />
+                <AvwapCheck
+                  checked={state.band2}
+                  onChange={(v) => setAnchorField(key, "band2", v)}
+                  ariaLabel={`${label} ±2σ band`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AvwapCheck({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`avwap-pop-check${checked ? " on" : ""}`}
+      onClick={() => onChange(!checked)}
+      aria-pressed={checked}
+      aria-label={ariaLabel}
+    >
+      {checked ? "✓" : ""}
+    </button>
   );
 }
 

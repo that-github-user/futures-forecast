@@ -2,10 +2,11 @@
  * TerminalChartCanvas — replaces the placeholder div in the middle band.
  *
  * Polls /terminal/v1/bars/es-intraday every 30s and renders an ECharts
- * candlestick chart of the last ~48h of ES 1-min bars (RTH + ETH/Globex).
- * Renders horizontal markLine overlays for Session VWAP, anchored
- * VWAPs, POC/VAH/VAL, prior-day HLC, opening range — driven by the
- * caller-supplied `overlays` toggle state.
+ * candlestick chart of the last ~48h of ES bars (RTH + ETH/Globex). The
+ * AVWAP system supports three independent anchors {Week, Daily Globex,
+ * RTH} × three rendering options {VWAP line, ±1σ band, ±2σ band}. Static
+ * markLine overlays for POC/VAH/VAL, prior-day HLC, opening range are
+ * driven by the caller-supplied `overlays` toggle state.
  *
  * Pan/zoom preservation: the option object is built without dataZoom
  * config on subsequent updates, and `notMerge: false` is set so the
@@ -40,19 +41,39 @@ echarts.use([
 
 const POLL_INTERVAL_MS = 30_000;
 
+// ── AVWAP anchor configuration ─────────────────────────────────────
+
+export type VwapAnchorKey = "week" | "daily" | "rth";
+
+export type VwapAnchorState = {
+  vwap: boolean;
+  band1: boolean;
+  band2: boolean;
+};
+
+export type VwapOverlayState = Record<VwapAnchorKey, VwapAnchorState>;
+
+export const VWAP_ANCHORS: { key: VwapAnchorKey; label: string }[] = [
+  { key: "week", label: "Week" },
+  { key: "daily", label: "Daily" },
+  { key: "rth", label: "RTH" },
+];
+
 // ── Overlay state shape ─────────────────────────────────────────────
 
 export type OverlayState = {
-  sessionVwap: boolean;
-  avwaps: boolean;
+  vwap: VwapOverlayState;
   pocVa: boolean;
   priorHlc: boolean;
   openingRange: boolean;
 };
 
 export const DEFAULT_OVERLAYS: OverlayState = {
-  sessionVwap: true,
-  avwaps: true,
+  vwap: {
+    week: { vwap: true, band1: false, band2: false },
+    daily: { vwap: false, band1: false, band2: false },
+    rth: { vwap: false, band1: false, band2: false },
+  },
   pocVa: true,
   priorHlc: true,
   openingRange: true,
@@ -288,13 +309,7 @@ function buildEChartsOption(
   const times = bars.map((b) => formatBarTime(b.time));
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBand = buildOpeningRangeBand(snapshot, overlays);
-  // Cumulative VWAP series — anchored at the most recent week-start
-  // bar (Sunday 6pm ET Globex open / Monday RTH open / after-break).
-  // Bars predating the anchor get null so the line doesn't render
-  // there; bars at-or-after the anchor get the running VWAP value.
-  const sessionVwapSeries = overlays.sessionVwap
-    ? buildWeeklyVwapSeries(bars)
-    : null;
+  const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette);
 
   return {
     backgroundColor: "transparent",
@@ -345,6 +360,7 @@ function buildEChartsOption(
       formatter: (params: unknown) => {
         const arr = params as Array<{
           seriesType: string;
+          seriesName?: string;
           dataIndex: number;
           data: number[] | number | null;
         }>;
@@ -360,14 +376,20 @@ function buildEChartsOption(
           `L ${fmt(b.low)}  C ${fmt(b.close)}`,
           `<div style="opacity:0.55;font-size:10px;margin-top:2px">vol ${b.volume.toFixed(0)}</div>`,
         ];
-        // Append VWAP value at this bar if the series is rendered.
-        const lineSeries = arr.find(
-          (p) => p.seriesType === "line" && typeof p.data === "number",
+        // Append any active VWAP-line values at this bar.
+        const vwapHits = arr.filter(
+          (p) =>
+            p.seriesType === "line" &&
+            typeof p.seriesName === "string" &&
+            /^VWAP /.test(p.seriesName) &&
+            typeof p.data === "number",
         );
-        if (lineSeries && typeof lineSeries.data === "number") {
-          lines.push(
-            `<div style="margin-top:2px;opacity:0.85">VWAP ${fmt(lineSeries.data)}</div>`,
-          );
+        if (vwapHits.length > 0) {
+          lines.push('<div style="margin-top:2px;opacity:0.85">');
+          for (const h of vwapHits) {
+            lines.push(`${h.seriesName} ${fmt(h.data as number)}`);
+          }
+          lines.push("</div>");
         }
         return lines.join("<br/>");
       },
@@ -423,30 +445,16 @@ function buildEChartsOption(
             : [],
         },
       },
-      // Session VWAP as a cumulative time-varying line, anchored at the
-      // current week's Globex open. Spec §4.2: ink-100, 1.5px solid.
-      // ECharts merges series by index — when overlay toggles off,
-      // pushing an empty data array hides the line. We always include
-      // the series so the index stays stable across renders.
-      {
-        type: "line",
-        data: sessionVwapSeries ?? [],
-        showSymbol: false,
-        sampling: "lttb",
-        smooth: false,
-        connectNulls: false,
-        lineStyle: {
-          color: palette.ink100,
-          width: 1.5,
-        },
-        z: 5,
-        silent: true,
-      },
+      // AVWAP series — up to 3 anchors × 5 series each (vwap line,
+      // ±1σ band edges, ±2σ band edges). Always emit all 15 series so
+      // their indices stay stable across renders; series with their
+      // toggle off carry an empty data array.
+      ...vwapSeries,
     ],
   };
 }
 
-// ── Overlay builder — derives lines from snapshot + toggle state ────
+// ── Static markLine overlays (non-VWAP) ─────────────────────────────
 
 // Overlay weights/colors/styles follow spec §4.2 (lines 484-494). The
 // "single accent each" restraint is the rule: every overlay uses one of
@@ -467,23 +475,10 @@ function buildOverlayLines(
 ): OverlayLine[] {
   if (!snapshot) return [];
   const lines: OverlayLine[] = [];
-  const v = snapshot.vwap;
   const lv = snapshot.levels;
 
-  // Note: Session VWAP is rendered as a separate cumulative line
-  // series (see `buildWeeklyVwapSeries` and the `series[1]` line in
-  // the option builder), NOT as a static markLine. A flat horizontal
-  // line at the current VWAP value would be wrong — VWAP evolves
-  // through the session.
-
-  // Spec §4.2: AVWAPs → ink-80, 1px dashed.
-  if (overlays.avwaps) {
-    for (const a of v.anchored) {
-      if (a.value != null) {
-        lines.push({ value: a.value, color: palette.ink80, style: "dashed", width: 1 });
-      }
-    }
-  }
+  // VWAPs (Session + anchored backend AVWAPs) are rendered as
+  // running line series, not static markLines — see buildAvwapSeries.
 
   // Spec §4.2: POC → ink-80, 1.5px solid; VAH/VAL → ink-60, 1px dashed.
   if (overlays.pocVa) {
@@ -550,49 +545,275 @@ function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
   return Math.max(0, Math.min(99, 100 - (VISIBLE_MS / spanMs) * 100));
 }
 
-// ── Cumulative weekly-anchored VWAP ────────────────────────────────
+// ── AVWAP — multi-anchor cumulative VWAP + ±σ bands ─────────────────
 
 /**
- * Compute the running VWAP series anchored at the most recent week
- * boundary. Ports the TradingView ta.vwap() formula 1:1:
+ * Compute cumulative VWAP and stddev bands from `anchorIdx` onward.
+ * Ports the TradingView ta.vwap()/ta.stdev() formula 1:1:
  *   typical = (high + low + close) / 3
- *   VWAP[i] = cumsum(typical × vol) / cumsum(vol), reset at week start
+ *   VWAP[i]   = cumsum(typ × vol) / cumsum(vol)
+ *   stddev[i] = sqrt(max(0, cumsum(typ² × vol)/cumsum(vol) − VWAP²))
  *
- * Returns an array aligned 1:1 with `bars`. Bars predating the current
- * week's anchor get `null` so ECharts doesn't render the line there
- * (with `connectNulls: false`); bars at-or-after the anchor get the
- * running VWAP value.
- *
- * Anchor detection: the most-recent ≥36h gap between consecutive bars
- * (= the weekend halt: Friday 5pm ET → Sunday 6pm ET). Falls back to
- * the first bar if no such gap exists in the buffer.
+ * Returns an array aligned 1:1 with `bars`. Pre-anchor entries are
+ * `null`; post-anchor entries carry the running {vwap, stddev}.
  */
-function buildWeeklyVwapSeries(bars: TerminalIntradayBar[]): (number | null)[] {
-  if (bars.length === 0) return [];
+function vwapWithBandsSeries(
+  bars: TerminalIntradayBar[],
+  anchorIdx: number,
+): ({ vwap: number; stddev: number } | null)[] {
+  const out: ({ vwap: number; stddev: number } | null)[] = new Array(bars.length).fill(null);
+  if (anchorIdx < 0 || anchorIdx >= bars.length) return out;
+  let cumTpVol = 0;
+  let cumVol = 0;
+  let cumTpSqVol = 0;
+  for (let i = anchorIdx; i < bars.length; i++) {
+    const b = bars[i];
+    const typ = (b.high + b.low + b.close) / 3;
+    const vol = b.volume > 0 ? b.volume : 1;
+    cumTpVol += typ * vol;
+    cumVol += vol;
+    cumTpSqVol += typ * typ * vol;
+    if (cumVol > 0) {
+      const vwap = cumTpVol / cumVol;
+      const variance = Math.max(0, cumTpSqVol / cumVol - vwap * vwap);
+      out[i] = { vwap, stddev: Math.sqrt(variance) };
+    }
+  }
+  return out;
+}
 
-  // Find the most-recent week anchor index by scanning backward for
-  // a ≥36h gap between consecutive bars.
+// ET clock helpers — used to detect the most-recent Daily-Globex
+// (18:00 ET) and RTH (09:30 ET, weekdays-only) anchor moments.
+const ET_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  weekday: "short",
+});
+
+function etPart(parts: Intl.DateTimeFormatPart[], type: string): string {
+  return parts.find((p) => p.type === type)?.value ?? "";
+}
+
+/**
+ * Walk back minute-by-minute from `latestMs` until ET clock matches
+ * the target hh:mm (and optionally a weekday filter). Caps at 8 days
+ * lookback (≥1 trading week of safety) — returns null if no match.
+ */
+function findRecentEtMomentMs(
+  latestMs: number,
+  targetHour: number,
+  targetMin: number,
+  weekdaysOnly: boolean,
+): number | null {
+  const MAX_MIN = 8 * 24 * 60;
+  for (let offset = 0; offset < MAX_MIN; offset++) {
+    const ms = latestMs - offset * 60_000;
+    const parts = ET_FMT.formatToParts(new Date(ms));
+    const hh = parseInt(etPart(parts, "hour"), 10);
+    const mm = parseInt(etPart(parts, "minute"), 10);
+    if (hh !== targetHour || mm !== targetMin) continue;
+    if (weekdaysOnly) {
+      const wk = etPart(parts, "weekday");
+      if (wk === "Sat" || wk === "Sun") continue;
+    }
+    return ms;
+  }
+  return null;
+}
+
+/**
+ * Map an anchor-moment (UTC ms) to the largest aggregated-bar index
+ * whose timestamp is ≤ anchorMs. The bucket spanning the anchor
+ * moment is the correct starting point for cumulating from that
+ * moment onward.
+ */
+function indexForAnchorMs(bars: TerminalIntradayBar[], anchorMs: number): number {
+  let idx = -1;
+  for (let i = 0; i < bars.length; i++) {
+    const t = Date.parse(bars[i].time);
+    if (Number.isFinite(t) && t <= anchorMs) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+/**
+ * Week anchor: most-recent ≥36h gap between consecutive bars (= the
+ * weekend halt: Friday 17:00 ET → Sunday 18:00 ET). Falls back to the
+ * first bar in the buffer if no such gap exists yet.
+ */
+function findWeekAnchorIdx(bars: TerminalIntradayBar[]): number {
+  if (bars.length === 0) return -1;
   const ANCHOR_GAP_MS = 36 * 60 * 60 * 1000;
-  let anchorIdx = 0;
   for (let i = bars.length - 1; i > 0; i--) {
     const t = Date.parse(bars[i].time);
     const tPrev = Date.parse(bars[i - 1].time);
     if (Number.isFinite(t) && Number.isFinite(tPrev) && t - tPrev >= ANCHOR_GAP_MS) {
-      anchorIdx = i;
-      break;
+      return i;
     }
   }
+  return 0;
+}
 
-  const out: (number | null)[] = new Array(bars.length).fill(null);
-  let cumTpVol = 0;
-  let cumVol = 0;
-  for (let i = anchorIdx; i < bars.length; i++) {
-    const b = bars[i];
-    const typical = (b.high + b.low + b.close) / 3;
-    const vol = b.volume > 0 ? b.volume : 1;
-    cumTpVol += typical * vol;
-    cumVol += vol;
-    out[i] = cumVol > 0 ? cumTpVol / cumVol : null;
+function findDailyGlobexAnchorIdx(bars: TerminalIntradayBar[]): number {
+  if (bars.length === 0) return -1;
+  const latestMs = Date.parse(bars[bars.length - 1].time);
+  if (!Number.isFinite(latestMs)) return -1;
+  const ms = findRecentEtMomentMs(latestMs, 18, 0, false);
+  if (ms == null) return -1;
+  return indexForAnchorMs(bars, ms);
+}
+
+function findRthAnchorIdx(bars: TerminalIntradayBar[]): number {
+  if (bars.length === 0) return -1;
+  const latestMs = Date.parse(bars[bars.length - 1].time);
+  if (!Number.isFinite(latestMs)) return -1;
+  const ms = findRecentEtMomentMs(latestMs, 9, 30, true);
+  if (ms == null) return -1;
+  return indexForAnchorMs(bars, ms);
+}
+
+// Per-anchor visual treatment. Spec §4.2 reserves ink-100 for the
+// flagship line (Week is the long-running structural reference);
+// supporting anchors step down to ink-80 (Daily) and ink-60 (RTH).
+// Bands match each anchor's tone but at thinner weight.
+const VWAP_STYLES: Record<
+  VwapAnchorKey,
+  { label: string; color: keyof LumenPalette; lineWidth: number; bandWidth: number; dashBand: boolean }
+> = {
+  week: { label: "Week", color: "ink100", lineWidth: 1.5, bandWidth: 1, dashBand: false },
+  daily: { label: "Daily", color: "ink80", lineWidth: 1.25, bandWidth: 1, dashBand: true },
+  rth: { label: "RTH", color: "ink60", lineWidth: 1.25, bandWidth: 0.75, dashBand: true },
+};
+
+function findAnchorIdx(key: VwapAnchorKey, bars: TerminalIntradayBar[]): number {
+  switch (key) {
+    case "week":
+      return findWeekAnchorIdx(bars);
+    case "daily":
+      return findDailyGlobexAnchorIdx(bars);
+    case "rth":
+      return findRthAnchorIdx(bars);
+  }
+}
+
+type EChartsLineSeries = {
+  type: "line";
+  name: string;
+  data: (number | null)[];
+  showSymbol: boolean;
+  sampling?: string;
+  smooth: boolean;
+  connectNulls: boolean;
+  lineStyle: { color: string; width: number; type?: "solid" | "dashed" | "dotted" };
+  z: number;
+  silent: boolean;
+};
+
+/**
+ * Build all AVWAP line series — exactly 15 entries (3 anchors × 5
+ * series: vwap, +1σ, -1σ, +2σ, -2σ), preserving stable indices across
+ * renders so ECharts' notMerge: false can swap data cleanly. Disabled
+ * series carry an empty `data` array.
+ */
+function buildAvwapSeries(
+  bars: TerminalIntradayBar[],
+  vwapState: VwapOverlayState,
+  palette: LumenPalette,
+): EChartsLineSeries[] {
+  const out: EChartsLineSeries[] = [];
+  for (const { key } of VWAP_ANCHORS) {
+    const style = VWAP_STYLES[key];
+    const state = vwapState[key];
+    const anyOn = state.vwap || state.band1 || state.band2;
+    const color = palette[style.color];
+
+    let series: ({ vwap: number; stddev: number } | null)[] | null = null;
+    if (anyOn) {
+      const idx = findAnchorIdx(key, bars);
+      if (idx >= 0) series = vwapWithBandsSeries(bars, idx);
+    }
+
+    const vwapData = state.vwap && series ? series.map((s) => (s ? s.vwap : null)) : [];
+    const upper1Data =
+      state.band1 && series ? series.map((s) => (s ? s.vwap + s.stddev : null)) : [];
+    const lower1Data =
+      state.band1 && series ? series.map((s) => (s ? s.vwap - s.stddev : null)) : [];
+    const upper2Data =
+      state.band2 && series ? series.map((s) => (s ? s.vwap + 2 * s.stddev : null)) : [];
+    const lower2Data =
+      state.band2 && series ? series.map((s) => (s ? s.vwap - 2 * s.stddev : null)) : [];
+
+    const baseStyle = { color, width: style.lineWidth };
+    const bandStyle = {
+      color,
+      width: style.bandWidth,
+      type: style.dashBand ? ("dashed" as const) : ("solid" as const),
+    };
+
+    out.push(
+      {
+        type: "line",
+        name: `VWAP ${style.label}`,
+        data: vwapData,
+        showSymbol: false,
+        sampling: "lttb",
+        smooth: false,
+        connectNulls: false,
+        lineStyle: baseStyle,
+        z: 5,
+        silent: true,
+      },
+      {
+        type: "line",
+        name: `VWAP ${style.label} +1σ`,
+        data: upper1Data,
+        showSymbol: false,
+        smooth: false,
+        connectNulls: false,
+        lineStyle: bandStyle,
+        z: 4,
+        silent: true,
+      },
+      {
+        type: "line",
+        name: `VWAP ${style.label} −1σ`,
+        data: lower1Data,
+        showSymbol: false,
+        smooth: false,
+        connectNulls: false,
+        lineStyle: bandStyle,
+        z: 4,
+        silent: true,
+      },
+      {
+        type: "line",
+        name: `VWAP ${style.label} +2σ`,
+        data: upper2Data,
+        showSymbol: false,
+        smooth: false,
+        connectNulls: false,
+        lineStyle: bandStyle,
+        z: 3,
+        silent: true,
+      },
+      {
+        type: "line",
+        name: `VWAP ${style.label} −2σ`,
+        data: lower2Data,
+        showSymbol: false,
+        smooth: false,
+        connectNulls: false,
+        lineStyle: bandStyle,
+        z: 3,
+        silent: true,
+      },
+    );
   }
   return out;
 }
