@@ -323,12 +323,13 @@ function buildEChartsOption(
     animation: false,
     grid: {
       left: 8,
-      // Right gutter widened from 56 → 88 to carve out per-spec §4.2
-      // "100px right gutter with hairline leaders" for level labels.
-      // The markLine itself extends across the plot width and into
-      // the gutter; the label sits at the line's right end, before
-      // the price-axis tick labels.
-      right: 88,
+      // Right gutter sized for spec §4.2's "100px right gutter with
+      // hairline leaders". 88px desktop carves room for the two-line
+      // chip + axis tick labels (containLabel: true adds tick width
+      // on top of `right`). On narrow mobile viewports (<=768px)
+      // an 88px gutter eats ~30% of plot width, so we drop to 56px
+      // and accept tighter chip/axis interaction.
+      right: gutterRightPx(),
       top: 6,
       bottom: 28,
       containLabel: true,
@@ -428,26 +429,32 @@ function buildEChartsOption(
           // past the line's tip but before the price-axis tick
           // labels). The line itself extends across the plot width
           // and acts as the spec §4.2 "hairline leader" naturally.
-          // Default label config inherited by every data item; each
-          // item overrides only `formatter` with its own 3-letter
-          // code. The 3-letter codes are uppercase by convention so
-          // we read as small-caps without a CSS text-transform pass.
-          // backgroundColor: paper-deep gives a subtle chip behind
-          // the glyphs so the label doesn't fight axis-tick text
-          // when both happen to land at the same y.
+          // Spec §4.2 lines 496-507: each gutter annotation is a
+          // two-line chip — the 3-letter code on top, the price value
+          // on the bottom. Annotations match the color of their
+          // overlay. The chip carries a paper-deep fill + 1px ink-40
+          // hairline border (spec §2.4 grammar) so labels read as
+          // discrete annotations rather than data continuations.
+          //
+          // The markLine itself extends across the plot width and
+          // butts against the chip — its terminal segment in the
+          // gutter doubles as the spec's "hairline leader" matching
+          // the line's dash pattern. (A separate leader-only segment
+          // is a follow-up; the line-as-leader interpretation is
+          // adequate for first-light.)
           label: {
             show: true,
             position: "end",
-            distance: 4,
-            color: palette.ink60,
+            distance: 0,
             fontSize: 10,
             fontFamily: "var(--font-mono, monospace)",
+            lineHeight: 12,
             backgroundColor: palette.paperDeep,
-            padding: [1, 3],
+            borderColor: palette.ink40,
+            borderWidth: 1,
+            padding: [2, 4],
+            align: "left",
           },
-          // ECharts merges arrays as a unit, so passing the full list
-          // each time is safe — toggling overlays off removes their
-          // line from the data array.
           data: overlayLines.map((line) => ({
             yAxis: line.value,
             lineStyle: {
@@ -456,7 +463,8 @@ function buildEChartsOption(
               width: line.width,
             },
             label: {
-              formatter: line.label,
+              formatter: `${line.label}\n${line.value.toFixed(2)}`,
+              color: line.color,
             },
           })),
         },
@@ -473,19 +481,39 @@ function buildEChartsOption(
             color: hexToRgba(palette.ink100, 0.05),
             borderWidth: 0,
           },
+          // OR band corner labels follow the same two-line spec §4.2
+          // grammar (code + value) but anchor inside the band corners
+          // (the band itself terminates at the plot edge, so the band
+          // doesn't need gutter space).
           label: {
             show: true,
             color: palette.ink60,
             fontSize: 10,
             fontFamily: "var(--font-mono, monospace)",
+            lineHeight: 12,
             backgroundColor: palette.paperDeep,
-            padding: [1, 3],
+            borderColor: palette.ink40,
+            borderWidth: 1,
+            padding: [2, 4],
+            align: "left",
           },
           data: orBand
             ? [
                 [
-                  { yAxis: orBand.low, label: { position: "insideEndBottom", formatter: "ORL" } },
-                  { yAxis: orBand.high, label: { position: "insideEndTop", formatter: "ORH" } },
+                  {
+                    yAxis: orBand.low,
+                    label: {
+                      position: "insideEndBottom",
+                      formatter: `ORL\n${orBand.low.toFixed(2)}`,
+                    },
+                  },
+                  {
+                    yAxis: orBand.high,
+                    label: {
+                      position: "insideEndTop",
+                      formatter: `ORH\n${orBand.high.toFixed(2)}`,
+                    },
+                  },
                 ],
               ]
             : [],
@@ -544,15 +572,17 @@ function buildOverlayLines(
   }
 
   // Spec §4.2: Prior-day HLC → ink-60, 1px DOTTED (all three).
+  // PDH/PDC/PDL keeps a uniform 3-letter cadence with POC/VAH/VAL so
+  // labels stack with consistent chip width.
   if (overlays.priorHlc) {
     if (lv.pd_high != null) {
-      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PH" });
+      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PDH" });
     }
     if (lv.pd_close != null) {
-      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1, label: "PC" });
+      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1, label: "PDC" });
     }
     if (lv.pd_low != null) {
-      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PL" });
+      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PDL" });
     }
   }
 
@@ -570,6 +600,20 @@ function buildOpeningRangeBand(
   const lv = snapshot.levels;
   if (lv.or_low == null || lv.or_high == null) return null;
   return { low: lv.or_low, high: lv.or_high };
+}
+
+// ── Responsive gutter ──────────────────────────────────────────────
+
+/**
+ * Right-gutter pixel size for the chart's plot area. 88px on desktop
+ * to fit two-line level labels per spec §4.2; 56px on narrow mobile
+ * viewports where 88px would eat ~30% of the plot width. Read at
+ * option-build time (re-runs on each 30s poll, so a viewport resize
+ * gets picked up within one poll cycle).
+ */
+function gutterRightPx(): number {
+  if (typeof window === "undefined") return 88;
+  return window.matchMedia("(max-width: 768px)").matches ? 56 : 88;
 }
 
 // ── Default zoom — keeps visible window ~12h regardless of buffer ───
