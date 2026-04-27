@@ -41,6 +41,12 @@ echarts.use([
 
 const POLL_INTERVAL_MS = 30_000;
 
+// Per-window stagger for OR-band corner labels (chip-height ≈ 28 px
+// + 2 px breathing). When multiple OR windows have coincident
+// highs/lows, each band's labels nudge `i * OR_LABEL_STAGGER_PX`
+// further inside the band so chips don't overdraw at the same corner.
+const OR_LABEL_STAGGER_PX = 30;
+
 // ── AVWAP anchor configuration ─────────────────────────────────────
 
 export type VwapAnchorKey = "week" | "daily" | "rth";
@@ -734,28 +740,21 @@ function buildEChartsOption(
                 xAxis: e,
               },
             ]),
-            // OR bands — one bounded rectangle per active window
-            // (1m / 5m / 15m), confined to the most-recent RTH session.
-            // The OR levels are only valid for today's session, not
-            // overnight ETH. Each band gets a window-tagged label
-            // (ORH-1 / ORH-5 / ORH-15) so multiple active windows
-            // remain readable when stacked. 4% wash leaves headroom
-            // for additive-stacked nesting (1m inside 5m inside 15m
-            // = inner-most rendered up to ~12% combined alpha — a
-            // natural visual hierarchy).
-            // OR bands — emit TWO markArea entries per active window:
-            //   1. ORH label entry (first-point's `label` config is
-            //      what ECharts actually renders for the area), with
-            //      the band fill on this entry.
-            //   2. ORL label entry, transparent fill (avoids
-            //      double-tinting), positioned at the bottom corner.
-            // Per-window-index stagger via label.offset so when two
-            // bands have coincident highs/lows the chips don't
-            // overdraw at the same corner.
+            // OR bands — one per active window {1m, 5m, 15m},
+            // confined to the most-recent RTH session (OR levels are
+            // only valid for today's session, not overnight ETH).
+            // Each window emits TWO markArea entries (ECharts only
+            // honors the start-point's label config, so we need a
+            // second entry with transparent fill to render the
+            // bottom-edge label). 4% wash leaves headroom for
+            // additive nesting when 1m+5m+15m all on (~12% combined
+            // at the innermost area — a natural visual hierarchy).
+            // Per-window-index stagger via label.offset prevents
+            // chip overdraw when bands have coincident highs / lows.
             ...(latestRthRange
               ? orBands.flatMap((b, i) => {
-                  const dyTop = i * 30;
-                  const dyBottom = -i * 30;
+                  const dyTop = i * OR_LABEL_STAGGER_PX;
+                  const dyBottom = -i * OR_LABEL_STAGGER_PX;
                   return [
                     // Top-edge label (ORH) + the visible fill
                     [
