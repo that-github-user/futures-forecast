@@ -743,37 +743,50 @@ function buildEChartsOption(
             // for additive-stacked nesting (1m inside 5m inside 15m
             // = inner-most rendered up to ~12% combined alpha — a
             // natural visual hierarchy).
+            // OR bands — emit TWO markArea entries per active window:
+            //   1. ORH label entry (first-point's `label` config is
+            //      what ECharts actually renders for the area), with
+            //      the band fill on this entry.
+            //   2. ORL label entry, transparent fill (avoids
+            //      double-tinting), positioned at the bottom corner.
+            // Per-window-index stagger via label.offset so when two
+            // bands have coincident highs/lows the chips don't
+            // overdraw at the same corner.
             ...(latestRthRange
-              ? orBands.map((b, i) => {
-                  // Stagger labels per window-index so when two
-                  // windows have identical highs (or lows) the chips
-                  // don't overdraw at insideEndTop/Bottom. Each
-                  // index pushes the chip ~30px further in
-                  // (innermost band's labels sit at the band edge,
-                  // outer bands' labels nudged toward the chart's
-                  // interior). 30px ≈ chip-height + 4px gap.
+              ? orBands.flatMap((b, i) => {
                   const dyTop = i * 30;
                   const dyBottom = -i * 30;
                   return [
-                    {
-                      xAxis: latestRthRange[0],
-                      yAxis: b.low,
-                      itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
-                      label: {
-                        position: "insideEndBottom",
-                        offset: [0, dyBottom],
-                        formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+                    // Top-edge label (ORH) + the visible fill
+                    [
+                      {
+                        xAxis: latestRthRange[0],
+                        yAxis: b.low,
+                        itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
+                        label: {
+                          show: true,
+                          position: "insideEndTop",
+                          offset: [0, dyTop],
+                          formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                        },
                       },
-                    },
-                    {
-                      xAxis: latestRthRange[1],
-                      yAxis: b.high,
-                      label: {
-                        position: "insideEndTop",
-                        offset: [0, dyTop],
-                        formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                      { xAxis: latestRthRange[1], yAxis: b.high },
+                    ],
+                    // Bottom-edge label (ORL) — transparent fill
+                    [
+                      {
+                        xAxis: latestRthRange[0],
+                        yAxis: b.low,
+                        itemStyle: { color: "transparent", borderWidth: 0 },
+                        label: {
+                          show: true,
+                          position: "insideEndBottom",
+                          offset: [0, dyBottom],
+                          formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+                        },
                       },
-                    },
+                      { xAxis: latestRthRange[1], yAxis: b.high },
+                    ],
                   ];
                 })
               : []),
