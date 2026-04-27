@@ -323,7 +323,13 @@ function buildEChartsOption(
     animation: false,
     grid: {
       left: 8,
-      right: 56,
+      // Right gutter sized for spec §4.2's "100px right gutter with
+      // hairline leaders". 88px desktop carves room for the two-line
+      // chip + axis tick labels (containLabel: true adds tick width
+      // on top of `right`). On narrow mobile viewports (<=768px)
+      // an 88px gutter eats ~30% of plot width, so we drop to 56px
+      // and accept tighter chip/axis interaction.
+      right: gutterRightPx(),
       top: 6,
       bottom: 28,
       containLabel: true,
@@ -419,16 +425,36 @@ function buildEChartsOption(
           // the candlestick tooltip still fires on hover.
           silent: true,
           symbol: "none",
-          // Spec §4.2: "Annotations never sit on the candles." Inline
-          // labels (the ECharts default) are explicitly rejected. The
-          // proper home is a 100px right gutter with hairline leaders;
-          // implementing that needs custom rendering and is scoped as
-          // a follow-up. For now, lines render without labels — the
-          // user identifies them via the toggle pills above the chart.
-          label: { show: false },
-          // ECharts merges arrays as a unit, so passing the full list
-          // each time is safe — toggling overlays off removes their
-          // line from the data array.
+          // Per-line label rendered at the right end (in the gutter,
+          // past the line's tip but before the price-axis tick
+          // labels). The line itself extends across the plot width
+          // and acts as the spec §4.2 "hairline leader" naturally.
+          // Spec §4.2 lines 496-507: each gutter annotation is a
+          // two-line chip — the 3-letter code on top, the price value
+          // on the bottom. Annotations match the color of their
+          // overlay. The chip carries a paper-deep fill + 1px ink-40
+          // hairline border (spec §2.4 grammar) so labels read as
+          // discrete annotations rather than data continuations.
+          //
+          // The markLine itself extends across the plot width and
+          // butts against the chip — its terminal segment in the
+          // gutter doubles as the spec's "hairline leader" matching
+          // the line's dash pattern. (A separate leader-only segment
+          // is a follow-up; the line-as-leader interpretation is
+          // adequate for first-light.)
+          label: {
+            show: true,
+            position: "end",
+            distance: 0,
+            fontSize: 10,
+            fontFamily: "var(--font-mono, monospace)",
+            lineHeight: 12,
+            backgroundColor: palette.paperDeep,
+            borderColor: palette.ink40,
+            borderWidth: 1,
+            padding: [2, 4],
+            align: "left",
+          },
           data: overlayLines.map((line) => ({
             yAxis: line.value,
             lineStyle: {
@@ -436,19 +462,60 @@ function buildEChartsOption(
               type: line.style,
               width: line.width,
             },
+            label: {
+              formatter: `${line.label}\n${line.value.toFixed(2)}`,
+              color: line.color,
+            },
           })),
         },
         // Opening range — spec §4.2 calls for a shaded band at 5%
         // ink-100 opacity, not two dashed lines. ECharts markArea
         // renders a horizontal band between the [low, high] pair.
+        // ORH / ORL labels sit at the inside-end-top and
+        // inside-end-bottom corners of the band so they don't
+        // require gutter space (the band itself terminates at the
+        // plot edge).
         markArea: {
           silent: true,
           itemStyle: {
             color: hexToRgba(palette.ink100, 0.05),
             borderWidth: 0,
           },
+          // OR band corner labels follow the same two-line spec §4.2
+          // grammar (code + value) but anchor inside the band corners
+          // (the band itself terminates at the plot edge, so the band
+          // doesn't need gutter space).
+          label: {
+            show: true,
+            color: palette.ink60,
+            fontSize: 10,
+            fontFamily: "var(--font-mono, monospace)",
+            lineHeight: 12,
+            backgroundColor: palette.paperDeep,
+            borderColor: palette.ink40,
+            borderWidth: 1,
+            padding: [2, 4],
+            align: "left",
+          },
           data: orBand
-            ? [[{ yAxis: orBand.low }, { yAxis: orBand.high }]]
+            ? [
+                [
+                  {
+                    yAxis: orBand.low,
+                    label: {
+                      position: "insideEndBottom",
+                      formatter: `ORL\n${orBand.low.toFixed(2)}`,
+                    },
+                  },
+                  {
+                    yAxis: orBand.high,
+                    label: {
+                      position: "insideEndTop",
+                      formatter: `ORH\n${orBand.high.toFixed(2)}`,
+                    },
+                  },
+                ],
+              ]
             : [],
         },
       },
@@ -473,6 +540,10 @@ type OverlayLine = {
   color: string;
   style: "solid" | "dashed" | "dotted";
   width: number;
+  // 3-letter code rendered at the right end of the line in the gutter
+  // past the price axis. PH/PL/PC for prior-day HLC, POC/VAH/VAL for
+  // the value-area triplet, ORH/ORL for the opening-range edges.
+  label: string;
 };
 
 function buildOverlayLines(
@@ -490,26 +561,28 @@ function buildOverlayLines(
   // Spec §4.2: POC → ink-80, 1.5px solid; VAH/VAL → ink-60, 1px dashed.
   if (overlays.pocVa) {
     if (lv.poc != null) {
-      lines.push({ value: lv.poc, color: palette.ink80, style: "solid", width: 1.5 });
+      lines.push({ value: lv.poc, color: palette.ink80, style: "solid", width: 1.5, label: "POC" });
     }
     if (lv.vah != null) {
-      lines.push({ value: lv.vah, color: palette.ink60, style: "dashed", width: 1 });
+      lines.push({ value: lv.vah, color: palette.ink60, style: "dashed", width: 1, label: "VAH" });
     }
     if (lv.val != null) {
-      lines.push({ value: lv.val, color: palette.ink60, style: "dashed", width: 1 });
+      lines.push({ value: lv.val, color: palette.ink60, style: "dashed", width: 1, label: "VAL" });
     }
   }
 
   // Spec §4.2: Prior-day HLC → ink-60, 1px DOTTED (all three).
+  // PDH/PDC/PDL keeps a uniform 3-letter cadence with POC/VAH/VAL so
+  // labels stack with consistent chip width.
   if (overlays.priorHlc) {
     if (lv.pd_high != null) {
-      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PDH" });
     }
     if (lv.pd_close != null) {
-      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1, label: "PDC" });
     }
     if (lv.pd_low != null) {
-      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PDL" });
     }
   }
 
@@ -527,6 +600,20 @@ function buildOpeningRangeBand(
   const lv = snapshot.levels;
   if (lv.or_low == null || lv.or_high == null) return null;
   return { low: lv.or_low, high: lv.or_high };
+}
+
+// ── Responsive gutter ──────────────────────────────────────────────
+
+/**
+ * Right-gutter pixel size for the chart's plot area. 88px on desktop
+ * to fit two-line level labels per spec §4.2; 56px on narrow mobile
+ * viewports where 88px would eat ~30% of the plot width. Read at
+ * option-build time (re-runs on each 30s poll, so a viewport resize
+ * gets picked up within one poll cycle).
+ */
+function gutterRightPx(): number {
+  if (typeof window === "undefined") return 88;
+  return window.matchMedia("(max-width: 768px)").matches ? 56 : 88;
 }
 
 // ── Default zoom — keeps visible window ~12h regardless of buffer ───
