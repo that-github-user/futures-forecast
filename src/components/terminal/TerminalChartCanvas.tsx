@@ -415,11 +415,13 @@ function buildEChartsOption(
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBand = buildOpeningRangeBand(snapshot, overlays);
   const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
-  // RTH-session shading: subtle ink-100 wash over each contiguous
-  // run of cash-session bars (Mon-Fri 09:30-16:00 ET). Reuses the
-  // bucket-overlap predicate so the shading is consistent with the
-  // RTH AVWAP gating at every timeframe (1m / 5m / 15m / 1h / 4h).
-  const rthRanges = buildRthShadeRanges(bars, timeframeMin);
+  // ETH (off-hours) shading: subtle ink-100 wash over each contiguous
+  // run of extended-hours bars. RTH (cash session) stays at the
+  // default paper-deep tone — RTH is the operator's reference, ETH
+  // is the unusual period that deserves the visual marker. Reuses
+  // the bucket-overlap predicate (negated) so the shading lines up
+  // with the RTH AVWAP gating at every timeframe.
+  const ethRanges = buildEthShadeRanges(bars, timeframeMin);
 
   return {
     backgroundColor: "transparent",
@@ -445,14 +447,26 @@ function buildEChartsOption(
         color: palette.ink60,
         fontSize: 10,
         fontFamily: "var(--font-mono, monospace)",
-        hideOverlap: true,
-        // Day-changeover labels (bare 2-digit "27") get a heavier
-        // ink-100 treatment via the `rich.day` style; time labels
-        // (5-char "HH:MM") inherit the default ink-60 axisLabel
-        // tone. The regex match is tight — anything that's exactly
-        // 2 digits is a day marker, everything else (HH:MM, HH:MM:SS)
-        // stays normal. Differentiates day markers from time markers
-        // typographically so a lone "27" doesn't read as a price.
+        // Custom interval: ALWAYS show day-changeover labels (bare
+        // 2-digit "27"); show time labels at a stride that targets
+        // ~30 visible labels at the buffer's natural density. The
+        // built-in `interval: 'auto'` + `hideOverlap: true` was
+        // thinning day markers along with time markers — by taking
+        // over the decision we guarantee day boundaries always
+        // surface. Tradeoff: this isn't strictly zoom-aware, but at
+        // typical 12h zoom (~144 5m bars) the ~30-label budget
+        // produces clean spacing.
+        interval: (idx: number, value: string): boolean => {
+          if (/^\d{2}$/.test(value)) return true;
+          const stride = Math.max(1, Math.floor(bars.length / 30));
+          return idx % stride === 0;
+        },
+        // Day-changeover labels get a heavier ink-100 + bold via
+        // the `rich.day` style; time labels inherit the default
+        // ink-60 axisLabel tone. The regex match is tight: exactly
+        // 2 digits → day marker, anything else (HH:MM, HH:MM:SS)
+        // → normal. So a lone "27" stands typographically distinct
+        // from "09:35" and won't read as a price.
         formatter: (value: string) =>
           /^\d{2}$/.test(value) ? `{day|${value}}` : value,
         rich: {
@@ -625,19 +639,20 @@ function buildEChartsOption(
             align: "left",
           },
           data: [
-            // RTH session vertical strips. 3% ink-100 (vs the OR
-            // band's 5%) — keeps the OR band's spec §4.2-reserved
-            // 5% identity as the louder wash where they overlap.
-            // `coord: [idx, "min/max"]` is used instead of the
-            // simpler `xAxis: idx` because ECharts on a string-typed
-            // category axis can interpret a numeric value as the
-            // category VALUE not the index, and our `times` array
-            // has duplicates (e.g. "09:30" appears every day). The
-            // explicit coord form guarantees index-based lookup.
-            ...rthRanges.map(([s, e]) => [
+            // ETH (off-hours) vertical strips at 6% ink-100. RTH stays
+            // at the default paper-deep tone, so the OR band's
+            // spec-reserved 5% wash sits in an UN-shaded background
+            // (RTH) where it reads cleanly without the prior collision.
+            // `coord: [idx, "min/max"]` is used instead of the simpler
+            // `xAxis: idx` because ECharts on a string-typed category
+            // axis can interpret a numeric value as the category VALUE
+            // not the index, and our `times` array has duplicates
+            // (e.g. "09:30" appears every day). The explicit coord
+            // form guarantees index-based lookup.
+            ...ethRanges.map(([s, e]) => [
               {
                 coord: [s, "min"],
-                itemStyle: { color: hexToRgba(palette.ink100, 0.03) },
+                itemStyle: { color: hexToRgba(palette.ink100, 0.06) },
                 label: { show: false },
               },
               { coord: [e, "max"] },
@@ -1046,23 +1061,29 @@ function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
 
 /**
  * Walk the bar buffer and collect [startIdx, endIdx] pairs for each
- * contiguous run of cash-session (RTH) bars. Used by `buildEChartsOption`
- * to render a subtle ink-100 wash over the RTH portions of the chart so
- * the operator can see the RTH ↔ ETH transitions at a glance.
+ * contiguous run of EXTENDED-hours (ETH) bars — the off-hours
+ * overnight + pre-market + post-market periods. Used by
+ * `buildEChartsOption` to wash those bars in a subtle ink-100 tint
+ * so the operator can see the ETH ↔ RTH transitions at a glance.
  *
- * Reuses `isRthBar`'s bucket-overlap predicate so the shading lines up
- * with the RTH AVWAP gating at every timeframe.
+ * The convention here is to shade ETH (the "different" / off-hours
+ * period) and leave RTH (the cash session) at the default
+ * paper-deep tone. RTH is the operator's reference register; ETH
+ * is the period that deserves visual marking.
+ *
+ * Reuses `isRthBar`'s bucket-overlap predicate (negated) so the
+ * shading lines up with the RTH AVWAP gating at every timeframe.
  */
-function buildRthShadeRanges(
+function buildEthShadeRanges(
   bars: TerminalIntradayBar[],
   timeframeMin: number,
 ): [number, number][] {
   const ranges: [number, number][] = [];
   let runStart = -1;
   for (let i = 0; i < bars.length; i++) {
-    const inRth = isRthBar(bars[i], timeframeMin);
-    if (inRth && runStart === -1) runStart = i;
-    else if (!inRth && runStart !== -1) {
+    const inEth = !isRthBar(bars[i], timeframeMin);
+    if (inEth && runStart === -1) runStart = i;
+    else if (!inEth && runStart !== -1) {
       ranges.push([runStart, i - 1]);
       runStart = -1;
     }
