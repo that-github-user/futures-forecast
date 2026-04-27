@@ -41,11 +41,12 @@ echarts.use([
 
 const POLL_INTERVAL_MS = 30_000;
 
-// Per-window stagger for OR-band corner labels (chip-height ≈ 28 px
-// + 2 px breathing). When multiple OR windows have coincident
-// highs/lows, each band's labels nudge `i * OR_LABEL_STAGGER_PX`
-// further inside the band so chips don't overdraw at the same corner.
-const OR_LABEL_STAGGER_PX = 30;
+// Per-window stagger step for OR-band labels. Chip is ~30 px tall
+// (2 lines × 12 px lineHeight + 2×2 px padding + 2×1 px border);
+// 34 px = chip-height + 4 px breathing so stacked chips for
+// coincident-value bands have a small visible gap rather than
+// butting edge-to-edge.
+const OR_LABEL_STAGGER_PX = 34;
 
 // ── AVWAP anchor configuration ─────────────────────────────────────
 
