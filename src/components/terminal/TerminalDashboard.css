@@ -249,6 +249,84 @@
   height: 1px;
   background: var(--ink-100);
 }
+
+/* AVWAP popover — checklist of {Week, Daily, RTH} × {VWAP, ±1σ, ±2σ}.
+   Keeps the trigger pill visually flush with the rest of the toggle
+   strip; the panel itself uses paper-deep + hairline grammar (spec
+   §2.4) and the same 180ms motion budget (§5) as the route-nav menu. */
+.avwap-pop-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.avwap-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  background: var(--paper-deep);
+  border: 1px solid var(--ink-40);
+  padding: 10px 14px 12px;
+  display: grid;
+  grid-template-columns: 56px repeat(3, 36px);
+  column-gap: 10px;
+  row-gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-80);
+  white-space: nowrap;
+  animation: avwap-pop-fade 180ms ease-out;
+}
+@keyframes avwap-pop-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.avwap-pop-head {
+  display: contents;
+  color: var(--ink-60);
+}
+.avwap-pop-head > span {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--ink-40);
+  text-align: center;
+}
+.avwap-pop-head .avwap-pop-anchor-col {
+  text-align: left;
+}
+.avwap-pop-row {
+  display: contents;
+}
+.avwap-pop-row .avwap-pop-anchor-col {
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-100);
+  letter-spacing: 0.20em;
+}
+.avwap-pop-check {
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  background: transparent;
+  border: 1px solid var(--ink-40);
+  color: var(--ink-100);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.avwap-pop-check:hover {
+  border-color: var(--ink-80);
+}
+.avwap-pop-check.on {
+  border-color: var(--ink-100);
+  background: rgba(245, 239, 226, 0.06);
+}
+
 .terminal-chart-canvas {
   flex: 1;
   display: flex;
@@ -646,6 +724,22 @@
     margin-right: 14px;
     font-size: 10px;
     letter-spacing: 0.18em;
+  }
+  /* AVWAP popover escapes the horizontal-scroll/mask container on
+     mobile by pinning to the viewport. Decoupling from the toggle
+     strip mirrors the RouteNav fix — overflow:auto + mask-image
+     clip absolutely-positioned descendants in both axes. */
+  .avwap-pop {
+    position: fixed;
+    top: auto;
+    bottom: 24px;
+    left: 12px;
+    right: 12px;
+    grid-template-columns: 1fr repeat(3, 44px);
+    column-gap: 12px;
+    row-gap: 10px;
+    padding: 14px 16px 16px;
+    z-index: 200;
   }
   .terminal-chart-canvas {
     font-size: 14px;
