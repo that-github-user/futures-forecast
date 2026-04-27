@@ -640,22 +640,44 @@ function buildEChartsOption(
           },
           data: [
             // ETH (off-hours) vertical strips at 6% ink-100. RTH stays
-            // at the default paper-deep tone, so the OR band's
-            // spec-reserved 5% wash sits in an UN-shaded background
-            // (RTH) where it reads cleanly without the prior collision.
-            // `coord: [idx, "min/max"]` is used instead of the simpler
-            // `xAxis: idx` because ECharts on a string-typed category
-            // axis can interpret a numeric value as the category VALUE
-            // not the index, and our `times` array has duplicates
-            // (e.g. "09:30" appears every day). The explicit coord
-            // form guarantees index-based lookup.
+            // at default paper-deep tone, so the OR band's spec
+            // §4.2-reserved 5% wash sits in an un-shaded background
+            // and reads cleanly.
+            //
+            // `xAxis: idx, yAxis: 'min'/'max'` is the form that makes
+            // the strip span the FULL VISIBLE chart height — y-axis
+            // auto-rescales on pan/zoom and the strip's bounds
+            // re-evaluate. The earlier `coord: [idx, 'min'/'max']`
+            // form resolved 'min'/'max' against the data range at
+            // render time, which gave a strip that didn't extend to
+            // the chart edges as the user zoomed out (the user
+            // reported it looked like the wash had hard top/bottom
+            // boundaries instead of going edge-to-edge).
+            //
+            // ECharts on a string-typed category x-axis interprets a
+            // numeric `xAxis` value as the category INDEX in v5.x —
+            // no value-vs-index ambiguity in practice for our case.
             ...ethRanges.map(([s, e]) => [
               {
-                coord: [s, "min"],
-                itemStyle: { color: hexToRgba(palette.ink100, 0.06) },
+                xAxis: s,
+                yAxis: "min",
+                itemStyle: {
+                  color: hexToRgba(palette.ink100, 0.08),
+                  // Crisp 1px ink-40 hairline border per §2.4 — the
+                  // wash gives the section its tonal identity, the
+                  // border gives the boundary a sharp demarcation
+                  // line. Avoids the "low-opacity fill drifting into
+                  // the candles" look that read as half-baked at 3-6%.
+                  borderColor: palette.ink40,
+                  borderWidth: 1,
+                  borderType: "solid",
+                },
                 label: { show: false },
               },
-              { coord: [e, "max"] },
+              {
+                xAxis: e,
+                yAxis: "max",
+              },
             ]),
             // OR band — horizontal band with corner labels
             ...(orBand
