@@ -784,7 +784,7 @@ function buildEChartsOption(
                         itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
                         label: {
                           show: true,
-                          position: "insideEndTop",
+                          position: "insideTopRight",
                           offset: [0, dyTop],
                           formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
                         },
@@ -800,14 +800,15 @@ function buildEChartsOption(
                         label: {
                           show: true,
                           // Diagonal placement vs ORH: ORH at top-right
-                          // (insideEndTop), ORL at bottom-left
-                          // (insideStartBottom). Keeps the two label
-                          // stacks from competing for the same right-
-                          // edge x — multi-OR ORHs fan upward from the
-                          // upper-right, ORLs fan downward from the
-                          // lower-left. Cleaner scan; no chip overlap
-                          // at the band's right edge.
-                          position: "insideStartBottom",
+                          // (insideTopRight), ORL at bottom-LEFT
+                          // (insideBottomLeft). markArea uses
+                          // TopLeft/TopRight/BottomLeft/BottomRight
+                          // keywords — NOT Start/End (which are
+                          // markLine-only). The earlier
+                          // insideEnd*/insideStart* values were
+                          // silently ignored by ECharts and labels
+                          // fell back to a default position.
+                          position: "insideBottomLeft",
                           offset: [0, dyBottom],
                           formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                         },
