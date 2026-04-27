@@ -118,8 +118,8 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
   }, []);
 
   // Build the option. On the FIRST emission (with bars present), include
-  // dataZoom defaults so the chart lands on the recent ~25%. On
-  // subsequent emissions, omit dataZoom so the user's pan/zoom state
+  // dataZoom defaults so the chart lands on a sensible recent window.
+  // On subsequent emissions, omit dataZoom so the user's pan/zoom state
   // survives merge updates.
   //
   // Reading `initialMountRef.current` during render is fine; the mutation
@@ -133,9 +133,7 @@ export function TerminalChartCanvas({ snapshot, overlays }: Props) {
       opt.dataZoom = [
         {
           type: "inside",
-          // Default view: rightmost ~25% of the buffer = ~12h of 1-min
-          // bars. User lands on most-recent action and can scroll back.
-          start: 75,
+          start: computeDefaultZoomStart(bars),
           end: 100,
         },
       ];
@@ -444,6 +442,29 @@ function buildOpeningRangeBand(
   const lv = snapshot.levels;
   if (lv.or_low == null || lv.or_high == null) return null;
   return { low: lv.or_low, high: lv.or_high };
+}
+
+// ── Default zoom — keeps visible window ~12h regardless of buffer ───
+
+/**
+ * Compute the dataZoom `start` percentage so the visible window on
+ * first paint is ~12h, regardless of how much history the backend
+ * returned. Without this, a 168h buffer at the prior `start: 75`
+ * default would render ~42h of bars in the visible band — sub-pixel
+ * candle widths at typical viewport sizes. The user can still
+ * pan/zoom back through the full buffer.
+ */
+function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
+  const VISIBLE_MS = 12 * 60 * 60 * 1000;
+  if (bars.length < 2) return 0;
+  const first = Date.parse(bars[0].time);
+  const last = Date.parse(bars[bars.length - 1].time);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last <= first) {
+    return 0;
+  }
+  const spanMs = last - first;
+  if (spanMs <= VISIBLE_MS) return 0;
+  return Math.max(0, Math.min(99, 100 - (VISIBLE_MS / spanMs) * 100));
 }
 
 // ── Cumulative weekly-anchored VWAP ────────────────────────────────
