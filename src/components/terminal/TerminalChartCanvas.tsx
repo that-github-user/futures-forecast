@@ -323,7 +323,12 @@ function buildEChartsOption(
     animation: false,
     grid: {
       left: 8,
-      right: 56,
+      // Right gutter widened from 56 → 88 to carve out per-spec §4.2
+      // "100px right gutter with hairline leaders" for level labels.
+      // The markLine itself extends across the plot width and into
+      // the gutter; the label sits at the line's right end, before
+      // the price-axis tick labels.
+      right: 88,
       top: 6,
       bottom: 28,
       containLabel: true,
@@ -419,13 +424,27 @@ function buildEChartsOption(
           // the candlestick tooltip still fires on hover.
           silent: true,
           symbol: "none",
-          // Spec §4.2: "Annotations never sit on the candles." Inline
-          // labels (the ECharts default) are explicitly rejected. The
-          // proper home is a 100px right gutter with hairline leaders;
-          // implementing that needs custom rendering and is scoped as
-          // a follow-up. For now, lines render without labels — the
-          // user identifies them via the toggle pills above the chart.
-          label: { show: false },
+          // Per-line label rendered at the right end (in the gutter,
+          // past the line's tip but before the price-axis tick
+          // labels). The line itself extends across the plot width
+          // and acts as the spec §4.2 "hairline leader" naturally.
+          // Default label config inherited by every data item; each
+          // item overrides only `formatter` with its own 3-letter
+          // code. The 3-letter codes are uppercase by convention so
+          // we read as small-caps without a CSS text-transform pass.
+          // backgroundColor: paper-deep gives a subtle chip behind
+          // the glyphs so the label doesn't fight axis-tick text
+          // when both happen to land at the same y.
+          label: {
+            show: true,
+            position: "end",
+            distance: 4,
+            color: palette.ink60,
+            fontSize: 10,
+            fontFamily: "var(--font-mono, monospace)",
+            backgroundColor: palette.paperDeep,
+            padding: [1, 3],
+          },
           // ECharts merges arrays as a unit, so passing the full list
           // each time is safe — toggling overlays off removes their
           // line from the data array.
@@ -436,19 +455,39 @@ function buildEChartsOption(
               type: line.style,
               width: line.width,
             },
+            label: {
+              formatter: line.label,
+            },
           })),
         },
         // Opening range — spec §4.2 calls for a shaded band at 5%
         // ink-100 opacity, not two dashed lines. ECharts markArea
         // renders a horizontal band between the [low, high] pair.
+        // ORH / ORL labels sit at the inside-end-top and
+        // inside-end-bottom corners of the band so they don't
+        // require gutter space (the band itself terminates at the
+        // plot edge).
         markArea: {
           silent: true,
           itemStyle: {
             color: hexToRgba(palette.ink100, 0.05),
             borderWidth: 0,
           },
+          label: {
+            show: true,
+            color: palette.ink60,
+            fontSize: 10,
+            fontFamily: "var(--font-mono, monospace)",
+            backgroundColor: palette.paperDeep,
+            padding: [1, 3],
+          },
           data: orBand
-            ? [[{ yAxis: orBand.low }, { yAxis: orBand.high }]]
+            ? [
+                [
+                  { yAxis: orBand.low, label: { position: "insideEndBottom", formatter: "ORL" } },
+                  { yAxis: orBand.high, label: { position: "insideEndTop", formatter: "ORH" } },
+                ],
+              ]
             : [],
         },
       },
@@ -473,6 +512,10 @@ type OverlayLine = {
   color: string;
   style: "solid" | "dashed" | "dotted";
   width: number;
+  // 3-letter code rendered at the right end of the line in the gutter
+  // past the price axis. PH/PL/PC for prior-day HLC, POC/VAH/VAL for
+  // the value-area triplet, ORH/ORL for the opening-range edges.
+  label: string;
 };
 
 function buildOverlayLines(
@@ -490,26 +533,26 @@ function buildOverlayLines(
   // Spec §4.2: POC → ink-80, 1.5px solid; VAH/VAL → ink-60, 1px dashed.
   if (overlays.pocVa) {
     if (lv.poc != null) {
-      lines.push({ value: lv.poc, color: palette.ink80, style: "solid", width: 1.5 });
+      lines.push({ value: lv.poc, color: palette.ink80, style: "solid", width: 1.5, label: "POC" });
     }
     if (lv.vah != null) {
-      lines.push({ value: lv.vah, color: palette.ink60, style: "dashed", width: 1 });
+      lines.push({ value: lv.vah, color: palette.ink60, style: "dashed", width: 1, label: "VAH" });
     }
     if (lv.val != null) {
-      lines.push({ value: lv.val, color: palette.ink60, style: "dashed", width: 1 });
+      lines.push({ value: lv.val, color: palette.ink60, style: "dashed", width: 1, label: "VAL" });
     }
   }
 
   // Spec §4.2: Prior-day HLC → ink-60, 1px DOTTED (all three).
   if (overlays.priorHlc) {
     if (lv.pd_high != null) {
-      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PH" });
     }
     if (lv.pd_close != null) {
-      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_close, color: palette.ink60, style: "dotted", width: 1, label: "PC" });
     }
     if (lv.pd_low != null) {
-      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1 });
+      lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PL" });
     }
   }
 
