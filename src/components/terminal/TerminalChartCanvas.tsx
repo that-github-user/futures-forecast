@@ -799,7 +799,15 @@ function buildEChartsOption(
                         itemStyle: { color: "transparent", borderWidth: 0 },
                         label: {
                           show: true,
-                          position: "insideEndBottom",
+                          // Diagonal placement vs ORH: ORH at top-right
+                          // (insideEndTop), ORL at bottom-left
+                          // (insideStartBottom). Keeps the two label
+                          // stacks from competing for the same right-
+                          // edge x — multi-OR ORHs fan upward from the
+                          // upper-right, ORLs fan downward from the
+                          // lower-left. Cleaner scan; no chip overlap
+                          // at the band's right edge.
+                          position: "insideStartBottom",
                           offset: [0, dyBottom],
                           formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
                         },
