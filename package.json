@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
