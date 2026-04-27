@@ -549,17 +549,27 @@ function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
 
 /**
  * Compute cumulative VWAP and stddev bands from `anchorIdx` onward.
- * Ports the TradingView ta.vwap()/ta.stdev() formula 1:1:
+ * Ports the volume-weighted variant of TradingView's anchored-VWAP +
+ * VWSD bands (matches the user's verified TV reference):
  *   typical = (high + low + close) / 3
  *   VWAP[i]   = cumsum(typ × vol) / cumsum(vol)
  *   stddev[i] = sqrt(max(0, cumsum(typ² × vol)/cumsum(vol) − VWAP²))
  *
- * Returns an array aligned 1:1 with `bars`. Pre-anchor entries are
- * `null`; post-anchor entries carry the running {vwap, stddev}.
+ * `inScope` (optional) gates which post-anchor bars contribute to the
+ * cumulants AND emit a value. RTH passes a "Mon-Fri 09:30-16:00 ET"
+ * predicate so the line only renders during cash-session bars and
+ * doesn't drift during ETH (where neither RTH volume nor RTH typical
+ * prices belong in the running VWAP). Out-of-scope bars stay null —
+ * `connectNulls: false` on the line series turns this into a clean
+ * gap during ETH that re-anchors at next RTH open.
+ *
+ * Returns an array aligned 1:1 with `bars`. Pre-anchor and
+ * out-of-scope entries are `null`.
  */
 function vwapWithBandsSeries(
   bars: TerminalIntradayBar[],
   anchorIdx: number,
+  inScope?: (bar: TerminalIntradayBar) => boolean,
 ): ({ vwap: number; stddev: number } | null)[] {
   const out: ({ vwap: number; stddev: number } | null)[] = new Array(bars.length).fill(null);
   if (anchorIdx < 0 || anchorIdx >= bars.length) return out;
@@ -568,6 +578,7 @@ function vwapWithBandsSeries(
   let cumTpSqVol = 0;
   for (let i = anchorIdx; i < bars.length; i++) {
     const b = bars[i];
+    if (inScope && !inScope(b)) continue;
     const typ = (b.high + b.low + b.close) / 3;
     const vol = b.volume > 0 ? b.volume : 1;
     cumTpVol += typ * vol;
@@ -580,6 +591,23 @@ function vwapWithBandsSeries(
     }
   }
   return out;
+}
+
+/**
+ * Whether a bar (identified by its bucket-start) lies inside the
+ * cash-session window (09:30 ≤ ET clock < 16:00 on Mon-Fri). Bar.time
+ * is the bucket-start: a 5m bar at 15:55 ET covers 15:55-16:00 (RTH);
+ * a 5m bar at 16:00 ET covers 16:00-16:05 (ETH).
+ */
+function isRthBar(bar: TerminalIntradayBar): boolean {
+  const ms = Date.parse(bar.time);
+  if (!Number.isFinite(ms)) return false;
+  const parts = ET_FMT.formatToParts(new Date(ms));
+  if (!RTH_DAYS.has(etPart(parts, "weekday"))) return false;
+  const hh = parseInt(etPart(parts, "hour"), 10);
+  const mm = parseInt(etPart(parts, "minute"), 10);
+  const minutes = hh * 60 + mm;
+  return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
 }
 
 // ET clock helpers — used to detect the most-recent Daily-Globex
@@ -715,6 +743,15 @@ function findAnchorIdx(key: VwapAnchorKey, bars: TerminalIntradayBar[]): number 
   }
 }
 
+// Per-anchor in-scope predicate. RTH only counts bars during the
+// cash session (Mon-Fri 09:30-16:00 ET) — without this, the running
+// VWAP would drift across ETH bars even though "RTH VWAP" should
+// freeze (or vanish) outside cash hours. Week and Daily Globex run
+// continuously through their respective sessions, so no predicate.
+const VWAP_IN_SCOPE: Partial<Record<VwapAnchorKey, (bar: TerminalIntradayBar) => boolean>> = {
+  rth: isRthBar,
+};
+
 type EChartsLineSeries = {
   type: "line";
   name: string;
@@ -749,7 +786,7 @@ function buildAvwapSeries(
     let series: ({ vwap: number; stddev: number } | null)[] | null = null;
     if (anyOn) {
       const idx = findAnchorIdx(key, bars);
-      if (idx >= 0) series = vwapWithBandsSeries(bars, idx);
+      if (idx >= 0) series = vwapWithBandsSeries(bars, idx, VWAP_IN_SCOPE[key]);
     }
 
     const vwapData = state.vwap && series ? series.map((s) => (s ? s.vwap : null)) : [];
