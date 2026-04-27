@@ -143,6 +143,59 @@
   gap: 14px;
   background: var(--paper-deep);
 }
+/* Timeframe row — sits above the indicator-toggle row. Single-select
+   pills (1m / 5m / 15m / 1h / 4h). Same hairline-grammar as the
+   indicator pills below but tighter (10px font, 0.14em letter-spacing)
+   so the row genuinely recedes visually — timeframe is "frame, not
+   signal." Without the letter-spacing reduction, 0.18em on a 10px
+   glyph gave more per-glyph presence than the 11px indicator row,
+   undercutting the hierarchy intent. */
+.terminal-chart-tf {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 4px;
+}
+.terminal-chart-tf .tf-pill {
+  background: transparent;
+  border: 0;
+  padding: 4px 12px 4px 0;
+  margin-right: 12px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--ink-60);
+  border-right: 1px solid var(--ink-40);
+  cursor: pointer;
+  position: relative;
+  transition: color 120ms ease;
+}
+.terminal-chart-tf .tf-pill:last-child {
+  border-right: 0;
+  margin-right: 0;
+}
+.terminal-chart-tf .tf-pill:hover {
+  color: var(--ink-80);
+}
+.terminal-chart-tf .tf-pill.on {
+  color: var(--ink-100);
+}
+.terminal-chart-tf .tf-pill.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 12px;
+  bottom: -2px;
+  height: 1px;
+  background: var(--ink-100);
+}
+.terminal-chart-tf .tf-pill.on:last-child::after {
+  right: 0;
+}
+
 .terminal-chart-toggles {
   display: flex;
   gap: 0;
