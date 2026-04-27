@@ -174,16 +174,22 @@ function OverridesSection({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    // Re-anchor the popover on viewport resize so a rotation /
-    // window-resize doesn't strand it.
+    // Re-anchor on viewport resize. On scroll, dismiss outright
+    // (the trigger may have scrolled off-screen, leaving the
+    // position-fixed popover orphaned at viewport coords). Capture
+    // mode catches scrolls inside any inner-scrollable ancestor,
+    // not just window-level scrolling.
     const onResize = () => computePos();
+    const onScroll = () => setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
     };
   }, [open]);
 

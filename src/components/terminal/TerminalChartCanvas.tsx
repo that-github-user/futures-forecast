@@ -744,25 +744,38 @@ function buildEChartsOption(
             // = inner-most rendered up to ~12% combined alpha — a
             // natural visual hierarchy).
             ...(latestRthRange
-              ? orBands.map((b) => [
-                  {
-                    xAxis: latestRthRange[0],
-                    yAxis: b.low,
-                    itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
-                    label: {
-                      position: "insideEndBottom",
-                      formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+              ? orBands.map((b, i) => {
+                  // Stagger labels per window-index so when two
+                  // windows have identical highs (or lows) the chips
+                  // don't overdraw at insideEndTop/Bottom. Each
+                  // index pushes the chip ~30px further in
+                  // (innermost band's labels sit at the band edge,
+                  // outer bands' labels nudged toward the chart's
+                  // interior). 30px ≈ chip-height + 4px gap.
+                  const dyTop = i * 30;
+                  const dyBottom = -i * 30;
+                  return [
+                    {
+                      xAxis: latestRthRange[0],
+                      yAxis: b.low,
+                      itemStyle: { color: hexToRgba(palette.ink100, 0.04) },
+                      label: {
+                        position: "insideEndBottom",
+                        offset: [0, dyBottom],
+                        formatter: `ORL-${b.label}\n${b.low.toFixed(2)}`,
+                      },
                     },
-                  },
-                  {
-                    xAxis: latestRthRange[1],
-                    yAxis: b.high,
-                    label: {
-                      position: "insideEndTop",
-                      formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                    {
+                      xAxis: latestRthRange[1],
+                      yAxis: b.high,
+                      label: {
+                        position: "insideEndTop",
+                        offset: [0, dyTop],
+                        formatter: `ORH-${b.label}\n${b.high.toFixed(2)}`,
+                      },
                     },
-                  },
-                ])
+                  ];
+                })
               : []),
           ],
         },
