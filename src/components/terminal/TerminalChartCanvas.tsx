@@ -182,9 +182,19 @@ interface Props {
   snapshot: TerminalSnapshot | null;
   overlays: OverlayState;
   timeframe: Timeframe;
+  // Bar-time formatter from the parent's useTimezone hook. Threaded
+  // through as a prop (not called per-component) so a single hook
+  // instance owns the storage-key state and the parent's selector
+  // and the chart stay in lockstep.
+  formatBarTime: (iso: string, withSeconds?: boolean) => string;
 }
 
-export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
+export function TerminalChartCanvas({
+  snapshot,
+  overlays,
+  timeframe,
+  formatBarTime,
+}: Props) {
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const palette = useMemo(() => resolveLumenPalette(), []);
@@ -247,6 +257,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       palette,
       TIMEFRAME_MINUTES[timeframe],
       labelOffsets,
+      formatBarTime,
     );
     if (initialMountRef.current) {
       opt.dataZoom = [
@@ -258,7 +269,7 @@ export function TerminalChartCanvas({ snapshot, overlays, timeframe }: Props) {
       ];
     }
     return opt;
-  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets]);
+  }, [aggregatedBars, snapshot, overlays, palette, timeframe, labelOffsets, formatBarTime]);
 
   // Flip the first-mount flag after the chart has actually mounted with
   // bars present. Subsequent option builds will omit dataZoom config so
@@ -366,6 +377,7 @@ function buildEChartsOption(
   palette: LumenPalette,
   timeframeMin: number,
   labelOffsets: number[],
+  formatBarTime: (iso: string, withSeconds?: boolean) => string,
 ): EChartsOption {
   // ECharts candlestick expects [open, close, low, high]
   const data = bars.map((b) => [b.open, b.close, b.low, b.high]);
@@ -1193,15 +1205,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// ── Time formatting ─────────────────────────────────────────────────
-
-function formatBarTime(iso: string, withSeconds: boolean = false): string {
-  // Input: "2026-04-26T22:01:00Z" → display "22:01" UTC
-  // (UTC labels for now; ET-localized labels are a follow-up NIT.)
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const hh = d.getUTCHours().toString().padStart(2, "0");
-  const mm = d.getUTCMinutes().toString().padStart(2, "0");
-  const time = `${hh}:${mm}${withSeconds ? `:${d.getUTCSeconds().toString().padStart(2, "0")}` : ""}`;
-  return time;
-}
+// (Bar-time formatting moved to `useTimezone.formatChartTime` and
+// threaded through `TerminalChartCanvas` props so the user's
+// timezone selection — ET / CT / MT / PT / Local — flows into both
+// the x-axis labels and the tooltip.)
