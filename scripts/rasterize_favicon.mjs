@@ -5,14 +5,9 @@
  * index.html). The apple-touch-icon must be a raster PNG. This script
  * regenerates the PNG from the canonical SVG so the two stay in sync.
  *
- * One-time setup (the dependency lives outside the project bundle —
- * pure dev tooling, not a runtime dep):
- *   npm install --no-save @resvg/resvg-js
- *
- * Run from repo root:
+ * Uses @resvg/resvg-js (added as a devDependency). Re-run whenever
+ * public/favicon.svg changes:
  *   node scripts/rasterize_favicon.mjs
- *
- * Re-run whenever public/favicon.svg changes.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
