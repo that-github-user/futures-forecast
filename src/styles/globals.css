@@ -1,51 +1,49 @@
-/* LUMEN aesthetic — applied site-wide via CSS variable remapping.
-   The original token names (--bg-base, --text-primary, etc.) are
-   preserved so existing components keep working unchanged; only the
-   values they map to are swapped to the LUMEN palette. */
+/* Site-wide design tokens.
+
+   Default :root palette is the pre-LUMEN cool/slate register that the
+   /dc trading dashboard originally shipped with — traders explicitly
+   asked for this back across the whole site. Saturated blue / green /
+   red / amber for state cues; clean white-blue ink scale; cool slate
+   surfaces (panels rise above a deeper bg).
+
+   The LUMEN warm bone-cream + italic-serif palette is preserved but
+   scoped to `.lumen-root` (the lander page at #/) so it keeps its
+   distinct "front-door" register without bleeding into /app or /dc. */
 
 @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
-/* ── Design tokens ── */
+/* ── Design tokens — pre-LUMEN cool/slate (site-wide default) ── */
 :root {
-  /* LUMEN palette — primary source of truth for color. Everything
-     downstream (the trading-app aliases below) maps to these. */
-  --paper: #0d0c0a;
-  --paper-elev: #15130f;
-  --paper-deep: #08070a;
-  --ink-100: #f5efe2;
-  --ink-80: #c9c3b6;
-  --ink-60: #8c877c;
-  --ink-40: #5a564f;
-  --ink-20: #2a2823;
-  --pos-cream: #d6c79a;
-  --neg-persimmon: #b8746a;
-  --neg-persimmon-light: #d4a59c;
-  --lumen: #efc88b;
-  /* Burnt amber — preserves the three-state traffic-light semantic
-     (red/amber/green ↔ persimmon/warn/cream) for components that
-     encode severity by color. Visibly distinct from --lumen on one
-     side and --neg-persimmon on the other. Transitional: PR γ will
-     rework severity components to use shape/weight in addition to
-     color so the design's single-accent goal can be reached. */
-  --accent-warn: #cf9852;
-  /* Graphite-cool — secondary state color for components that use
-     "blue/green" pairings (SignalBadge GO_PLUS vs GO, strategy-type
-     swatches, active-state dots). Distinct from --lumen, --pos-cream,
-     and --accent-warn so 4-tone state palettes stay readable. Lumen
-     is reserved for brand-thesis moments only per design spec §2.1;
-     this token catches the "info / secondary entry" tier that
-     accent-blue used to fill in the trading-app palette. */
-  --accent-info: #8a96a1;
-  --font-display: 'EB Garamond', Georgia, serif;
+  /* Surfaces — slate-blue scale, panels rise above bg */
+  --paper: #0a0e17;
+  --paper-elev: #111827;
+  --paper-deep: #0f172a;
+  /* Ink scale — clean white through slate-blue dim */
+  --ink-100: #f8fafc;
+  --ink-80: #e2e8f0;
+  --ink-60: #94a3b8;
+  --ink-40: #475569;
+  --ink-20: #1e293b;
+  /* Directional state — saturated for clarity at small sizes */
+  --pos-cream: #10b981;
+  --neg-persimmon: #ef4444;
+  --neg-persimmon-light: #fca5a5;
+  /* Lumen token name preserved for backwards compat with chart-mark
+     references (FanChart, ScenarioCluster, StrategyCatalogCard); now
+     resolves to the saturated amber that fills the "warm distinct
+     accent" semantic slot in the cool palette. */
+  --lumen: #f59e0b;
+  --accent-warn: #f59e0b;
+  --accent-info: #3b82f6;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 
-  /* Spec parity — the design spec writes `--pos` / `--neg` for the
-     directional cream + persimmon. We expose both names. */
+  /* Directional aliases */
   --pos: var(--pos-cream);
   --neg: var(--neg-persimmon);
 
-  /* Backwards-compat aliases — original trading-app token names that
-     existing components reference. Each maps to a LUMEN value so the
-     whole site re-themes without component-level edits. */
+  /* Surface / text / accent aliases — original trading-app token
+     names. Each maps to a cool-palette value above so the whole
+     site re-themes without component-level edits. */
   --bg-base: var(--paper);
   --bg-panel: var(--paper-elev);
   --bg-elevated: var(--paper);
@@ -58,16 +56,6 @@
   --text-secondary: var(--ink-80);
   --text-muted: var(--ink-60);
   --text-dim: var(--ink-40);
-  /* Accent aliases:
-     --accent-blue → --accent-info (graphite-cool, NOT lumen — lumen is
-       reserved for brand-thesis moments only per design spec §2.1)
-     --accent-amber → --accent-warn (preserves warning semantic, distinct
-       from --lumen so red/amber/green traffic lights still read as 3
-       distinct colors)
-     --accent-green → --pos-cream, --accent-red → --neg-persimmon
-     ("no green" rule for directional cues per design spec).
-     This 4-tone palette (info/warn/pos/neg) keeps SignalBadge's
-     GO_PLUS / GO / READY / SKIP visually distinct. */
   --accent-blue: var(--accent-info);
   --accent-amber: var(--accent-warn);
   --accent-green: var(--pos-cream);
@@ -76,6 +64,29 @@
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ── LUMEN scope — warm bone-cream palette restored for the lander ── */
+/* The lander page at #/ keeps its italic-serif lumen register. Any
+   surface that wraps in `.lumen-root` re-themes back to LUMEN warm
+   tokens; descendant CSS reading `var(--paper)`, `var(--ink-100)`,
+   etc. inherits the override values. */
+.lumen-root {
+  --paper: #0d0c0a;
+  --paper-elev: #15130f;
+  --paper-deep: #08070a;
+  --ink-100: #f5efe2;
+  --ink-80: #c9c3b6;
+  --ink-60: #8c877c;
+  --ink-40: #5a564f;
+  --ink-20: #2a2823;
+  --pos-cream: #d6c79a;
+  --neg-persimmon: #b8746a;
+  --neg-persimmon-light: #d4a59c;
+  --lumen: #efc88b;
+  --accent-warn: #cf9852;
+  --accent-info: #8a96a1;
+  --font-display: 'EB Garamond', Georgia, serif;
 }
 
 * {

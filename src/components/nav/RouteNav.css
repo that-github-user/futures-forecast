@@ -1,7 +1,7 @@
-/* RouteNav — minimal LUMEN nav strip, ~48px tall.
-   Italic-serif route links on the right, optional brand mark on the
-   left. Designed to dock above the terminal's headline strip and into
-   the DC dashboard's existing header. */
+/* RouteNav — minimal nav strip, ~48px tall, DC-style.
+   Inter sans route links + Inter 700 brand alpha on the cool/slate
+   palette. Docks above the terminal's headline strip and into the
+   DC dashboard's existing header. */
 
 .route-nav {
   display: flex;
@@ -15,28 +15,30 @@
   font-weight: 300;
 }
 
-/* Brand mark mirrors the lander's exactly per spec §3.2 — same α
-   font-size + margin + bone-cream text-shadow halo so the visual
-   register feels continuous with the lander's gate when the user
-   navigates between gated surfaces. */
+/* Brand mark — Inter 700 alpha + small-caps wordmark. The lander
+   gate keeps its italic-serif lumen treatment; this strip uses the
+   DC theme's sans-grammar so the gated dashboards read as one
+   continuous visual register. */
 .route-nav-brand {
   font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--ink-100);
   display: inline-flex;
   align-items: baseline;
-  text-shadow: 0 0 9px rgba(245, 239, 226, 0.14);
+  font-family: var(--font-sans);
+  text-transform: uppercase;
 }
 .route-nav-brand .alpha {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  color: var(--lumen);
-  font-size: 19px;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-size: 16px;
   line-height: 1;
-  margin-right: 14px;
+  margin-right: 12px;
   vertical-align: middle;
   display: inline-block;
+  letter-spacing: 0;
 }
 
 /* Hamburger toggle — hidden on desktop, visible on phone tier.
@@ -67,20 +69,19 @@
   /* Hardcoded fallback color so the glyph remains visible even if
      --ink-100 fails to resolve (defensive against CSS load order
      issues some users have hit). */
-  color: #f5efe2;
-  color: var(--ink-100, #f5efe2);
+  color: #f8fafc;
+  color: var(--ink-100, #f8fafc);
   font-size: 22px;
   line-height: 1;
-  /* §2.1 forbids lumen for state cues — bars stay ink-100 across
-     open/closed. The dropdown panel's appearance carries the
-     affordance. On press, glyph dims to ink-60 as silent-tap
-     feedback (avoiding -webkit-tap-highlight-color: transparent
-     leaving press state silent). */
+  /* Bars stay ink-100 across open/closed. On press, glyph dims to
+     ink-60 as silent-tap feedback (since
+     -webkit-tap-highlight-color: transparent leaves press state
+     silent otherwise). */
   transition: color 120ms ease;
 }
 .route-nav-toggle:active {
-  color: #aaa49a;
-  color: var(--ink-60, #aaa49a);
+  color: #94a3b8;
+  color: var(--ink-60, #94a3b8);
 }
 
 .route-nav-links {
@@ -97,18 +98,19 @@
 }
 .route-nav-item .sep {
   color: var(--ink-40);
-  margin: 0 12px;
-  font-family: var(--font-display);
-  font-size: 14px;
+  margin: 0 14px;
+  font-family: var(--font-sans);
+  font-size: 12px;
 }
 .route-nav-item a {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 16px;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 12px;
   color: var(--ink-60);
   text-decoration: none;
-  letter-spacing: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   transition: color 200ms ease;
 }
 .route-nav-item a:hover {
@@ -128,8 +130,7 @@
    they're viewport-anchored regardless of parent layout. RouteNav
    is rendered into two incompatible parent contexts (terminal grid
    + DC flex header) and prior position-absolute approaches failed
-   in one or the other. Fixed positioning bypasses both. See spec
-   §4.7 mobile carve-outs. */
+   in one or the other. Fixed positioning bypasses both. */
 @media (max-width: 768px) {
   .route-nav {
     padding: 0 14px;
@@ -137,7 +138,7 @@
     font-size: 11px;
   }
   .route-nav-brand .alpha {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   /* Viewport-pinned via `position: fixed` so the toggle's placement is
@@ -154,9 +155,8 @@
   /* Backdrop — full-viewport tap target sitting below the toggle
      (z:100) and dropdown (z:99) so taps on those still register, but
      taps anywhere else (chart, headline, scorecards beneath) close
-     the menu. Transparent: no visual dim — preserves the LUMEN
-     restraint and lets the page peek through faintly while the
-     menu is open. */
+     the menu. Transparent: no visual dim, lets the page peek through
+     faintly while the menu is open. */
   .route-nav-backdrop {
     display: block;
     position: fixed;
@@ -188,9 +188,8 @@
      on the (potentially zero-width) RouteNav containing block. Spans
      the full viewport width. Top edge sits flush with the toggle's
      bottom edge (8 + 44 = 52px) so the panel's top hairline reads as
-     a continuation of the strip's lower edge — the LUMEN hairline-
-     grammar move (spec §2.4). The 180ms fade matches spec §5 motion
-     #5 (drill-down cross-fade, opacity-only). */
+     a continuation of the strip's lower edge. 180ms opacity-only
+     fade-in. */
   .route-nav-links {
     display: none;
     position: fixed;
@@ -201,17 +200,13 @@
     align-items: stretch;
     margin: 0;
     padding: 0;
-    background: var(--paper-deep);
+    background: var(--bg-panel);
     border-top: 1px solid var(--ink-40);
     border-bottom: 1px solid var(--ink-40);
     z-index: 99;
   }
   .route-nav.is-open .route-nav-links {
     display: flex;
-    /* Pure cross-fade matches spec §5 motion #5 (drill-down 180ms,
-       opacity-only). Earlier draft included a translateY slide which
-       would have been a 7th motion; per spec line 836 we don't add
-       motions without removing existing ones. */
     animation: route-nav-fade-in 180ms cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -231,20 +226,19 @@
   }
   .route-nav-item a {
     display: block;
-    /* 16px vertical padding × 18px italic font ≈ 50px tap target,
+    /* 16px vertical padding × ~14px line-height ≈ 46px tap target,
        comfortably above iOS HIG 44px. */
     padding: 16px 18px;
-    font-size: 18px;
+    font-size: 14px;
+    letter-spacing: 0.14em;
     color: var(--ink-60);
   }
   .route-nav-item a.active {
     color: var(--ink-100);
-    /* Leading-edge ink-100 hairline marks the active route in the
-       dropdown — the desktop strip uses color alone; in a vertical
-       stack the tiny indicator helps the eye land. Lumen is
-       forbidden for state cues per spec §2.1 (reserved for the
-       brand-thesis register only). */
-    box-shadow: inset 3px 0 0 var(--ink-100);
+    /* Leading-edge accent-blue hairline marks the active route in
+       the dropdown — desktop uses color alone; in a vertical stack
+       the indicator helps the eye land. */
+    box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
   @keyframes route-nav-fade-in {

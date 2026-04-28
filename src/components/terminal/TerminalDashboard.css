@@ -1,17 +1,15 @@
-/* TerminalDashboard layout — implements the locked design spec §4.
-   Three rows: headline strip / chart+feed / scorecards.
-   PR β: layout + LUMEN tokens; cards render placeholder content
-   pending real data in subsequent PRs. */
+/* TerminalDashboard layout — DC-style theme on the cool/slate palette.
+   Three rows: headline strip / chart+feed / scorecards. Inter sans +
+   JetBrains Mono telemetric register; saturated blue/green/red/amber
+   state cues. Matches the original /dc dashboard the traders asked
+   for. */
 
 .terminal-root {
   height: 100vh;
   padding: 24px 32px;
   display: grid;
-  /* Headline row is `auto` instead of a fixed 168px so the clamped
-     score chip (clamp(140px, 12vw, 240px) per spec §2.3) doesn't
-     overflow at >1440px viewports. The score is the only height-
-     determining child of the headline; letting the row track auto-
-     size keeps the spec's monumental glyph honest at all widths. */
+  /* Headline row tracks auto so the telemetric score (≤96px) sits
+     comfortably alongside regime/price columns at all widths. */
   grid-template-rows: 48px auto 1fr 230px;
   gap: 1px;
   background: var(--ink-40);
@@ -45,21 +43,20 @@
 }
 .terminal-score {
   grid-row: 1 / 3;
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  /* Spec §2.3: --t-monument is clamp(140 → 240). Using a clamp here
-     instead of a hardcoded 168px also fixes the iPad-landscape gap
-     (~1024-1280px) where 168px was clipping the score block. */
-  font-size: clamp(140px, 12vw, 240px);
-  line-height: 0.86;
-  color: var(--lumen);
-  letter-spacing: -0.04em;
-  text-shadow: 0 0 36px rgba(239, 200, 139, 0.14);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  /* Telemetric, not sculptural: scaled down from the 240px lumen
+     monumental glyph to match the DC dashboard's instrument-grade
+     register. The hero score still anchors the headline but no
+     longer competes with the chart for attention. */
+  font-size: clamp(64px, 6vw, 96px);
+  line-height: 0.92;
+  color: var(--text-bright);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 .terminal-score.placeholder {
   color: var(--ink-40);
-  text-shadow: none;
 }
 .terminal-score-label {
   align-self: end;
@@ -76,13 +73,13 @@
   letter-spacing: 0.04em;
 }
 .terminal-regime em {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 28px;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 600;
+  font-size: 22px;
   color: var(--ink-100);
-  margin-left: 8px;
-  letter-spacing: 0;
+  margin-left: 10px;
+  letter-spacing: 0.02em;
 }
 .terminal-regime.placeholder { color: var(--ink-40); }
 
@@ -140,7 +137,7 @@
   z-index: 1000;
   width: 320px;
   max-width: calc(100vw - 16px);
-  background: var(--paper-deep);
+  background: var(--bg-panel);
   border: 1px solid var(--ink-40);
   padding: 14px 16px;
   font-size: 12px;
@@ -204,7 +201,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: var(--paper-deep);
+  background: var(--bg-panel);
 }
 /* Timeframe row — sits above the indicator-toggle row. Single-select
    pills (1m / 5m / 15m / 1h / 4h). Same hairline-grammar as the
@@ -261,10 +258,10 @@
 
 /* Chart timezone selector — sits at the right end of the timeframe
    pill row. Native <select> stripped of UA chrome and re-tonalized
-   to match the LUMEN small-caps grammar. */
+   to match the small-caps tracking of the surrounding pills. */
 .terminal-chart-tf .terminal-chart-tz {
   margin-left: auto;
-  background: var(--paper-deep);
+  background: var(--bg-inset);
   border: 1px solid var(--ink-40);
   color: var(--ink-80);
   font: inherit;
@@ -274,13 +271,13 @@
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  /* Chevron drawn via data-URI SVG. Hex `#8c877c` is hard-coded as
-     the LUMEN `--ink-60` value because data-URIs can't reference
-     CSS variables, and `<select>` rejects `::after` (replaced
-     element). KEEP IN SYNC with `--ink-60` in the global token
-     sheet — if that token changes, this hex must follow. */
+  /* Chevron drawn via data-URI SVG. Hex `#94a3b8` is hard-coded as
+     the `--ink-60` value because data-URIs can't reference CSS
+     variables, and `<select>` rejects `::after` (replaced element).
+     KEEP IN SYNC with `--ink-60` in globals.css — if that token
+     changes, this hex must follow. */
   background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'><path d='M0 0 L4 6 L8 0 Z' fill='%238c877c'/></svg>");
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'><path d='M0 0 L4 6 L8 0 Z' fill='%2394a3b8'/></svg>");
   background-repeat: no-repeat;
   background-position: right 8px center;
 }
@@ -349,8 +346,8 @@
 
 /* AVWAP popover — checklist of {Week, Daily, RTH} × {VWAP, ±1σ, ±2σ}.
    Keeps the trigger pill visually flush with the rest of the toggle
-   strip; the panel itself uses paper-deep + hairline grammar (spec
-   §2.4) and the same 180ms motion budget (§5) as the route-nav menu. */
+   strip; the panel sits on bg-panel with a 1px ink-40 hairline and
+   a 180ms fade-in. */
 .avwap-pop-wrap {
   position: relative;
   display: inline-flex;
@@ -361,7 +358,7 @@
   top: calc(100% + 6px);
   left: 0;
   z-index: 50;
-  background: var(--paper-deep);
+  background: var(--bg-panel);
   border: 1px solid var(--ink-40);
   padding: 10px 14px 12px;
   display: grid;
@@ -437,9 +434,9 @@
   align-items: center;
   justify-content: center;
   color: var(--ink-40);
-  font-style: italic;
-  font-family: var(--font-display);
-  font-size: 18px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.04em;
 }
 
 /* ── System feed ───────────────────────────────────────────── */
@@ -459,10 +456,9 @@
   padding-bottom: 12px;
 }
 .terminal-feed-empty {
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
   color: var(--ink-40);
-  font-size: 14px;
+  font-size: 12px;
   padding-top: 8px;
 }
 
@@ -525,21 +521,20 @@
   line-height: 1.45;
 }
 .terminal-card-body .empty {
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
   color: var(--ink-40);
-  font-size: 13px;
+  font-size: 12px;
 }
 
-/* ── Synthesis card — italic-serif numeral + weighted bars ── */
+/* ── Synthesis card — telemetric numeral + weighted bars ── */
 .terminal-card.synthesis .terminal-card-score .num {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 64px;
-  color: var(--lumen);
-  line-height: 0.9;
-  letter-spacing: -0.02em;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 48px;
+  color: var(--accent-blue);
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 .terminal-card.synthesis .terminal-card-score .num.placeholder {
   color: var(--ink-40);
@@ -586,8 +581,8 @@
   color: var(--ink-60);
 }
 
-/* ── Synthesis card body — weighted contribution bars (spec §4.5) ── */
-/* Spec mandates radius: 0 globally (§2.4). No border-radius anywhere. */
+/* ── Synthesis card body — weighted contribution bars ── */
+/* Squared corners site-wide; no border-radius on any element. */
 .synth-contributions {
   list-style: none;
   margin: 0;
@@ -651,10 +646,9 @@
 
 /* ── GEX placeholder card ─────────────────────────────────── */
 .terminal-card.gex-placeholder .terminal-card-body .placeholder-msg {
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
   color: var(--ink-60);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -713,16 +707,11 @@
   }
   .terminal-score {
     grid-row: auto;
-    /* Mobile clamp — preserves the 0.86 line-height proportion of
-       the desktop monumental glyph but scales to viewport. iPhone
-       SE (375px) lands ~82px; iPhone 14 Pro Max (430px) lands ~95px;
-       iPad portrait (768px) lands ~140px. */
-    font-size: clamp(74px, 22vw, 140px);
-    line-height: 0.86;
-    letter-spacing: -0.045em;
-    /* Soften the lumen halo at smaller sizes — full desktop glow
-       reads as smudge on mobile. */
-    text-shadow: 0 0 22px rgba(239, 200, 139, 0.10);
+    /* Mobile clamp — telemetric register, scales viewport-proportionally.
+       iPhone SE (375px) ≈ 56px; iPad portrait (768px) ≈ 80px. */
+    font-size: clamp(56px, 14vw, 80px);
+    line-height: 0.92;
+    letter-spacing: -0.02em;
   }
   .terminal-score-label {
     font-size: 10px;
@@ -734,18 +723,15 @@
   }
 
   /* Regime + overrides re-cast as a single hairline-divided row
-     beneath the score. This is the dashboard's "subtitle" on
-     mobile — operator's status read at a glance. The italic em
-     needs to outscale the surrounding mono by ~30% for the
-     "FT-style italic-inside-mono" punch (LUMEN signature §4.1) to
-     land — at 16px mono the em floors at 21px on tablet/phone. */
+     beneath the score. The em uses Inter 600 weight for hierarchy
+     contrast (DC theme: weight contrast over font-family contrast). */
   .terminal-regime {
-    font-size: 16px;
-    letter-spacing: 0.06em;
+    font-size: 14px;
+    letter-spacing: 0.04em;
   }
   .terminal-regime em {
-    font-size: 21px;
-    margin-left: 6px;
+    font-size: 16px;
+    margin-left: 8px;
   }
 
   .terminal-overrides {
@@ -812,8 +798,8 @@
     overflow-x: auto;
     scrollbar-width: none;
     padding-bottom: 4px;
-    /* Soft fade at right edge to signal scrollability — the LUMEN
-       way to whisper "more here" without a chrome scrollbar. */
+    /* Soft fade at right edge to signal scrollability without a
+       chrome scrollbar. */
     mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
   }
@@ -884,16 +870,12 @@
     font-size: 10px;
     letter-spacing: 0.24em;
   }
-  .terminal-card-score .num { font-size: 32px; }
+  .terminal-card-score .num { font-size: 28px; }
   .terminal-card.synthesis .terminal-card-score .num {
-    /* Synthesis numeral demoted on mobile (was 56px) — at this
-       composition the hero score and synthesis card stack vertically
-       with only the chart between them. Two large lumen-italic
-       numerals restating the same value would soften the hero's
-       "one chromatic moment" status (spec §6). 42px keeps the
-       synthesis card recognizable as the headline reduction without
-       competing with the hero. Lumen color stays per spec §4.5. */
-    font-size: 42px;
+    /* Synthesis numeral on mobile — stays recognizably the master
+       reduction without competing visually with the hero score
+       above it. */
+    font-size: 36px;
   }
 
   /* Levels card — keep two-column key/value but tighten the gap so
@@ -926,7 +908,7 @@
     padding: 18px 14px 20px;
   }
   .terminal-score {
-    font-size: clamp(68px, 24vw, 96px);
+    font-size: clamp(48px, 16vw, 64px);
   }
   .terminal-card {
     padding: 16px 14px 18px;
@@ -941,10 +923,7 @@
     min-height: 180px;
     font-size: 13px;
   }
-  /* Phone tier — keep the italic em above 20px so it still outscales
-     the surrounding 16px mono by ≥25% (the FT punch needs the size
-     contrast, not just the font switch). */
   .terminal-regime em {
-    font-size: 20px;
+    font-size: 15px;
   }
 }

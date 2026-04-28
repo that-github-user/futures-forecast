@@ -15,37 +15,36 @@
  */
 
 export const colors = {
-  // Backgrounds — paper layers, warm graphite tones
-  bgBase: "#0d0c0a",      // app background (--paper)
-  bgPanel: "#15130f",     // default panel / card (--paper-elev)
-  bgElevated: "#0d0c0a",  // header / tab-bar (--paper, no elevation chrome)
-  bgInset: "#08070a",     // inner sub-panel / sticky table head (--paper-deep)
-  // Borders — dim to bright (ink scale)
-  borderDim: "#2a2823",   // --ink-20
-  borderMid: "#5a564f",   // --ink-40
-  borderBright: "#8c877c",// --ink-60 — same hex as textMuted by design (muted-on-muted)
-  // Text — primary to dim (ink scale, bone-cream tones)
-  textBright: "#f5efe2",   // --ink-100
-  textPrimary: "#f5efe2",  // --ink-100
-  textSecondary: "#c9c3b6",// --ink-80
-  textMuted: "#8c877c",    // --ink-60 — same hex as borderBright
-  textDim: "#5a564f",      // --ink-40
-  // Accents — single warm accent (lumen) reserved for brand-thesis
-  // moments per design spec §2.1. The trading-app's accent slots map
-  // to a 4-tone state palette (info/warn/pos/neg) so SignalBadge's
-  // GO_PLUS / GO / READY / SKIP and similar four-state UIs keep
-  // visual distinction.
-  accentBlue: "#8a96a1",       // --accent-info (graphite-cool)
-  accentGreen: "#d6c79a",      // --pos-cream
-  accentRed: "#b8746a",        // --neg-persimmon
-  accentRedLight: "#d4a59c",   // --neg-persimmon-light
-  accentAmber: "#cf9852",      // --accent-warn (burnt amber)
-  // Direct palette tokens (mirror --ink-* and --lumen). Used by charts
-  // and other contexts that need >5 distinct accents and reach beyond
-  // the trading-app's 5 accent slots. Lumen here is for chart marks
-  // only; brand-thesis usage stays in the lander per spec §2.1.
-  ink80: "#c9c3b6",            // --ink-80
-  lumen: "#efc88b",            // --lumen
+  // Backgrounds — slate-blue, panels rise above bg
+  bgBase: "#0a0e17",      // app background (--paper)
+  bgPanel: "#111827",     // default panel / card (--paper-elev)
+  bgElevated: "#0d1117",  // header / tab-bar
+  bgInset: "#0f172a",     // inner sub-panel / sticky table head (--paper-deep)
+  // Borders — dim to bright (slate scale)
+  borderDim: "#1e293b",   // --ink-20
+  borderMid: "#334155",   // --ink-40 mid-step
+  borderBright: "#475569",// --ink-40 light-step (same hex as textDim by design)
+  // Text — primary to dim (slate scale, clean white tones)
+  textBright: "#f8fafc",   // --ink-100
+  textPrimary: "#e2e8f0",  // --ink-80
+  textSecondary: "#94a3b8",// --ink-60
+  textMuted: "#64748b",    // --ink-60 mid
+  textDim: "#475569",      // --ink-40 — same hex as borderBright
+  // Accents — saturated blue/green/red/amber 4-tone state palette so
+  // SignalBadge GO_PLUS / GO / READY / SKIP and similar four-state UIs
+  // keep visual distinction.
+  accentBlue: "#3b82f6",       // saturated blue
+  accentGreen: "#10b981",      // saturated green
+  accentRed: "#ef4444",        // saturated red
+  accentRedLight: "#fca5a5",   // light red for error text on dark bg
+  accentAmber: "#f59e0b",      // saturated amber
+  // Backwards-compat token names — chart components reference these by
+  // semantic role ("warm distinct accent", "muted secondary text").
+  // Repointed to cool-palette equivalents so the four consumer files
+  // (FanChart, ScenarioCluster, StrategyCatalogCard, AnalyticsCards)
+  // don't need invasive edits.
+  ink80: "#94a3b8",            // mirrors --ink-80 (slate-blue muted)
+  lumen: "#f59e0b",            // amber — fills the "warm accent" semantic slot
 } as const;
 
 export const fonts = {
