@@ -21,6 +21,31 @@ export function pnlColor(pnl: number): string {
   return pnl > 0 ? colors.accentGreen : colors.accentRed;
 }
 
+
+/**
+ * Format an "age" interval in seconds as "Xd Yh ago", "Xh Ym ago",
+ * "Xm ago", or "just now". Granularity is intentionally coarse — entries
+ * on multi-entry strategies are hours apart, and tick-second precision
+ * adds noise without value.
+ *
+ * Negative deltas (entry timestamp is in the future — clock skew or a
+ * misconfigured position) clamp to "just now" rather than rendering
+ * a negative duration.
+ */
+export function formatTimeSince(deltaSec: number): string {
+  if (!Number.isFinite(deltaSec) || deltaSec < 60) return "just now";
+  const totalMin = Math.floor(deltaSec / 60);
+  if (totalMin < 60) return `${totalMin}m ago`;
+  const totalHours = Math.floor(totalMin / 60);
+  const minPart = totalMin % 60;
+  if (totalHours < 24) {
+    return minPart === 0 ? `${totalHours}h ago` : `${totalHours}h ${minPart}m ago`;
+  }
+  const days = Math.floor(totalHours / 24);
+  const hourPart = totalHours % 24;
+  return hourPart === 0 ? `${days}d ago` : `${days}d ${hourPart}h ago`;
+}
+
 /**
  * Classify a re-entry preview vs. the open position's paid debit.
  *

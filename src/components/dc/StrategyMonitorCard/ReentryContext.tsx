@@ -22,7 +22,24 @@
 
 import { colors, fonts } from "../../../styles/tokens";
 import type { DCPosition } from "../../../api/dcTypes";
-import { classifyReentry, pnlColor } from "./reentryHelpers";
+import { useTick } from "../../../hooks/useTick";
+import { classifyReentry, formatTimeSince, pnlColor } from "./reentryHelpers";
+
+/** Live " · Xh Ym ago" leaf — re-renders itself every minute against
+ *  an ISO entry timestamp. Includes its own leading separator so the
+ *  parent header doesn't emit a dangling "×1 · " when entry_time is
+ *  null/unparseable (legacy rows, future clock-skew defense). Same
+ *  isolation pattern as <LiveCountdown>: ReentryContext is memo'd,
+ *  but this leaf opts in to a 60s tick so the displayed age stays
+ *  fresh without busting the parent's memo on every 1Hz parent-tick. */
+function TimeSinceEntry({ iso }: { iso: string | null }) {
+  const nowMs = useTick(60_000);
+  if (!iso) return null;
+  const entryMs = Date.parse(iso);
+  if (Number.isNaN(entryMs)) return null;
+  const deltaSec = Math.floor((nowMs - entryMs) / 1000);
+  return <> · {formatTimeSince(deltaSec)}</>;
+}
 
 interface Props {
   /** Open positions for THIS strategy only (caller filters by name). */
@@ -91,7 +108,7 @@ export function ReentryContext({ positions, previewNetDebit, entryDirection }: P
           Open from {formatEntryClock(anchor.entry_time)} · Re-entry preview
         </span>
         <span style={{ color: colors.textMuted, fontSize: 10 }}>
-          ×{anchor.quantity}
+          ×{anchor.quantity}<TimeSinceEntry iso={anchor.entry_time} />
         </span>
       </div>
 
