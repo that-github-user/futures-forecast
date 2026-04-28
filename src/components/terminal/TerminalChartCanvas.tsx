@@ -182,14 +182,14 @@ function resolveLumenPalette() {
     return v && v.length > 0 ? v : fallback;
   };
   return {
-    posCream: tok("--pos-cream", "#d6c79a"),
-    negPersimmon: tok("--neg-persimmon", "#b8746a"),
-    paperDeep: tok("--paper-deep", "#08070a"),
-    ink100: tok("--ink-100", "#f5efe2"),
-    ink80: tok("--ink-80", "#c9c3b6"),
-    ink60: tok("--ink-60", "#8c877c"),
-    ink40: tok("--ink-40", "#5a564f"),
-    ink20: tok("--ink-20", "#2a2823"),
+    posCream: tok("--pos-cream", "#10b981"),
+    negPersimmon: tok("--neg-persimmon", "#ef4444"),
+    paperDeep: tok("--paper-deep", "#0f172a"),
+    ink100: tok("--ink-100", "#f8fafc"),
+    ink80: tok("--ink-80", "#e2e8f0"),
+    ink60: tok("--ink-60", "#94a3b8"),
+    ink40: tok("--ink-40", "#475569"),
+    ink20: tok("--ink-20", "#1e293b"),
   };
 }
 

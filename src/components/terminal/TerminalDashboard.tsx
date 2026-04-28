@@ -313,8 +313,9 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
 /* ── Timezone selector ─────────────────────────────────────────────
  *
  * Sits at the right end of the timeframe-pill row. Native <select>
- * styled to match the LUMEN tone (small-caps, paper-deep chip, ink-40
- * hairline). Reuses the shared `useTimezone` hook so the user's
+ * stripped of UA chrome (small-caps, bg-inset chip, ink-40 hairline)
+ * to match the surrounding pill grammar. Reuses the shared
+ * `useTimezone` hook so the user's
  * timezone preference (storage key `dc.timezone`) flows across both
  * /dc and /app. "local" surfaces the browser's resolved abbreviation
  * (e.g. "PDT") in the option label.
