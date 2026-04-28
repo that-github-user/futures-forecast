@@ -418,7 +418,7 @@
 }
 .avwap-pop-check.on {
   border-color: var(--ink-100);
-  background: rgba(245, 239, 226, 0.06);
+  background: rgba(248, 250, 252, 0.06);
 }
 
 /* OR popover variant — single-window-per-row checklist (vs AVWAP's

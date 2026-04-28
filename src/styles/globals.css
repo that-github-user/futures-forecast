@@ -42,20 +42,29 @@
   --neg: var(--neg-persimmon);
 
   /* Surface / text / accent aliases — original trading-app token
-     names. Each maps to a cool-palette value above so the whole
-     site re-themes without component-level edits. */
+     names. Each maps to a cool-palette value so the whole site
+     re-themes without component-level edits.
+
+     Some aliases use direct hex values rather than ink-scale `var(--…)`
+     references because the trading-app's pre-LUMEN palette had a finer
+     grain than the 5-step ink scale (e.g. `--text-muted` #64748b sits
+     between --ink-60 #94a3b8 and --text-dim #475569). Keeping these
+     in lockstep with tokens.ts (the TS-side mirror used by inline
+     ECharts styles) prevents the same component from rendering at
+     different greys depending on whether it pulls from CSS vars or
+     `colors.…`. */
   --bg-base: var(--paper);
   --bg-panel: var(--paper-elev);
-  --bg-elevated: var(--paper);
+  --bg-elevated: #0d1117;
   --bg-inset: var(--paper-deep);
   --border-dim: var(--ink-20);
-  --border-mid: var(--ink-40);
-  --border-bright: var(--ink-60);
+  --border-mid: #334155;
+  --border-bright: #475569;
   --text-bright: var(--ink-100);
-  --text-primary: var(--ink-100);
-  --text-secondary: var(--ink-80);
-  --text-muted: var(--ink-60);
-  --text-dim: var(--ink-40);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dim: #475569;
   --accent-blue: var(--accent-info);
   --accent-amber: var(--accent-warn);
   --accent-green: var(--pos-cream);
@@ -87,6 +96,19 @@
   --accent-warn: #cf9852;
   --accent-info: #8a96a1;
   --font-display: 'EB Garamond', Georgia, serif;
+
+  /* Alias overrides — under LUMEN, the trading-app aliases lined up
+     with the warm ink scale (text-primary = ink-100, text-muted =
+     ink-60, etc.). The cool default decouples some of those for a
+     finer text gradient, so the lander has to restore the LUMEN
+     mapping explicitly. */
+  --bg-elevated: var(--paper);
+  --border-mid: var(--ink-40);
+  --border-bright: var(--ink-60);
+  --text-primary: var(--ink-100);
+  --text-secondary: var(--ink-80);
+  --text-muted: var(--ink-60);
+  --text-dim: var(--ink-40);
 }
 
 * {
