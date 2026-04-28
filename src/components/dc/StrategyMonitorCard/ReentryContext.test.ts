@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
-import { classifyReentry, pnlColor } from "./reentryHelpers";
+import { classifyReentry, formatTimeSince, pnlColor } from "./reentryHelpers";
 import { colors } from "../../../styles/tokens";
 
 // Pinning the debit-vs-credit direction flip — the load-bearing semantic
@@ -83,5 +83,40 @@ describe("pnlColor", () => {
     expect(pnlColor(NaN)).toBe(colors.textMuted);
     expect(pnlColor(Infinity)).toBe(colors.textMuted);
     expect(pnlColor(-Infinity)).toBe(colors.textMuted);
+  });
+});
+
+describe("formatTimeSince", () => {
+  it("under a minute reads 'just now'", () => {
+    expect(formatTimeSince(0)).toBe("just now");
+    expect(formatTimeSince(45)).toBe("just now");
+    expect(formatTimeSince(59)).toBe("just now");
+  });
+
+  it("under an hour reads minutes only", () => {
+    expect(formatTimeSince(60)).toBe("1m ago");
+    expect(formatTimeSince(5 * 60)).toBe("5m ago");
+    expect(formatTimeSince(59 * 60)).toBe("59m ago");
+  });
+
+  it("hours bucket prepends 'Xh' and includes minute remainder", () => {
+    // 3h 27m — typical FM Mon at 14:27 with 11:00 entry
+    expect(formatTimeSince(3 * 3600 + 27 * 60)).toBe("3h 27m ago");
+    // Exact-hour drops the minute component
+    expect(formatTimeSince(2 * 3600)).toBe("2h ago");
+  });
+
+  it("days bucket triggers at 24h+", () => {
+    // Held overnight — 1d 4h ago
+    expect(formatTimeSince(28 * 3600)).toBe("1d 4h ago");
+    expect(formatTimeSince(48 * 3600)).toBe("2d ago");
+  });
+
+  it("negative / non-finite deltas clamp to 'just now'", () => {
+    // Clock skew or misconfigured entry_time → don't render a
+    // negative duration. Caller's render path still shows the row.
+    expect(formatTimeSince(-1)).toBe("just now");
+    expect(formatTimeSince(NaN)).toBe("just now");
+    expect(formatTimeSince(Infinity)).toBe("just now");
   });
 });
