@@ -173,7 +173,7 @@ export function DCEventsTab() {
                     scope="col"
                     aria-label="IV anchor source — chain, vix, or default"
                     style={thStyle}
-                    title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)"
+                    title="IV anchor used by THIS event's resolve attempt (chain = live sample, vix = fallback, default = cold-start). Distinct from the StrategyMonitorCard's S/L IV badge, which reflects the SL worker's most recent poll — they can disagree."
                   >
                     IV
                   </th>
@@ -277,10 +277,16 @@ export function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSS
 
 
 export function ivSourceTitle(source: DCSignalEvent["iv_source"]): string {
+  // Distinct from the StrategyMonitorCard's "S/L IV" badge — that one
+  // reflects the SL worker's MOST RECENT poll cycle. This one is the
+  // IV anchor at the moment of THIS specific entry attempt. They can
+  // legitimately disagree (different code paths, different cycles);
+  // the user-reported "we resorted to IV:VIX for the 21/28 today"
+  // confusion was exactly this disagreement.
   switch (source) {
-    case "chain":   return "Live chain-sampled ATM IV fed the BS inverter (good path).";
-    case "vix":     return "Fell back to VIX-scaled IV — chain sample failed. This was the pre-fix path that caused the 21/28 strike incident.";
-    case "default": return "Neither chain nor VIX available — hardcoded 20% default. Cold-start or feature-refresh failure.";
+    case "chain":   return "This entry's resolver used live chain-sampled ATM IV (good path). [Note: distinct from the live S/L IV badge — they reflect different cycles.]";
+    case "vix":     return "This entry's resolver fell back to VIX-scaled IV — chain sample failed at the moment of resolve. This was the pre-fix path that caused the 21/28 strike incident.";
+    case "default": return "Neither chain nor VIX available at resolve time — hardcoded 20% default. Cold-start or feature-refresh failure.";
     default:        return "Event fired before any resolve happened (blocked_signal / blocked_features / blocked_vix / blocked_canTrade) or predates iv_source tracking.";
   }
 }

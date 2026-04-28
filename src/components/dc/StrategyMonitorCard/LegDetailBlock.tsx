@@ -189,10 +189,22 @@ function NetDebitHeader({
   );
 }
 
-/** Small indicator showing which IV anchor seeded the resolver's
- *  BS inverter this cycle. Green = chain (good), amber = vix
- *  (pre-fix fallback; silent fallbacks here caused the 21/28 strike
- *  incident), red = default (cold-start). Null renders nothing. */
+/** Small indicator showing which IV anchor seeded the **S/L worker's**
+ *  BS inverter on its most recent poll cycle (every ~60s). NOT the
+ *  IV used at entry time — that's recorded separately on
+ *  signal_events.iv_source and surfaced in the Events tab.
+ *
+ *  Why distinguish: the SL worker and the entry engine call
+ *  derive_iv_source() independently in different cycles. They can
+ *  legitimately disagree — e.g. SL worker's chain fetch raced and
+ *  fell back to VIX (badge shows "S/L IV: vix"), but a later entry
+ *  attempt's chain fetch succeeded (Events tab shows "chain"). The
+ *  user-reported "we resorted to IV:VIX for the 21/28 today" was
+ *  this specific disagreement: badge said vix from a stale SL
+ *  poll while the entry's audit row shows chain.
+ *
+ *  Green = chain (good), amber = vix (chain failed mid-poll), red
+ *  = default (cold-start). Null renders nothing. */
 function IVSourceBadge({
   source,
 }: {
@@ -203,27 +215,34 @@ function IVSourceBadge({
     switch (source) {
       case "chain":
         return {
-          label: "IV chain",
+          label: "S/L IV chain",
           bg: withAlpha(colors.accentGreen, 0.12),
           border: withAlpha(colors.accentGreen, 0.45),
           color: colors.accentGreen,
-          title: "BS inverter is using live chain-sampled ATM IV — the fix is engaged for this strategy.",
+          title:
+            "S/L worker's BS inverter is using live chain-sampled ATM IV on its most recent ~60s poll. " +
+            "(Entry-time IV is recorded separately on signal_events; check the Events tab for the IV used at the actual entry.)",
         };
       case "vix":
         return {
-          label: "IV vix",
+          label: "S/L IV vix",
           bg: withAlpha(colors.accentAmber, 0.14),
           border: withAlpha(colors.accentAmber, 0.45),
           color: colors.accentAmber,
-          title: "BS inverter fell back to VIX-scaled IV — the chain sample failed. Strikes may drift from market 20Δ; investigate if persistent.",
+          title:
+            "S/L worker's most recent poll fell back to VIX-scaled IV (chain sample failed during that poll). " +
+            "This does NOT mean today's entry used VIX-fallback — entry-time IV is recorded separately on signal_events. " +
+            "Persistent vix here = subscription or feed issue worth investigating.",
         };
       case "default":
         return {
-          label: "IV default",
+          label: "S/L IV default",
           bg: withAlpha(colors.accentRed, 0.14),
           border: withAlpha(colors.accentRed, 0.45),
           color: colors.accentRed,
-          title: "BS inverter has neither a chain sample nor VIX — using hardcoded 20% default. Cold-start or feature-refresh failure.",
+          title:
+            "S/L worker has neither a chain sample nor VIX — using hardcoded 20% default. " +
+            "Cold-start or feature-refresh failure on the SL poll cycle.",
         };
     }
   })();
