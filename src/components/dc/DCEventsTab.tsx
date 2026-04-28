@@ -157,18 +157,18 @@ export function DCEventsTab() {
                   <th style={thStyle}>Strategy</th>
                   <th style={thStyle}>Signal</th>
                   <th style={thStyle}>Outcome</th>
-                  <th style={thStyle}>Reason</th>
-                  <th style={thStyle}>S/L</th>
-                  <th style={thStyle}>Debit</th>
-                  <th style={thStyle}>Qty</th>
-                  <th style={thStyle}>SPX</th>
                   <th
                     scope="col"
                     style={thStyle}
                     title="Resolved strikes the daemon picked (post-deconflict-move). NULL when the resolve phase didn't run (blocked_strike, prechecks)."
                   >
-                    P / C
+                    Strikes
                   </th>
+                  <th style={thStyle}>Reason</th>
+                  <th style={thStyle}>S/L</th>
+                  <th style={thStyle}>Debit</th>
+                  <th style={thStyle}>Qty</th>
+                  <th style={thStyle}>SPX</th>
                   <th
                     scope="col"
                     aria-label="IV anchor source — chain, vix, or default"
@@ -202,6 +202,9 @@ function EventRow({ event }: { event: DCSignalEvent }) {
         <OutcomeBadge outcome={event.outcome} />
         <MoveBadge event={event} />
       </td>
+      <td style={tdMono} title={resolvedStrikesTitle(event)}>
+        {formatResolvedStrikes(event)}
+      </td>
       <td style={{ ...tdStyle, color: colors.textSecondary, maxWidth: 360 }}>
         {event.outcome_reason ?? "—"}
       </td>
@@ -215,9 +218,6 @@ function EventRow({ event }: { event: DCSignalEvent }) {
       <td style={tdMono}>
         {event.spx_at_event != null ? event.spx_at_event.toFixed(0) : "—"}
       </td>
-      <td style={tdMono} title={resolvedStrikesTitle(event)}>
-        {formatResolvedStrikes(event)}
-      </td>
       <td style={ivSourceCellStyle(event.iv_source)} title={ivSourceTitle(event.iv_source)}>
         {event.iv_source ?? "—"}
       </td>
@@ -226,8 +226,8 @@ function EventRow({ event }: { event: DCSignalEvent }) {
 }
 
 /** "P7050 / C7280" when both strikes resolved, "P7050 / —" if only put,
- *  "—" if neither (resolve phase didn't run). The slash separator
- *  matches the dashboard's existing "P / C" column header. */
+ *  "—" if neither (resolve phase didn't run). SPX strikes are integers;
+ *  toFixed(0) keeps the cell compact in the dense events table. */
 function formatResolvedStrikes(event: DCSignalEvent): string {
   const p = event.resolved_put_strike;
   const c = event.resolved_call_strike;
@@ -237,21 +237,31 @@ function formatResolvedStrikes(event: DCSignalEvent): string {
   return `${pStr} / ${cStr}`;
 }
 
+/** Tooltip for the Strikes cell. Returns "" (no tooltip) for the
+ *  common no-conflict case — the column header already explains
+ *  what the cell shows. Surfaces deconflict context only when an
+ *  auto-move actually fired (ideal vs. resolved differ).
+ *
+ *  `conflicting_strategy` is comma-joined when both legs conflict;
+ *  we render BOTH ideal sides independently rather than branching
+ *  put-vs-call so a dual-leg conflict doesn't shadow one side.
+ */
 function resolvedStrikesTitle(event: DCSignalEvent): string {
   const p = event.resolved_put_strike;
   const c = event.resolved_call_strike;
   if (p == null && c == null) {
     return "Resolved strikes — NULL when the resolve phase didn't run (blocked_strike, prechecks failed, or connect failure)";
   }
-  // Highlight the deconflict relationship when an ideal strike differs
-  // from the resolved one — i.e. the auto-move actually fired.
-  if (event.conflicting_strategy && event.ideal_put_strike != null) {
-    return `Resolved P${p?.toFixed(0)} (ideal was P${event.ideal_put_strike.toFixed(0)}, conflicted with ${event.conflicting_strategy})`;
+  if (!event.conflicting_strategy) return "";
+  const parts: string[] = [];
+  if (event.ideal_put_strike != null && p != null) {
+    parts.push(`ideal P${event.ideal_put_strike.toFixed(0)} → resolved P${p.toFixed(0)}`);
   }
-  if (event.conflicting_strategy && event.ideal_call_strike != null) {
-    return `Resolved C${c?.toFixed(0)} (ideal was C${event.ideal_call_strike.toFixed(0)}, conflicted with ${event.conflicting_strategy})`;
+  if (event.ideal_call_strike != null && c != null) {
+    parts.push(`ideal C${event.ideal_call_strike.toFixed(0)} → resolved C${c.toFixed(0)}`);
   }
-  return `Resolved put ${p?.toFixed(2) ?? "—"}, call ${c?.toFixed(2) ?? "—"} — strikes the daemon actually picked for this entry`;
+  if (parts.length === 0) return "";
+  return `${parts.join(" · ")} (conflicted with ${event.conflicting_strategy})`;
 }
 
 
