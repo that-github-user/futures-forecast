@@ -98,6 +98,7 @@ const TZ_IANA: Record<Exclude<TZOption, "local">, string> = {
 const chartFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 const chartFormattersSec = new Map<TZOption, Intl.DateTimeFormat>();
 const chartDayFormatters = new Map<TZOption, Intl.DateTimeFormat>();
+const positionDateTimeFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 
 function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeFormat {
   const opts: Intl.DateTimeFormatOptions = {
@@ -116,6 +117,21 @@ function buildChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
     ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
   };
   return new Intl.DateTimeFormat("en-GB", opts);
+}
+
+function buildPositionDateTimeFormatter(tz: TZOption): Intl.DateTimeFormat {
+  // "Apr 27, 09:45" in the user's selected TZ. Used by the DC
+  // positions table so the entry-time column reads in the same
+  // timezone as the rest of the dashboard.
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
+  };
+  return new Intl.DateTimeFormat("en-US", opts);
 }
 
 function getChartFormatter(tz: TZOption): Intl.DateTimeFormat {
@@ -145,6 +161,15 @@ function getChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
   return f;
 }
 
+function getPositionDateTimeFormatter(tz: TZOption): Intl.DateTimeFormat {
+  let f = positionDateTimeFormatters.get(tz);
+  if (!f) {
+    f = buildPositionDateTimeFormatter(tz);
+    positionDateTimeFormatters.set(tz, f);
+  }
+  return f;
+}
+
 export interface TimezoneApi {
   tz: TZOption;
   setTz: (tz: TZOption) => void;
@@ -165,6 +190,12 @@ export interface TimezoneApi {
    * day-of-month differing from the previous bar).
    */
   formatChartDay: (iso: string) => string;
+  /**
+   * Format an ISO UTC timestamp as "Apr 27, 09:45" in the user's
+   * selected timezone. Used by the DC positions table so the entry-
+   * time column reads in the same TZ as the rest of the dashboard.
+   */
+  formatPositionDateTime: (iso: string) => string;
   /** Display label for the current timezone ("ET", "PT", "PDT", etc.) */
   tzLabel: string;
 }
@@ -229,7 +260,19 @@ export function useTimezone(): TimezoneApi {
     [tz],
   );
 
+  const formatPositionDateTime = useCallback(
+    (iso: string): string => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return getPositionDateTimeFormatter(tz).format(d);
+    },
+    [tz],
+  );
+
   const tzLabel = tz === "local" ? getLocalTZLabel() : TZ_DISPLAY_LABELS[tz];
 
-  return { tz, setTz, formatTime, formatChartTime, formatChartDay, tzLabel };
+  return {
+    tz, setTz, formatTime, formatChartTime, formatChartDay,
+    formatPositionDateTime, tzLabel,
+  };
 }

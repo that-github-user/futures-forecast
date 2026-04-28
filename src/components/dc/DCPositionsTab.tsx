@@ -10,6 +10,7 @@ import {
   brokerDebitPerSpread,
   groupBrokerLegs,
 } from "../../lib/brokerGrouping";
+import { useTimezone } from "../../hooks/useTimezone";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import { tableStyle, thStyle, tdStyle, tdMono } from "./tableStyles";
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function DCPositionsTab({ positions, risk, brokerState }: Props) {
+  const { formatPositionDateTime, tzLabel } = useTimezone();
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Risk status cards */}
@@ -83,7 +85,9 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                   <tr key={p.id}>
                     <td style={tdStyle}>{p.strategy_name}</td>
                     <td style={tdStyle}><SignalBadge signal={p.signal} /></td>
-                    <td style={tdStyle}>{formatTime(p.entry_time)}</td>
+                    <td style={tdStyle} title={`${formatPositionDateTime(p.entry_time)} ${tzLabel}`}>
+                      {formatPositionDateTime(p.entry_time)}
+                    </td>
                     <td style={tdMono}>{p.put_strike}</td>
                     <td style={tdMono}>{p.call_strike}</td>
                     <td style={tdStyle}>{p.front_exp}</td>
@@ -238,12 +242,6 @@ function driftTooltip(p: DCPosition): string {
          `Red ≥ $${DRIFT_ERROR.toFixed(2)} (investigate)`;
 }
 
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  } catch { return iso; }
-}
 
 
 
