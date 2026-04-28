@@ -133,10 +133,15 @@ export function ReentryContext({ positions, previewNetDebit, entryDirection }: P
               ${anchor.current_net_value.toFixed(2)}
             </span>
           </span>
-          <span style={{ color: pnlColor(anchor.unrealized_pnl) }}>
+          <span style={{ color: pnlColor(anchor.unrealized_pnl), whiteSpace: "nowrap" }}>
             {anchor.unrealized_pnl >= 0 ? "+" : ""}
-            ${Math.round(anchor.unrealized_pnl).toLocaleString()} unrealized
+            {/* Pin to en-US so a viewer with a comma-decimal locale
+                doesn't see "$1.234 unrealized" for $1234. */}
+            ${Math.round(anchor.unrealized_pnl).toLocaleString("en-US")} unrealized
             {paidDebit > 0 && anchor.quantity > 0 && (
+              /* Per-contract pct, NOT scaled by quantity — a 1-contract
+                 −20% and a 5-contract −20% are the same trade thesis;
+                 the dollar figure already conveys total exposure. */
               <span style={{ marginLeft: 4, color: pnlColor(anchor.unrealized_pnl) }}>
                 ({(((anchor.current_net_value - paidDebit) / paidDebit) * 100).toFixed(1)}%)
               </span>

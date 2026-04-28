@@ -73,4 +73,15 @@ describe("pnlColor", () => {
     expect(pnlColor(0.5)).toBe(colors.textMuted);
     expect(pnlColor(-0.99)).toBe(colors.textMuted);
   });
+
+  it("NaN / Infinity defensively read as muted, not a direction", () => {
+    // A silently wrong color is worse than no color. Catches the
+    // failure mode where a daemon bug ships NaN through the API
+    // (e.g. division by zero) — the dashboard would otherwise paint
+    // it red because Math.abs(NaN) < 1 is false and NaN > 0 is also
+    // false, defaulting to red.
+    expect(pnlColor(NaN)).toBe(colors.textMuted);
+    expect(pnlColor(Infinity)).toBe(colors.textMuted);
+    expect(pnlColor(-Infinity)).toBe(colors.textMuted);
+  });
 });

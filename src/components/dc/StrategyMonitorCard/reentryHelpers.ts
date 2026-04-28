@@ -11,8 +11,12 @@ import { colors } from "../../../styles/tokens";
 /**
  * Map an unrealized P&L number to its semantic color.
  * Within ±$1 reads as muted (functionally flat — sub-tick noise).
+ * NaN/Infinity defensively read as muted rather than picking a
+ * misleading direction (silent wrong-color bugs are worse than no
+ * color at all).
  */
 export function pnlColor(pnl: number): string {
+  if (!Number.isFinite(pnl)) return colors.textMuted;
   if (Math.abs(pnl) < 1) return colors.textMuted;
   return pnl > 0 ? colors.accentGreen : colors.accentRed;
 }
