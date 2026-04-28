@@ -164,6 +164,13 @@ export function DCEventsTab() {
                   <th style={thStyle}>SPX</th>
                   <th
                     scope="col"
+                    style={thStyle}
+                    title="Resolved strikes the daemon picked (post-deconflict-move). NULL when the resolve phase didn't run (blocked_strike, prechecks)."
+                  >
+                    P / C
+                  </th>
+                  <th
+                    scope="col"
                     aria-label="IV anchor source — chain, vix, or default"
                     style={thStyle}
                     title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)"
@@ -208,11 +215,43 @@ function EventRow({ event }: { event: DCSignalEvent }) {
       <td style={tdMono}>
         {event.spx_at_event != null ? event.spx_at_event.toFixed(0) : "—"}
       </td>
+      <td style={tdMono} title={resolvedStrikesTitle(event)}>
+        {formatResolvedStrikes(event)}
+      </td>
       <td style={ivSourceCellStyle(event.iv_source)} title={ivSourceTitle(event.iv_source)}>
         {event.iv_source ?? "—"}
       </td>
     </tr>
   );
+}
+
+/** "P7050 / C7280" when both strikes resolved, "P7050 / —" if only put,
+ *  "—" if neither (resolve phase didn't run). The slash separator
+ *  matches the dashboard's existing "P / C" column header. */
+function formatResolvedStrikes(event: DCSignalEvent): string {
+  const p = event.resolved_put_strike;
+  const c = event.resolved_call_strike;
+  if (p == null && c == null) return "—";
+  const pStr = p != null ? `P${p.toFixed(0)}` : "—";
+  const cStr = c != null ? `C${c.toFixed(0)}` : "—";
+  return `${pStr} / ${cStr}`;
+}
+
+function resolvedStrikesTitle(event: DCSignalEvent): string {
+  const p = event.resolved_put_strike;
+  const c = event.resolved_call_strike;
+  if (p == null && c == null) {
+    return "Resolved strikes — NULL when the resolve phase didn't run (blocked_strike, prechecks failed, or connect failure)";
+  }
+  // Highlight the deconflict relationship when an ideal strike differs
+  // from the resolved one — i.e. the auto-move actually fired.
+  if (event.conflicting_strategy && event.ideal_put_strike != null) {
+    return `Resolved P${p?.toFixed(0)} (ideal was P${event.ideal_put_strike.toFixed(0)}, conflicted with ${event.conflicting_strategy})`;
+  }
+  if (event.conflicting_strategy && event.ideal_call_strike != null) {
+    return `Resolved C${c?.toFixed(0)} (ideal was C${event.ideal_call_strike.toFixed(0)}, conflicted with ${event.conflicting_strategy})`;
+  }
+  return `Resolved put ${p?.toFixed(2) ?? "—"}, call ${c?.toFixed(2) ?? "—"} — strikes the daemon actually picked for this entry`;
 }
 
 
