@@ -34,6 +34,7 @@ import { formatEntryDays } from "../../../lib/dcLifecycle";
 import { SignalBadge } from "../SignalBadge";
 import { BodyContent } from "./BodyContent";
 import { isActiveLifecycleState, LegDetailBlock } from "./LegDetailBlock";
+import { ReentryContext } from "./ReentryContext";
 import { shouldShowSuggested, SuggestedRow } from "./SuggestedRow";
 import { STATE_LABELS, STATE_STYLES } from "./styles";
 import type { LegData } from "./types";
@@ -180,6 +181,19 @@ function StrategyMonitorCardImpl({
 
       {/* Body: state-driven copy */}
       <BodyContent spec={spec} signal={signal} info={info} formatTime={formatTime} tzLabel={tzLabel} gateSkipped={slGateFailing} />
+
+      {/* Multi-entry context — only rendered when this strategy has more
+          than one discrete entry time AND has an open position. The
+          LegDetailBlock that follows is the live re-entry preview; this
+          block tells the trader where their existing position came from
+          and whether the upcoming slot is a better entry. */}
+      {spec.entry_times.length > 1 && (
+        <ReentryContext
+          positions={(openPositions ?? []).filter((p) => p.strategy_name === spec.name)}
+          previewNetDebit={legData.netDebit}
+          entryDirection={spec.entry_direction}
+        />
+      )}
 
       {/* Leg detail — net debit header + 4-leg table + S/L footer.
           Shown for all active entry-day states (incl. passed_* so late-joiners
