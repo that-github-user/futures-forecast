@@ -157,6 +157,13 @@ export function DCEventsTab() {
                   <th style={thStyle}>Strategy</th>
                   <th style={thStyle}>Signal</th>
                   <th style={thStyle}>Outcome</th>
+                  <th
+                    scope="col"
+                    style={thStyle}
+                    title="Resolved strikes the daemon picked (post-deconflict-move). NULL when the resolve phase didn't run (blocked_strike, prechecks)."
+                  >
+                    Strikes
+                  </th>
                   <th style={thStyle}>Reason</th>
                   <th style={thStyle}>S/L</th>
                   <th style={thStyle}>Debit</th>
@@ -195,6 +202,9 @@ function EventRow({ event }: { event: DCSignalEvent }) {
         <OutcomeBadge outcome={event.outcome} />
         <MoveBadge event={event} />
       </td>
+      <td style={tdMono} title={resolvedStrikesTitle(event)}>
+        {formatResolvedStrikes(event)}
+      </td>
       <td style={{ ...tdStyle, color: colors.textSecondary, maxWidth: 360 }}>
         {event.outcome_reason ?? "—"}
       </td>
@@ -213,6 +223,45 @@ function EventRow({ event }: { event: DCSignalEvent }) {
       </td>
     </tr>
   );
+}
+
+/** "P7050 / C7280" when both strikes resolved, "P7050 / —" if only put,
+ *  "—" if neither (resolve phase didn't run). SPX strikes are integers;
+ *  toFixed(0) keeps the cell compact in the dense events table. */
+function formatResolvedStrikes(event: DCSignalEvent): string {
+  const p = event.resolved_put_strike;
+  const c = event.resolved_call_strike;
+  if (p == null && c == null) return "—";
+  const pStr = p != null ? `P${p.toFixed(0)}` : "—";
+  const cStr = c != null ? `C${c.toFixed(0)}` : "—";
+  return `${pStr} / ${cStr}`;
+}
+
+/** Tooltip for the Strikes cell. Returns "" (no tooltip) for the
+ *  common no-conflict case — the column header already explains
+ *  what the cell shows. Surfaces deconflict context only when an
+ *  auto-move actually fired (ideal vs. resolved differ).
+ *
+ *  `conflicting_strategy` is comma-joined when both legs conflict;
+ *  we render BOTH ideal sides independently rather than branching
+ *  put-vs-call so a dual-leg conflict doesn't shadow one side.
+ */
+function resolvedStrikesTitle(event: DCSignalEvent): string {
+  const p = event.resolved_put_strike;
+  const c = event.resolved_call_strike;
+  if (p == null && c == null) {
+    return "Resolved strikes — NULL when the resolve phase didn't run (blocked_strike, prechecks failed, or connect failure)";
+  }
+  if (!event.conflicting_strategy) return "";
+  const parts: string[] = [];
+  if (event.ideal_put_strike != null && p != null) {
+    parts.push(`ideal P${event.ideal_put_strike.toFixed(0)} → resolved P${p.toFixed(0)}`);
+  }
+  if (event.ideal_call_strike != null && c != null) {
+    parts.push(`ideal C${event.ideal_call_strike.toFixed(0)} → resolved C${c.toFixed(0)}`);
+  }
+  if (parts.length === 0) return "";
+  return `${parts.join(" · ")} (conflicted with ${event.conflicting_strategy})`;
 }
 
 

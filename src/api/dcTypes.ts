@@ -182,6 +182,16 @@ export interface DCSignalEvent {
   ideal_put_strike: number | null;
   ideal_call_strike: number | null;
   conflicting_strategy: string | null;
+  // Resolved strikes — the strikes the resolver actually picked, post-
+  // deconflict-move if any. Populated on every event that reached the
+  // resolve phase (entered + blocked_margin / blocked_order / etc).
+  // NULL only on blocked_strike or events that never reached the
+  // resolver (prechecks, connect failure). Distinct from ideal_*
+  // which records the FIRST-pass conflicted strike.
+  // Optional in case the daemon hasn't migrated yet — graceful
+  // degradation during cross-repo deploy ordering.
+  resolved_put_strike?: number | null;
+  resolved_call_strike?: number | null;
   // Which IV anchor the BS inverter used for this resolve cycle.
   // Null on pre-observability rows (schema migration didn't backfill)
   // and on pre-fetch event paths (blocked_signal, blocked_features,
