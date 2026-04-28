@@ -1,7 +1,7 @@
-/* RouteNav — minimal LUMEN nav strip, ~48px tall.
-   Italic-serif route links on the right, optional brand mark on the
-   left. Designed to dock above the terminal's headline strip and into
-   the DC dashboard's existing header. */
+/* RouteNav — minimal nav strip, ~48px tall, DC-style.
+   Inter sans route links + Inter 700 brand alpha. Docks above the
+   terminal's headline strip and into the DC dashboard's existing
+   header. */
 
 .route-nav {
   display: flex;
@@ -15,28 +15,30 @@
   font-weight: 300;
 }
 
-/* Brand mark mirrors the lander's exactly per spec §3.2 — same α
-   font-size + margin + bone-cream text-shadow halo so the visual
-   register feels continuous with the lander's gate when the user
-   navigates between gated surfaces. */
+/* Brand mark — Inter 700 alpha + small-caps wordmark. The lander
+   gate keeps its italic-serif lumen treatment; this strip uses
+   the DC theme's sans-grammar so the gated dashboards read as one
+   continuous visual register. */
 .route-nav-brand {
   font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--ink-100);
   display: inline-flex;
   align-items: baseline;
-  text-shadow: 0 0 9px rgba(245, 239, 226, 0.14);
+  font-family: var(--font-sans);
+  text-transform: uppercase;
 }
 .route-nav-brand .alpha {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  color: var(--lumen);
-  font-size: 19px;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-size: 16px;
   line-height: 1;
-  margin-right: 14px;
+  margin-right: 12px;
   vertical-align: middle;
   display: inline-block;
+  letter-spacing: 0;
 }
 
 /* Hamburger toggle — hidden on desktop, visible on phone tier.
@@ -97,18 +99,19 @@
 }
 .route-nav-item .sep {
   color: var(--ink-40);
-  margin: 0 12px;
-  font-family: var(--font-display);
-  font-size: 14px;
+  margin: 0 14px;
+  font-family: var(--font-sans);
+  font-size: 12px;
 }
 .route-nav-item a {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 16px;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 12px;
   color: var(--ink-60);
   text-decoration: none;
-  letter-spacing: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   transition: color 200ms ease;
 }
 .route-nav-item a:hover {
@@ -137,7 +140,7 @@
     font-size: 11px;
   }
   .route-nav-brand .alpha {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   /* Viewport-pinned via `position: fixed` so the toggle's placement is
@@ -201,7 +204,7 @@
     align-items: stretch;
     margin: 0;
     padding: 0;
-    background: var(--paper-deep);
+    background: var(--bg-panel);
     border-top: 1px solid var(--ink-40);
     border-bottom: 1px solid var(--ink-40);
     z-index: 99;
@@ -231,20 +234,19 @@
   }
   .route-nav-item a {
     display: block;
-    /* 16px vertical padding × 18px italic font ≈ 50px tap target,
+    /* 16px vertical padding × ~14px line-height ≈ 46px tap target,
        comfortably above iOS HIG 44px. */
     padding: 16px 18px;
-    font-size: 18px;
+    font-size: 14px;
+    letter-spacing: 0.14em;
     color: var(--ink-60);
   }
   .route-nav-item a.active {
     color: var(--ink-100);
     /* Leading-edge ink-100 hairline marks the active route in the
-       dropdown — the desktop strip uses color alone; in a vertical
-       stack the tiny indicator helps the eye land. Lumen is
-       forbidden for state cues per spec §2.1 (reserved for the
-       brand-thesis register only). */
-    box-shadow: inset 3px 0 0 var(--ink-100);
+       dropdown — desktop uses color alone; in a vertical stack the
+       indicator helps the eye land. */
+    box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
   @keyframes route-nav-fade-in {
