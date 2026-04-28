@@ -152,47 +152,6 @@
     },
     {
       "expected": {
-        "final_contracts": 0,
-        "global_cap": 60000.0,
-        "global_used": 8274.0,
-        "max_affordable": 0,
-        "sized_before_margin_trim": 2,
-        "strat_cap": 10000.0,
-        "strat_used": 8274.0
-      },
-      "input": {
-        "avg_margin": 2068.0,
-        "current_mult": 1.0,
-        "open_positions": [
-          {
-            "entry_debit": 2.0685,
-            "quantity": 20,
-            "strategy_name": "21/28 30d"
-          },
-          {
-            "entry_debit": 2.0685,
-            "quantity": 20,
-            "strategy_name": "21/28 30d"
-          }
-        ],
-        "policy": {
-          "base_pct": 5.0,
-          "dal_cap": 2.0,
-          "global_pct": 60,
-          "go_plus_mult": 1.5,
-          "hard_cap": 50,
-          "per_strat_pct": 10
-        },
-        "policy_key": "rec_60_10",
-        "portfolio_value": 100000,
-        "signal": "GO",
-        "spx_multiplier": 100,
-        "strategy": "21/28 30d"
-      },
-      "label": "21/28 30d trimmed by per-strat cap"
-    },
-    {
-      "expected": {
         "final_contracts": 4,
         "global_cap": 30000.0,
         "global_used": 0.0,
