@@ -97,6 +97,15 @@ describe("formatTimeSince", () => {
     expect(formatTimeSince(60)).toBe("1m ago");
     expect(formatTimeSince(5 * 60)).toBe("5m ago");
     expect(formatTimeSince(59 * 60)).toBe("59m ago");
+    // Boundary just below 1h — must stay in the minutes bucket.
+    expect(formatTimeSince(3599)).toBe("59m ago");
+  });
+
+  it("exact-bucket boundaries snap cleanly to the higher unit", () => {
+    // Catch off-by-ones at the exact tick: < vs <= flips would
+    // silently shift a "59m ago" into "0h 59m ago" or vice versa.
+    expect(formatTimeSince(3600)).toBe("1h ago");
+    expect(formatTimeSince(86400)).toBe("1d ago");
   });
 
   it("hours bucket prepends 'Xh' and includes minute remainder", () => {
