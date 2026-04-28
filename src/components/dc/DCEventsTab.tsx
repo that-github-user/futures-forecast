@@ -173,7 +173,7 @@ export function DCEventsTab() {
                     scope="col"
                     aria-label="IV anchor source — chain, vix, or default"
                     style={thStyle}
-                    title="IV anchor the BS inverter used for this resolve (chain = live sample, vix = fallback, default = cold-start)"
+                    title="IV anchor at THIS event's resolve attempt. Distinct from the live SL-poll badge (different cycles)."
                   >
                     IV
                   </th>
@@ -277,11 +277,14 @@ export function ivSourceCellStyle(source: DCSignalEvent["iv_source"]): React.CSS
 
 
 export function ivSourceTitle(source: DCSignalEvent["iv_source"]): string {
+  // Tight one-liners — internal nuance lives in the JSDoc on
+  // IVSourceBadge. Distinct from the live "Live IV" badge: this one
+  // is the entry-time anchor (at resolve), not the SL worker's poll.
   switch (source) {
-    case "chain":   return "Live chain-sampled ATM IV fed the BS inverter (good path).";
-    case "vix":     return "Fell back to VIX-scaled IV — chain sample failed. This was the pre-fix path that caused the 21/28 strike incident.";
-    case "default": return "Neither chain nor VIX available — hardcoded 20% default. Cold-start or feature-refresh failure.";
-    default:        return "Event fired before any resolve happened (blocked_signal / blocked_features / blocked_vix / blocked_canTrade) or predates iv_source tracking.";
+    case "chain":   return "Live chain-sampled ATM IV at resolve (good path).";
+    case "vix":     return "Fell back to VIX-scaled IV at resolve — pre-fix path that caused the 21/28 strike incident.";
+    case "default": return "Hardcoded 20% default at resolve — cold-start or feature-refresh failure.";
+    default:        return "Event fired before any resolve happened, or predates iv_source tracking.";
   }
 }
 

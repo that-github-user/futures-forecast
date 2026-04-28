@@ -189,41 +189,59 @@ function NetDebitHeader({
   );
 }
 
-/** Small indicator showing which IV anchor seeded the resolver's
- *  BS inverter this cycle. Green = chain (good), amber = vix
- *  (pre-fix fallback; silent fallbacks here caused the 21/28 strike
- *  incident), red = default (cold-start). Null renders nothing. */
+/** Small indicator showing which IV anchor seeded the **SL worker's**
+ *  BS inverter on its most recent ~60s poll. The "Live" prefix
+ *  contrasts with the *entry-time* IV recorded on signal_events
+ *  (Events tab). They can disagree — different cycles, different
+ *  cache states. The user-reported "we resorted to IV:VIX for the
+ *  21/28 today" was the badge showing vix from a stale poll while
+ *  the entry's audit row shows chain.
+ *
+ *  Renders a dim placeholder when source is null so the field is
+ *  visible/discoverable rather than silently absent.
+ *
+ *  Green = chain (good), amber = vix (transient at open is normal;
+ *  concern only if persistent), red = default (cold-start). */
 function IVSourceBadge({
   source,
 }: {
   source: "chain" | "vix" | "default" | null;
 }) {
-  if (source === null) return null;
   const { label, bg, border, color, title } = (() => {
     switch (source) {
       case "chain":
         return {
-          label: "IV chain",
+          label: "Live IV chain",
           bg: withAlpha(colors.accentGreen, 0.12),
           border: withAlpha(colors.accentGreen, 0.45),
           color: colors.accentGreen,
-          title: "BS inverter is using live chain-sampled ATM IV — the fix is engaged for this strategy.",
+          title: "Live SL-poll IV anchor; entry-time IV is on Events tab.",
         };
       case "vix":
         return {
-          label: "IV vix",
+          label: "Live IV vix",
           bg: withAlpha(colors.accentAmber, 0.14),
           border: withAlpha(colors.accentAmber, 0.45),
           color: colors.accentAmber,
-          title: "BS inverter fell back to VIX-scaled IV — the chain sample failed. Strikes may drift from market 20Δ; investigate if persistent.",
+          title:
+            "Live SL-poll fell back to VIX (transient at open is normal; check if persistent). " +
+            "Entry-time IV is on Events tab — they can differ.",
         };
       case "default":
         return {
-          label: "IV default",
+          label: "Live IV default",
           bg: withAlpha(colors.accentRed, 0.14),
           border: withAlpha(colors.accentRed, 0.45),
           color: colors.accentRed,
-          title: "BS inverter has neither a chain sample nor VIX — using hardcoded 20% default. Cold-start or feature-refresh failure.",
+          title: "Live SL-poll has no chain or VIX — using 20% default (cold-start).",
+        };
+      default:
+        return {
+          label: "Live IV —",
+          bg: "transparent",
+          border: withAlpha(colors.textMuted, 0.30),
+          color: colors.textMuted,
+          title: "SL worker hasn't polled this strategy yet.",
         };
     }
   })();
