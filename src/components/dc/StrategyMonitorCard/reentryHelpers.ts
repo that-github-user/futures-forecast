@@ -6,6 +6,17 @@
  * helper unit-testable without rendering React.
  */
 
+import { colors } from "../../../styles/tokens";
+
+/**
+ * Map an unrealized P&L number to its semantic color.
+ * Within ±$1 reads as muted (functionally flat — sub-tick noise).
+ */
+export function pnlColor(pnl: number): string {
+  if (Math.abs(pnl) < 1) return colors.textMuted;
+  return pnl > 0 ? colors.accentGreen : colors.accentRed;
+}
+
 /**
  * Classify a re-entry preview vs. the open position's paid debit.
  *
