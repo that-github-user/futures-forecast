@@ -5,23 +5,24 @@
  * AND has at least one open position. The card's existing LegDetailBlock
  * already shows the *current* resolver output (per the SL worker, which
  * keeps resolving for multi-entry strategies even after the first slot
- * has filled). This block contextualizes that — it tells the trader
- * "your existing position is from {earlier slot}, paid {entry_debit};
- * the legs you're looking at would be a re-entry at {next slot}."
+ * has filled). This block contextualizes that — it tells the trader:
  *
- * Plus a delta vs. the upcoming preview: if the live preview's net
- * debit is materially better than what we paid earlier, the trader
- * may want to consider closing the open position and letting the
- * later slot fire (the daemon won't re-enter while a position is
- * open — `blocked_duplicate`).
- *
- * Frontend-only feature: all data is already on the wire. No
- * backend changes needed.
+ *   1. "Your existing position is from {earlier slot}, paid {entry_debit};
+ *      the legs you're looking at would be a re-entry at {next slot}."
+ *   2. Live MTM on the open position — what the daemon would realize
+ *      closing it at mid right now (current_net_value × 100 vs entry_debit
+ *      × 100, scaled by quantity). Sourced from the broker_state sidecar's
+ *      per-leg mid quotes; null when any leg's mid hasn't populated.
+ *   3. Delta vs. the upcoming preview — if the live preview's net debit
+ *      is materially better than what we paid earlier, the trader may
+ *      want to consider closing the open position and letting the later
+ *      slot fire (the daemon won't re-enter while a position is open —
+ *      `blocked_duplicate`).
  */
 
 import { colors, fonts } from "../../../styles/tokens";
 import type { DCPosition } from "../../../api/dcTypes";
-import { classifyReentry } from "./reentryHelpers";
+import { classifyReentry, pnlColor } from "./reentryHelpers";
 
 interface Props {
   /** Open positions for THIS strategy only (caller filters by name). */
@@ -111,6 +112,43 @@ export function ReentryContext({ positions, previewNetDebit, entryDirection }: P
           </span>
         </span>
       </div>
+
+      {/* Live MTM row — only when the daemon's broker_state has populated
+          mids for all 4 legs. Tracks the position the trader holds RIGHT
+          NOW (not the upcoming-slot preview the row above shows). */}
+      {anchor.current_net_value != null && anchor.unrealized_pnl != null && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: 8,
+            paddingTop: 2,
+            borderTop: `1px dashed ${colors.borderDim}`,
+          }}
+        >
+          <span style={{ color: colors.textMuted }}>
+            MTM{" "}
+            <span style={{ color: colors.textPrimary }}>
+              ${anchor.current_net_value.toFixed(2)}
+            </span>
+          </span>
+          <span style={{ color: pnlColor(anchor.unrealized_pnl), whiteSpace: "nowrap" }}>
+            {anchor.unrealized_pnl >= 0 ? "+" : ""}
+            {/* Pin to en-US so a viewer with a comma-decimal locale
+                doesn't see "$1.234 unrealized" for $1234. */}
+            ${Math.round(anchor.unrealized_pnl).toLocaleString("en-US")} unrealized
+            {paidDebit > 0 && anchor.quantity > 0 && (
+              /* Per-contract pct, NOT scaled by quantity — a 1-contract
+                 −20% and a 5-contract −20% are the same trade thesis;
+                 the dollar figure already conveys total exposure. */
+              <span style={{ marginLeft: 4, color: pnlColor(anchor.unrealized_pnl) }}>
+                ({(((anchor.current_net_value - paidDebit) / paidDebit) * 100).toFixed(1)}%)
+              </span>
+            )}
+          </span>
+        </div>
+      )}
 
       {delta != null && deltaPct != null && (
         <div style={{ display: "flex", justifyContent: "flex-end", color: deltaColor }}>

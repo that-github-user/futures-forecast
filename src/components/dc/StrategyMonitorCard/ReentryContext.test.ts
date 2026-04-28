@@ -1,7 +1,8 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
-import { classifyReentry } from "./reentryHelpers";
+import { classifyReentry, pnlColor } from "./reentryHelpers";
+import { colors } from "../../../styles/tokens";
 
 // Pinning the debit-vs-credit direction flip — the load-bearing semantic
 // of the multi-entry re-entry preview. A naive refactor that always
@@ -51,5 +52,36 @@ describe("classifyReentry", () => {
     it("Infinity preview returns null", () => {
       expect(classifyReentry(5.10, Infinity, "debit")).toBeNull();
     });
+  });
+});
+
+describe("pnlColor", () => {
+  it("positive P&L reads as accent-green (in profit)", () => {
+    expect(pnlColor(150)).toBe(colors.accentGreen);
+    expect(pnlColor(1.5)).toBe(colors.accentGreen);
+  });
+
+  it("negative P&L reads as accent-red (loss)", () => {
+    expect(pnlColor(-150)).toBe(colors.accentRed);
+    expect(pnlColor(-1.5)).toBe(colors.accentRed);
+  });
+
+  it("near-zero P&L reads as muted (functionally flat)", () => {
+    // Within $1 of breakeven — sub-tick noise on a DC. Don't paint it
+    // as a directional move.
+    expect(pnlColor(0)).toBe(colors.textMuted);
+    expect(pnlColor(0.5)).toBe(colors.textMuted);
+    expect(pnlColor(-0.99)).toBe(colors.textMuted);
+  });
+
+  it("NaN / Infinity defensively read as muted, not a direction", () => {
+    // A silently wrong color is worse than no color. Catches the
+    // failure mode where a daemon bug ships NaN through the API
+    // (e.g. division by zero) — the dashboard would otherwise paint
+    // it red because Math.abs(NaN) < 1 is false and NaN > 0 is also
+    // false, defaulting to red.
+    expect(pnlColor(NaN)).toBe(colors.textMuted);
+    expect(pnlColor(Infinity)).toBe(colors.textMuted);
+    expect(pnlColor(-Infinity)).toBe(colors.textMuted);
   });
 });

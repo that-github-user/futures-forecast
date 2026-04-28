@@ -54,6 +54,21 @@ export interface DCPosition {
   //   null        → drift computed cleanly, OR sidecar missing
   // Used by the tooltip to distinguish the two null-drift cases.
   drift_reason: "legacy" | "unmatched" | null;
+  // Live mark-to-market on the open spread, reconstructed from per-leg
+  // mid quotes in the broker_state sidecar. `current_net_value` is the
+  // per-contract value of the 4-leg structure RIGHT NOW (back_put_mid
+  // + back_call_mid − front_put_mid − front_call_mid), in dollars per
+  // contract. `unrealized_pnl` is (current_net_value − entry_debit)
+  // × quantity × 100 — the running $ P&L the daemon would realize
+  // closing the position at mid this instant. Both fields are null
+  // when any leg's mid is missing (illiquid strikes, market-data
+  // farm down, after-hours), or when the position is a legacy row
+  // without conids. Refreshes on the broker_state cadence (1 minute
+  // during RTH).
+  // Optional in case the daemon hasn't migrated yet — graceful
+  // degradation during cross-repo deploy ordering.
+  current_net_value?: number | null;
+  unrealized_pnl?: number | null;
 }
 
 export interface DCTrade {
