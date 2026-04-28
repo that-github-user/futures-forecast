@@ -85,8 +85,8 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                   <tr key={p.id}>
                     <td style={tdStyle}>{p.strategy_name}</td>
                     <td style={tdStyle}><SignalBadge signal={p.signal} /></td>
-                    <td style={tdStyle} title={`${formatPositionDateTime(p.entry_time)} ${tzLabel}`}>
-                      {formatPositionDateTime(p.entry_time)}
+                    <td style={tdStyle} title={`Rendered: ${formatPositionDateTime(p.entry_time)} ${tzLabel} • Raw broker timestamp: ${p.entry_time}`}>
+                      {formatPositionDateTime(p.entry_time)} <span style={{ color: colors.textMuted }}>{tzLabel}</span>
                     </td>
                     <td style={tdMono}>{p.put_strike}</td>
                     <td style={tdMono}>{p.call_strike}</td>

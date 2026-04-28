@@ -9,6 +9,7 @@ import { colors, fonts, withAlpha } from "../../../styles/tokens";
 import type { DCLegDetail, LegName } from "../../../api/dcTypes";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import { formatExpiry } from "../../../lib/dcLifecycle";
+import { useTimezone } from "../../../hooks/useTimezone";
 import { roundToSpxTick, roundToSpyTick } from "../../../lib/spxTick";
 import type { LegData } from "./types";
 
@@ -108,8 +109,22 @@ function NetDebitHeader({
   ivSource: "chain" | "vix" | "default" | null;
   entryDirection: "debit" | "credit";
 }) {
+  const { formatPositionDateTime, tzLabel } = useTimezone();
   const isCredit = entryDirection === "credit";
   const label = isCredit ? "Net Credit" : "Net Debit";
+
+  // Format the entry time in the user's selected timezone. Some
+  // older API responses send a pre-formatted "HH:MM" ET string
+  // (no date / no Z); ISO timestamps go through the formatter and
+  // come back as "Apr 27, 09:45". Bare HH:MM strings fail Date.parse
+  // and pass through unchanged so we don't break the historical
+  // shape — the upstream API is being migrated to ISO UTC, so this
+  // fallback exists for the transition window.
+  const formattedSnapshotTime = (() => {
+    if (!snapshotTime) return null;
+    if (Number.isNaN(new Date(snapshotTime).getTime())) return snapshotTime;
+    return formatPositionDateTime(snapshotTime);
+  })();
 
   if (netDebit == null) {
     // Review N1: after a daemon restart the SL worker resolves legs
@@ -161,8 +176,11 @@ function NetDebitHeader({
         ${netDebit.toFixed(2)}
       </div>
       {hasSnapshot && (
-        <div style={{ fontSize: 10, color: colors.textMuted, display: "flex", alignItems: "baseline", gap: 4 }}>
-          <span>entry {snapshotTime} ${entryNetDebit!.toFixed(2)}</span>
+        <div
+          style={{ fontSize: 10, color: colors.textMuted, display: "flex", alignItems: "baseline", gap: 4 }}
+          title={`Entry recorded at ${snapshotTime} (raw broker timestamp); rendered in ${tzLabel}`}
+        >
+          <span>entry {formattedSnapshotTime} {tzLabel} ${entryNetDebit!.toFixed(2)}</span>
           <span style={{ color: deltaColor, fontWeight: 700 }}>({deltaStr})</span>
         </div>
       )}
