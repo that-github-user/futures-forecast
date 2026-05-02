@@ -54,6 +54,14 @@ import { useTick } from "../../hooks/useTick";
  *  TICK is a public market-wide figure. */
 const TICK_THRESHOLD = 1000;
 
+/** Number of consecutive same-direction ±1000 prints required to fire
+ *  the TICK persistent advisory. Single ±1000 prints are common and
+ *  noisy — sustained 3+ consecutive prints in the same direction is
+ *  trader-vocabulary "real institutional pressure," not a single
+ *  algo's program. Fired exactly once per streak (transition from
+ *  count=2 → count=3); does not repeat-fire as the streak extends. */
+const TICK_PERSISTENT_THRESHOLD = 3;
+
 /** Newest-first cap on the rendered list. §4.3 calls for "no load
  *  more — if it scrolled off, it's gone." Ten visible entries fit
  *  the 280px sidebar at the design's 13px Berkeley Mono / 1.5
@@ -150,6 +158,25 @@ function tickEvent(value: number, now: number, idCounter: number): FeedEvent {
     importance: "high",
     subject: "TICK",
     body: `Print of ${sign}${mag} indicates institutional program execution.`,
+  };
+}
+
+function tickPersistentEvent(
+  streakLen: number,
+  sign: 1 | -1,
+  now: number,
+  idCounter: number,
+): FeedEvent {
+  const direction = sign > 0 ? "+1000+" : "−1000+";
+  return {
+    id: `${now}-tick-persistent-${idCounter}`,
+    timestamp: now,
+    kind: "tick",
+    importance: "high",
+    subject: "TICK",
+    body: `${streakLen} consecutive ${direction} prints — sustained ${
+      sign > 0 ? "buying" : "selling"
+    } pressure beyond a single program.`,
   };
 }
 
@@ -272,6 +299,20 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   // and rationale.
   const cooldownRef = useRef<Map<string, number>>(new Map());
 
+  // TICK persistent advisory state — tracks consecutive same-direction
+  // ±TICK_THRESHOLD prints. Resets when a print drops below the
+  // threshold or flips sign. Fires once when the streak reaches
+  // TICK_PERSISTENT_THRESHOLD (transition from below → at), does NOT
+  // repeat-fire as the streak extends further. Counted on snapshot
+  // diffs (so each snapshot's tick value contributes at most one
+  // increment); cycles where breadth.tick is null leave the streak
+  // unchanged rather than resetting — a single missed snapshot during
+  // a real streak shouldn't break the count.
+  const tickStreakRef = useRef<{ length: number; sign: 1 | -1 | 0 }>({
+    length: 0,
+    sign: 0,
+  });
+
   /** Returns true and records the emit if the (kind, key) pair is
    *  outside its cooldown window; false otherwise. Mutates
    *  cooldownRef as a side-effect when emitting is permitted.
@@ -306,6 +347,39 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // Cooldown=0 by design; cross-threshold semantics handle dedupe.
     if (tickCrossedThreshold(prev.breadth.tick, data.breadth.tick)) {
       newEvents.push(tickEvent(data.breadth.tick!, now, idCounterRef.current++));
+    }
+
+    // TICK persistent advisory — sustained same-direction ±1000 prints.
+    // Tracks a streak counter across snapshot polls; fires once when
+    // the streak reaches TICK_PERSISTENT_THRESHOLD. Streak resets when
+    // a print drops below threshold or flips sign. Null TICK leaves the
+    // streak unchanged — a single missed snapshot shouldn't break a
+    // real run.
+    const tickNow = data.breadth.tick;
+    if (tickNow != null) {
+      const tickSign: 1 | -1 | 0 =
+        Math.abs(tickNow) >= TICK_THRESHOLD ? (tickNow >= 0 ? 1 : -1) : 0;
+      const streak = tickStreakRef.current;
+      if (tickSign === 0) {
+        // Below threshold — break the streak.
+        streak.length = 0;
+        streak.sign = 0;
+      } else if (tickSign === streak.sign) {
+        // Same direction — extend.
+        streak.length += 1;
+      } else {
+        // Sign flip OR fresh streak — reset to 1.
+        streak.length = 1;
+        streak.sign = tickSign;
+      }
+      // Fire on the exact transition into TICK_PERSISTENT_THRESHOLD,
+      // not on every cycle while at-or-above. Strict equality so the
+      // 4th, 5th, ... consecutive prints don't re-emit.
+      if (streak.length === TICK_PERSISTENT_THRESHOLD && streak.sign !== 0) {
+        newEvents.push(
+          tickPersistentEvent(streak.length, streak.sign, now, idCounterRef.current++),
+        );
+      }
     }
 
     // CREDIT — HYG/LQD lead signal transition. Cooldown keys on the
