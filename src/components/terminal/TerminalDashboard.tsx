@@ -623,11 +623,53 @@ function CardScore({ value }: { value: number | null }) {
     ? `${value! >= 0 ? "+" : ""}${value!.toFixed(1)}`
     : "—";
   const cls = has ? (value! > 0 ? "pos" : value! < 0 ? "neg" : "zero") : "placeholder";
+
+  // Trend glyph in the slot where spec §4.4's denominator used to live.
+  // The original quantitative sketch (main-page-redesign-sketch.md, line 99)
+  // intended the denom to be the per-system max — which is exactly the
+  // weight the privacy carve-out (PR ζ, 2026-04-25) keeps off the public
+  // bundle. Displaying a per-system trend signal honors §4.4's two-glyph
+  // grammar without leaking weights.
+  //
+  // Deadband: tied to displayed precision (one decimal). The glyph fires
+  // only when the rendered value would actually change — `+1.24 → +1.27`
+  // both display as "+1.2" and produce a flat trend; `+1.24 → +1.31`
+  // crosses the digit boundary and produces ▲. Keeps the glyph from
+  // jittering on sub-display-precision noise.
+  //
+  // Per-instance useRef: each <CardScore> in the JSX tree gets its own
+  // hook state, so the 5 input scorecards each remember their own prior
+  // value without needing a system-key prop.
+  const prevDisplayedRef = useRef<number | null>(null);
+  let trend: "up" | "down" | "flat" = "flat";
+  if (has && prevDisplayedRef.current != null) {
+    const cur = Math.round(value! * 10);
+    const prev = prevDisplayedRef.current;
+    if (cur > prev) trend = "up";
+    else if (cur < prev) trend = "down";
+  }
+  useEffect(() => {
+    if (has) prevDisplayedRef.current = Math.round(value! * 10);
+  }, [has, value]);
+
+  // First render (prev null) and unchanged-value renders both produce
+  // a `flat` trend. Render the glyph slot only when there's a real
+  // ▲ or ▼ to show — flat reads cleaner as a single number than as
+  // "+1.2 ·" with a dot.
+  const glyph = trend === "up" ? "▲" : trend === "down" ? "▼" : null;
+
   return (
     <div className="terminal-card-score">
       <span className={`num ${cls}`}>{display}</span>
-      <span className="slash">⁄</span>
-      <span className="denom">—</span>
+      {glyph && (
+        <span
+          className={`trend ${trend}`}
+          aria-label={trend === "up" ? "score rising" : "score falling"}
+          title={trend === "up" ? "Score rose since last cycle" : "Score fell since last cycle"}
+        >
+          {glyph}
+        </span>
+      )}
     </div>
   );
 }
