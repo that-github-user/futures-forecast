@@ -234,9 +234,11 @@ function OverridesSection({
             score normally.
           </p>
           <p className="terminal-overrides-help-list">
-            Conditions: gamma-flip lost · weekly VWAP lost ·
-            backwardation · VIX spike. When one fires, the score
-            dims and the flag appears in the body of this row.
+            Conditions: weekly VWAP lost · backwardation · VIX spike ·
+            credit divergence. (Gamma flip lost ships when the GEX
+            feed lands — currently deferred.) Each condition requires
+            sustained breach (multi-minute confirm) before firing —
+            single-snapshot grazes don't dim the score.
           </p>
         </div>
       )}

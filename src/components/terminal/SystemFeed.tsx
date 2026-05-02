@@ -169,19 +169,38 @@ function creditEvent(
   };
 }
 
+/** Reformat backend kebab-case override names into trader vocabulary
+ *  for the System Feed body. The backend emits names like
+ *  `weekly-vwap-lost` for stable serialization + dashboard de-dup
+ *  (see SynthesizerResponse.overrides), but raw kebab-case reads
+ *  technical in operator copy. Map dash → space and uppercase the
+ *  acronyms VWAP / VIX / GEX so the rendered body reads "weekly
+ *  VWAP lost firing." instead of "weekly-vwap-lost firing."
+ *
+ *  Unknown names pass through with kebab→space only — better to ship
+ *  ungainly text for a future override than to drop it silently. */
+const _ACRONYMS = new Set(["vwap", "vix", "gex", "spx", "spy"]);
+function formatOverrideName(raw: string): string {
+  return raw
+    .split("-")
+    .map((word) => (_ACRONYMS.has(word) ? word.toUpperCase() : word))
+    .join(" ");
+}
+
 function overrideEvent(
   override: string,
   fired: boolean,
   now: number,
   idCounter: number,
 ): FeedEvent {
+  const pretty = formatOverrideName(override);
   return {
     id: `${now}-override-${fired ? "fire" : "clear"}-${idCounter}`,
     timestamp: now,
     kind: "override",
     importance: "high",
     subject: "OVERRIDE",
-    body: fired ? `${override} firing.` : `${override} cleared.`,
+    body: fired ? `${pretty} firing.` : `${pretty} cleared.`,
   };
 }
 
