@@ -36,6 +36,7 @@ const TZ_OPTIONS: TZOption[] = ["ET", "CT", "MT", "PT", "local"];
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h"];
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
+import { SystemFeed } from "./SystemFeed";
 import "./TerminalDashboard.css";
 
 const SYSTEM_LABELS = {
@@ -302,10 +303,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           tzLabel={tzLabel}
         />
       </div>
-      <aside className="terminal-feed">
-        <div className="terminal-feed-title">System Feed</div>
-        <div className="terminal-feed-empty">Awaiting events.</div>
-      </aside>
+      <SystemFeed data={data} />
     </section>
   );
 }

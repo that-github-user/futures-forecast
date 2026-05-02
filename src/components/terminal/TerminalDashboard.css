@@ -484,6 +484,97 @@
   padding-top: 8px;
 }
 
+/* Event list (spec §4.3). Newest entry at top; older entries fade
+   their type color over ~5 minutes via .fresh / .stale / .faded
+   classes computed in JS from event timestamp. The fade cue is what
+   sells "rolling event log" — without it the list reads as static. */
+.terminal-feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  /* Match the parent's existing scroll-hidden vibe: no visible
+     scrollbar chrome, but allow scroll-through if MAX_EVENTS exceeds
+     the sidebar height (won't happen at MAX_EVENTS=12 / typical
+     viewport but stays graceful at smaller heights). */
+  scrollbar-width: thin;
+}
+.terminal-feed-event {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  /* Subtle entrance: opacity-only fade-in. Spec §4.3 calls for a
+     hairline drawing across + text fade — saving the hairline for a
+     polish pass once the data layer is proven; opacity alone reads
+     as "new" without competing with the score sparkline pulse. */
+  animation: feed-event-enter 250ms ease-out;
+}
+@keyframes feed-event-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.feed-time {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-60);
+  font-variant-numeric: tabular-nums;
+}
+.feed-pulse {
+  font-size: 10px;
+  line-height: 1;
+}
+.feed-pulse.importance-high   { color: var(--ink-100); }
+.feed-pulse.importance-medium { color: var(--ink-60); }
+.feed-pulse.importance-low    { color: var(--ink-40); }
+.feed-subject {
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  color: var(--ink-100);
+  font-weight: 400;
+  /* Subject sits on its own line above the body for readability;
+     grid-column override puts it on the same row as time/pulse and
+     the body wraps below. */
+  grid-column: 3 / 4;
+}
+.feed-body {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--ink-100);
+  /* Slight indent under the time column so body lines visually
+     belong to the entry above them. */
+  padding-left: 26px;
+}
+/* Override hue: persimmon to match the override-firing visual
+   semaphore on the headline strip (§4.1.1). Pulls the eye to risk
+   flags above other event types. */
+.terminal-feed-event.override .feed-subject,
+.terminal-feed-event.override .feed-pulse {
+  color: var(--neg-persimmon);
+}
+/* Fade-from-memory (spec §4.3 "the feed *literally* fades from
+   memory"). Each tier dims body + subject one step. */
+.terminal-feed-event.stale {
+  opacity: 0.7;
+}
+.terminal-feed-event.stale .feed-body,
+.terminal-feed-event.stale .feed-subject {
+  color: var(--ink-60);
+}
+.terminal-feed-event.faded {
+  opacity: 0.45;
+}
+.terminal-feed-event.faded .feed-body,
+.terminal-feed-event.faded .feed-subject {
+  color: var(--ink-40);
+}
+
 /* ── Scorecard grid ────────────────────────────────────────── */
 .terminal-cards {
   display: grid;
