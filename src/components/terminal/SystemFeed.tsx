@@ -124,14 +124,20 @@ const PULSE_MARK: Record<EventImportance, string> = {
 
 // ─── Detection helpers ───────────────────────────────────────────────
 
-/** Two-sample crossing test for the TICK threshold. Fires when the
- *  new value's magnitude is ≥ threshold AND the prior was below.
- *  Avoids the "stays above threshold" → repeat-fire-every-cycle case. */
+/** Two-sample crossing test for the TICK threshold. Fires when:
+ *    - magnitude crosses from below to ≥ threshold, OR
+ *    - sign flips while still extreme (prev=+1050, cur=−1100 — an
+ *      institutional program reversing direction is at least as
+ *      newsworthy as a fresh program; the cross-only gate would
+ *      have suppressed this case).
+ *  Avoids the "stays above threshold same direction" → repeat-fire
+ *  case. */
 function tickCrossedThreshold(prev: number | null, cur: number | null): boolean {
   if (cur == null) return false;
   if (Math.abs(cur) < TICK_THRESHOLD) return false;
   if (prev == null) return false;  // first-cycle suppression
-  return Math.abs(prev) < TICK_THRESHOLD;
+  if (Math.abs(prev) < TICK_THRESHOLD) return true;  // crossed up from below
+  return Math.sign(prev) !== Math.sign(cur);  // sign-flip while extreme
 }
 
 function tickEvent(value: number, now: number, idCounter: number): FeedEvent {
@@ -249,7 +255,15 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
 
   /** Returns true and records the emit if the (kind, key) pair is
    *  outside its cooldown window; false otherwise. Mutates
-   *  cooldownRef as a side-effect when emitting is permitted. */
+   *  cooldownRef as a side-effect when emitting is permitted.
+   *
+   *  Contract: call EXACTLY ONCE per (kind, key) per detection pass.
+   *  A second call with the same args within one pass would see
+   *  `now - last < window` (window is non-zero) and return false,
+   *  silently dropping the event. The current detection code uses
+   *  each tryEmit invocation as the inline gate of an `if (...)`
+   *  branch — single-call by construction. Refactors that extract
+   *  the call into a separate guard need to preserve this. */
   const tryEmit = (kind: EventKind, key: string, now: number): boolean => {
     const window = COOLDOWN_MS[kind];
     if (window === 0) return true;
@@ -355,9 +369,13 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // Deferred indefinitely pending subscription.
 
     if (newEvents.length > 0) {
+      // Newest first, bounded to MAX_EVENTS. Within a single cycle
+      // events are kept in detection order (TICK first → BIAS last)
+      // — TICK is the highest-importance event class, so detection
+      // order naturally puts the most-newsworthy item at the top of
+      // the cycle's block.
       setEvents((prevList) =>
-        // Newest first, bounded to MAX_EVENTS.
-        [...newEvents.reverse(), ...prevList].slice(0, MAX_EVENTS),
+        [...newEvents, ...prevList].slice(0, MAX_EVENTS),
       );
     }
   }, [data]);
@@ -381,9 +399,18 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
             <li
               key={ev.id}
               className={`terminal-feed-event ${ev.kind} ${ageClass(age)}`}
+              aria-label={`${ev.importance} importance, ${ev.subject}: ${ev.body}`}
             >
               <span className="feed-time">{formatTimestamp(ev.timestamp)}</span>
-              <span className={`feed-pulse importance-${ev.importance}`}>
+              {/* Pulse marks are decorative carriers of `importance`.
+                  Screen readers would otherwise announce "black
+                  circle" / "white circle" / "horizontal bar" with no
+                  context — the importance is on the <li>'s aria-label
+                  instead. */}
+              <span
+                className={`feed-pulse importance-${ev.importance}`}
+                aria-hidden="true"
+              >
                 {PULSE_MARK[ev.importance]}
               </span>
               <span className="feed-subject">{ev.subject}</span>
