@@ -127,11 +127,78 @@ function NetDebitHeader({
   })();
 
   if (netDebit == null) {
-    // Review N1: after a daemon restart the SL worker resolves legs
-    // (ivSource populated) before the first ratio poll produces
-    // netDebit. Render a minimal header anyway so the IV-anchor
-    // badge is visible during that window — exactly when an operator
-    // may be watching for the fix to engage after a restart.
+    // Live mid unavailable (post-close, broker disconnected, SL poll
+    // not yet run after restart, …). When we *do* have an entry-time
+    // snapshot, prefer that: stagnant cards (passed_will_fire /
+    // passed_skipped / closed) used to drop to "--" once quotes stopped
+    // flowing, losing the locked-in debit even though the daemon had
+    // it captured. Rendering the snapshot keeps the entry price on the
+    // card all session — explicitly tagged "@ entry" so the viewer
+    // knows it's a frozen value, not live.
+    if (entryNetDebit != null) {
+      // Stagnant render. Visual choices (per #120 review):
+      //   - Price uses textSecondary (not textPrimary). The same big-
+      //     bold slot means LIVE mid in the normal path; dimming it
+      //     here de-ranks the headline so a glance distinguishes
+      //     stagnant cards from live cards on a wall.
+      //   - LOCKED badge uses neutral muted ink, not accentGreen.
+      //     Project-wide green = "good / live / pass" (IVSourceBadge
+      //     chain, STO action, favorable P/L). A green badge here
+      //     would read as a P/L positive cue when the meaning is
+      //     "frozen value, not live."
+      //   - Label is "LOCKED" (no `@`) to match the already-existing
+      //     vocabulary in ProfitTargetLine (`statusLabel = "locked"`).
+      //     Mixed-glyph "@ ENTRY" rendered like a typo at speed.
+      const lockedSnapshotTitle = snapshotTime
+        ? `Entry recorded at ${snapshotTime} (raw broker timestamp); rendered in ${tzLabel}. Live mid not available right now.`
+        : `Entry snapshot captured at the entry-time window; rendered in ${tzLabel}. Live mid not available right now.`;
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 10,
+            flexWrap: "wrap",
+            fontFamily: fonts.mono,
+          }}
+        >
+          <div style={{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
+            {label}
+          </div>
+          <div
+            style={{ fontSize: 17, fontWeight: 700, color: colors.textSecondary }}
+            title={lockedSnapshotTitle}
+          >
+            ${entryNetDebit.toFixed(2)}
+          </div>
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: colors.textMuted,
+              background: colors.bgInset,
+              border: `1px solid ${colors.borderDim}`,
+              padding: "1px 5px",
+              borderRadius: 4,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+              fontFamily: fonts.sans,
+            }}
+          >
+            Locked
+          </span>
+          {formattedSnapshotTime && (
+            <span style={{ fontSize: 10, color: colors.textMuted }}>
+              {formattedSnapshotTime} {tzLabel}
+            </span>
+          )}
+          <IVSourceBadge source={ivSource} />
+        </div>
+      );
+    }
+    // No live mid AND no snapshot — nothing to show beyond the IV badge
+    // (which still tells the operator whether the SL worker has resolved
+    // the legs at all yet, useful right after a daemon restart).
     return (
       <div style={{ display: "flex", alignItems: "baseline", gap: 10,
                     fontSize: 12, color: colors.textMuted,

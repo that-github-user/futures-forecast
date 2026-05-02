@@ -197,6 +197,7 @@ function StrategyMonitorCardImpl({
           positions={(openPositions ?? []).filter((p) => p.strategy_name === spec.name)}
           previewNetDebit={legData.netDebit}
           entryDirection={spec.entry_direction}
+          formatTime={formatTime}
         />
       )}
 
