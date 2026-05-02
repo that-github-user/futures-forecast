@@ -48,17 +48,28 @@ interface Props {
   previewNetDebit: number | null;
   /** Strategy's entry direction — drives delta-coloring. */
   entryDirection: "debit" | "credit";
+  /** Same `formatTime` the parent card uses for footer entry-times.
+   *  Converts an ET HH:MM string into the user's selected timezone so
+   *  the "Open from HH:MM" label respects the TZ picker instead of
+   *  always showing raw ET digits under a PT/CT label. */
+  formatTime: (hhmmET: string | null) => string;
 }
 
-function formatEntryClock(isoEntryTime: string | null): string {
+function formatEntryClock(
+  isoEntryTime: string | null,
+  formatTime: (hhmmET: string | null) => string,
+): string {
   if (!isoEntryTime) return "—";
-  // entry_time is ISO ET; render HH:MM only.
+  // entry_time is ISO ET; pull HH:MM and route through formatTime so
+  // the user's selected TZ (PT/CT/MT/ET) is honored — the raw ET
+  // extract was a bug visible at #/dc when a non-ET TZ was selected.
   const t = isoEntryTime.includes("T") ? isoEntryTime.split("T")[1] : isoEntryTime;
   const hhmm = t.slice(0, 5);
-  return hhmm || "—";
+  if (!hhmm) return "—";
+  return formatTime(hhmm);
 }
 
-export function ReentryContext({ positions, previewNetDebit, entryDirection }: Props) {
+export function ReentryContext({ positions, previewNetDebit, entryDirection, formatTime }: Props) {
   if (positions.length === 0) return null;
 
   // Pick the earliest still-open position as the anchor — the multi-entry
@@ -105,7 +116,7 @@ export function ReentryContext({ positions, previewNetDebit, entryDirection }: P
             fontFamily: fonts.sans,
           }}
         >
-          Open from {formatEntryClock(anchor.entry_time)} · Re-entry preview
+          Open from {formatEntryClock(anchor.entry_time, formatTime)} · Re-entry preview
         </span>
         <span style={{ color: colors.textMuted, fontSize: 10 }}>
           ×{anchor.quantity}<TimeSinceEntry iso={anchor.entry_time} />
