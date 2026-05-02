@@ -136,6 +136,22 @@ function NetDebitHeader({
     // card all session — explicitly tagged "@ entry" so the viewer
     // knows it's a frozen value, not live.
     if (entryNetDebit != null) {
+      // Stagnant render. Visual choices (per #120 review):
+      //   - Price uses textSecondary (not textPrimary). The same big-
+      //     bold slot means LIVE mid in the normal path; dimming it
+      //     here de-ranks the headline so a glance distinguishes
+      //     stagnant cards from live cards on a wall.
+      //   - LOCKED badge uses neutral muted ink, not accentGreen.
+      //     Project-wide green = "good / live / pass" (IVSourceBadge
+      //     chain, STO action, favorable P/L). A green badge here
+      //     would read as a P/L positive cue when the meaning is
+      //     "frozen value, not live."
+      //   - Label is "LOCKED" (no `@`) to match the already-existing
+      //     vocabulary in ProfitTargetLine (`statusLabel = "locked"`).
+      //     Mixed-glyph "@ ENTRY" rendered like a typo at speed.
+      const lockedSnapshotTitle = snapshotTime
+        ? `Entry recorded at ${snapshotTime} (raw broker timestamp); rendered in ${tzLabel}. Live mid not available right now.`
+        : `Entry snapshot captured at the entry-time window; rendered in ${tzLabel}. Live mid not available right now.`;
       return (
         <div
           style={{
@@ -150,8 +166,8 @@ function NetDebitHeader({
             {label}
           </div>
           <div
-            style={{ fontSize: 17, fontWeight: 700, color: colors.textPrimary }}
-            title={`Entry recorded at ${snapshotTime} (raw broker timestamp); rendered in ${tzLabel}. Live mid not available right now.`}
+            style={{ fontSize: 17, fontWeight: 700, color: colors.textSecondary }}
+            title={lockedSnapshotTitle}
           >
             ${entryNetDebit.toFixed(2)}
           </div>
@@ -159,9 +175,9 @@ function NetDebitHeader({
             style={{
               fontSize: 9,
               fontWeight: 700,
-              color: colors.accentGreen,
-              background: colors.accentGreen + "18",
-              border: `1px solid ${colors.accentGreen}40`,
+              color: colors.textMuted,
+              background: colors.bgInset,
+              border: `1px solid ${colors.borderDim}`,
               padding: "1px 5px",
               borderRadius: 4,
               letterSpacing: 0.5,
@@ -169,7 +185,7 @@ function NetDebitHeader({
               fontFamily: fonts.sans,
             }}
           >
-            @ entry
+            Locked
           </span>
           {formattedSnapshotTime && (
             <span style={{ fontSize: 10, color: colors.textMuted }}>
