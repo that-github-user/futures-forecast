@@ -131,7 +131,7 @@ function StrategyMonitorCardImpl({
         gap: 10,
       }}
     >
-      {/* Header: name + signal badge + state chip */}
+      {/* Header: name + signal badge + (optional UNGATED pill) + state chip */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span
@@ -145,6 +145,37 @@ function StrategyMonitorCardImpl({
             {spec.name}
           </span>
           <SignalBadge signal={signal} />
+          {/* UNGATED pill — informational/structural cue that this
+              strategy bypasses the regime gate by design (SPY shorts +
+              straddles). Same height as the state chip but lower-
+              saturation muted color so it reads as descriptive, NOT a
+              live state. Tooltip is operator-actionable (what this
+              means RIGHT NOW), not historical rationale; the design
+              backstory lives in dcTypes.ts's gate_mode comment.
+              role/aria-label match the project's existing
+              non-text-status pattern (see IVSourceBadge in
+              LegDetailBlock.tsx). */}
+          {spec.gate_mode === "ungated" && (
+            <span
+              role="img"
+              aria-label="Ungated strategy — no regime gate"
+              title="By design — no regime gate. Always fires on entry day; never reaches GO+."
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: colors.textMuted,
+                border: `1px solid ${colors.borderDim}`,
+                background: colors.bgInset,
+                padding: "2px 6px",
+                borderRadius: 6,
+                fontFamily: fonts.sans,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+              }}
+            >
+              Ungated
+            </span>
+          )}
         </div>
         <span
           style={{

@@ -311,6 +311,19 @@ export interface DCStrategySpec {
   // 'debit' = we pay premium (DCs); 'credit' = we collect premium (SPY short
   // puts, straddles). Drives net-mark header coloring and profit-target math.
   entry_direction: "debit" | "credit";
+  // Which gate the daemon's signal evaluator applies to this strategy:
+  //   "ensemble" — Weighted fold_top3_OR ∨ BMA top3 unanimous (DC default).
+  //                Can reach GO+ when both methods agree → 2.0× sizing.
+  //   "fallback" — DC strategy missing from current refit; default-permits
+  //                at 1.0× until next refit. Transient.
+  //   "ungated"  — by-design no regime filter (SPY shorts + straddles).
+  //                Always fires on entry day; never reaches GO+.
+  //   "unknown"  — config bug (strategy name absent from all
+  //                classifications). Should never happen in practice.
+  // Drives the StrategyMonitorCard's UNGATED pill. Optional in case the
+  // daemon hasn't deployed the gate_mode field yet — graceful
+  // degradation during cross-repo deploy ordering.
+  gate_mode?: "ensemble" | "fallback" | "ungated" | "unknown";
 }
 
 
