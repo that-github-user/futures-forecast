@@ -12,6 +12,7 @@
 import type { DCStrategySpec, DCStrategyStats } from "../../api/dcTypes";
 import { formatEntryDays } from "../../lib/dcLifecycle";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
+import { GateModePill } from "./GateModePill";
 import { SignalBadge } from "./SignalBadge";
 
 interface Props {
@@ -88,6 +89,7 @@ export function StrategyCatalogCard({ spec, signal, isSubscribed, onToggle, stat
             {familyLabel}
           </span>
           <SignalBadge signal={signal} />
+          <GateModePill gateMode={spec.gate_mode} />
         </div>
         <label
           style={{
