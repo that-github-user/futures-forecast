@@ -538,12 +538,20 @@
 .terminal-card-score .num.pos { color: var(--ink-100); }
 .terminal-card-score .num.neg { color: var(--neg-persimmon); }
 .terminal-card-score .num.zero { color: var(--ink-60); }
-.terminal-card-score .slash {
-  font-size: 22px;
-  color: var(--ink-60);
-  padding: 0 4px;
+/* Trend glyph in the slot where spec §4.4's denominator used to sit.
+   Replaces the privacy-blocked weight denom with a cycle-over-cycle
+   ▲ / ▼ arrow — see CardScore in TerminalDashboard.tsx for the deadband
+   logic. Sized smaller than the score so it's clearly a secondary
+   adornment, not a fraction member. Color uses the existing pos/neg
+   semaphore so the glyph reads consistently with the score's own sign
+   coloring (rising = good = ink-100, falling = persimmon-neg). */
+.terminal-card-score .trend {
+  font-size: 14px;
+  margin-left: 6px;
+  line-height: 1;
 }
-.terminal-card-score .denom { font-size: 18px; color: var(--ink-60); }
+.terminal-card-score .trend.up   { color: var(--ink-100); }
+.terminal-card-score .trend.down { color: var(--neg-persimmon); }
 
 .terminal-card-body {
   display: flex;
