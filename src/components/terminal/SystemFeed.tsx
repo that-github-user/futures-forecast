@@ -64,6 +64,35 @@ const MAX_EVENTS = 12;
  *  color from --ink-100 → --ink-60 → --ink-40 over ~5 minutes." */
 const FADE_WINDOW_MS = 5 * 60 * 1000;
 
+/** Per-(kind, subject-key) cooldown (ms). Suppresses repeat-fire of
+ *  the same logical event within the window — protects against
+ *  boundary-flicker spam (e.g. regime label oscillating across a
+ *  threshold every cycle, an override clearing-and-re-firing at
+ *  session close, the synthesizer bias jittering across a zero-
+ *  crossing).
+ *
+ *  Granularity is (kind, destination-state) so distinct transitions
+ *  remain visible — "regime → quiet" and "regime → mean_reverting"
+ *  use different cooldown slots. The first transition of a flicker
+ *  surfaces; subsequent same-direction repeats are suppressed.
+ *
+ *  TICK has cooldown=0 because its cross-threshold gate already
+ *  handles deduping (the magnitude must dip below ±1000 before
+ *  another fire can register). Distinct programs in opposite
+ *  directions (+1200 then −1100) ARE both newsworthy and should
+ *  surface; cross-threshold semantics permit that.
+ *
+ *  REGIME gets the longest cooldown because post-PR-#6 calibration
+ *  put more strategies near boundary thresholds, raising the
+ *  flicker risk. */
+const COOLDOWN_MS: Record<EventKind, number> = {
+  tick:     0,        // cross-threshold semantics handle dedupe
+  credit:   60_000,   // HYG/LQD updates daily-ish, but cheap insurance
+  override: 60_000,   // session-close VWAP flicker is the typical case
+  regime:   90_000,   // boundary-threshold flicker most likely here
+  bias:     60_000,   // synthesizer score zero-crossing flicker
+};
+
 // ─── Event types ─────────────────────────────────────────────────────
 
 type EventKind = "tick" | "credit" | "override" | "regime" | "bias";
@@ -213,6 +242,24 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   // visual cue that an event is "leaving memory."
   const nowMs = useTick(60_000);
 
+  // Per-(kind, destination-state) cooldown timestamps. Survives
+  // re-renders via useRef. See COOLDOWN_MS for window definitions
+  // and rationale.
+  const cooldownRef = useRef<Map<string, number>>(new Map());
+
+  /** Returns true and records the emit if the (kind, key) pair is
+   *  outside its cooldown window; false otherwise. Mutates
+   *  cooldownRef as a side-effect when emitting is permitted. */
+  const tryEmit = (kind: EventKind, key: string, now: number): boolean => {
+    const window = COOLDOWN_MS[kind];
+    if (window === 0) return true;
+    const fullKey = `${kind}:${key}`;
+    const last = cooldownRef.current.get(fullKey);
+    if (last != null && now - last < window) return false;
+    cooldownRef.current.set(fullKey, now);
+    return true;
+  };
+
   useEffect(() => {
     if (data == null) return;
     const prev = prevRef.current;
@@ -222,12 +269,16 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     const now = Date.now();
     const newEvents: FeedEvent[] = [];
 
-    // TICK — institutional-program threshold crossing
+    // TICK — institutional-program threshold crossing.
+    // Cooldown=0 by design; cross-threshold semantics handle dedupe.
     if (tickCrossedThreshold(prev.breadth.tick, data.breadth.tick)) {
       newEvents.push(tickEvent(data.breadth.tick!, now, idCounterRef.current++));
     }
 
-    // CREDIT — HYG/LQD lead signal transition
+    // CREDIT — HYG/LQD lead signal transition. Cooldown keys on the
+    // destination state so bullish→bearish and bearish→bullish each
+    // get their own slot ("transition into bearish" can't repeat
+    // within 60s but a transition into bullish can fire freely).
     if (
       data.breadth.hyg_lqd_lead_signal !== prev.breadth.hyg_lqd_lead_signal
       // Skip "unknown" transitions — they signal data unavailability,
@@ -235,6 +286,7 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       // the breadth scorecard's own state without spamming the feed.
       && data.breadth.hyg_lqd_lead_signal !== "unknown"
       && prev.breadth.hyg_lqd_lead_signal !== "unknown"
+      && tryEmit("credit", data.breadth.hyg_lqd_lead_signal, now)
     ) {
       newEvents.push(creditEvent(
         prev.breadth.hyg_lqd_lead_signal,
@@ -244,16 +296,20 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       ));
     }
 
-    // OVERRIDE — set diff on synthesizer.overrides[]
+    // OVERRIDE — set diff on synthesizer.overrides[]. Cooldown keys
+    // on (override-name, fire/clear) so each override flickering on
+    // and off uses two distinct slots, but a single override
+    // clearing-then-re-firing within the window collapses to one
+    // event (the first one).
     const prevOver = new Set(prev.synthesizer.overrides);
     const curOver = new Set(data.synthesizer.overrides);
     for (const ov of curOver) {
-      if (!prevOver.has(ov)) {
+      if (!prevOver.has(ov) && tryEmit("override", `${ov}:fire`, now)) {
         newEvents.push(overrideEvent(ov, true, now, idCounterRef.current++));
       }
     }
     for (const ov of prevOver) {
-      if (!curOver.has(ov)) {
+      if (!curOver.has(ov) && tryEmit("override", `${ov}:clear`, now)) {
         newEvents.push(overrideEvent(ov, false, now, idCounterRef.current++));
       }
     }
@@ -265,6 +321,7 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       data.regime.regime_label !== prev.regime.regime_label
       && data.regime.regime_label !== "unknown"
       && prev.regime.regime_label !== "unknown"
+      && tryEmit("regime", data.regime.regime_label, now)
     ) {
       newEvents.push(regimeEvent(
         prev.regime.regime_label,
@@ -274,8 +331,11 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       ));
     }
 
-    // BIAS — LONG/SHORT/FLAT transition
-    if (data.synthesizer.bias !== prev.synthesizer.bias) {
+    // BIAS — LONG/SHORT/FLAT transition.
+    if (
+      data.synthesizer.bias !== prev.synthesizer.bias
+      && tryEmit("bias", data.synthesizer.bias, now)
+    ) {
       newEvents.push(biasEvent(
         prev.synthesizer.bias,
         data.synthesizer.bias,
