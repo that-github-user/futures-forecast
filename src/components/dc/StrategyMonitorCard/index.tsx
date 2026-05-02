@@ -149,17 +149,17 @@ function StrategyMonitorCardImpl({
               strategy bypasses the regime gate by design (SPY shorts +
               straddles). Same height as the state chip but lower-
               saturation muted color so it reads as descriptive, NOT a
-              live state. Tooltip explains the design decision so a
-              new operator doesn't mistake it for a missing-rules /
-              fallback case. */}
+              live state. Tooltip is operator-actionable (what this
+              means RIGHT NOW), not historical rationale; the design
+              backstory lives in dcTypes.ts's gate_mode comment.
+              role/aria-label match the project's existing
+              non-text-status pattern (see IVSourceBadge in
+              LegDetailBlock.tsx). */}
           {spec.gate_mode === "ungated" && (
             <span
-              title={
-                "By design, no regime filter applies — always fires on " +
-                "its entry day; never reaches GO+. SPY structures " +
-                "(short puts + straddles) performed best ungated " +
-                "across the trade-log evaluation window."
-              }
+              role="img"
+              aria-label="Ungated strategy — no regime gate"
+              title="By design — no regime gate. Always fires on entry day; never reaches GO+."
               style={{
                 fontSize: 9,
                 fontWeight: 600,
