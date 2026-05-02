@@ -112,6 +112,14 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
   "4h": 240,
 };
 
+// Number of empty future-bar slots appended to the right of the latest
+// real bar. TradingView-style: the chart axis extends past the
+// currently-evolving bar so the right edge has breathing room and the
+// user can pan further right into "the future" if they want. Bar
+// count is timeframe-agnostic (10 bars on 5m = 50 minutes of padding;
+// 10 bars on 1h = 10 hours of padding) — TV's default behavior.
+const FUTURE_BAR_PADDING = 10;
+
 /**
  * Bin 1-min bars into N-minute aggregated bars using UTC-clock-aligned
  * bucket boundaries (e.g. 5m → 09:30, 09:35, 09:40 …). Across-session
@@ -297,6 +305,15 @@ export function TerminalChartCanvas({
           type: "inside",
           start: computeDefaultZoomStart(aggregatedBars),
           end: 100,
+          // We handle wheel ourselves on the chart container to anchor
+          // the zoom on the rightmost-visible bar (TradingView-style).
+          // ECharts' default wheel zoom is cursor-anchored, which
+          // surprises users whose mental model is "zooming should pin
+          // the right edge of my current view." See onWheel handler
+          // wired below.
+          zoomOnMouseWheel: false,
+          // Keep drag-to-pan and touch-pinch behavior on (defaults).
+          // moveOnMouseMove: true (default), zoomOnPinch: true (default).
         },
       ];
     }
@@ -310,6 +327,69 @@ export function TerminalChartCanvas({
     if (aggregatedBars && aggregatedBars.length > 0 && initialMountRef.current) {
       initialMountRef.current = false;
     }
+  }, [aggregatedBars]);
+
+  // Right-anchored wheel zoom (TradingView-style). ECharts' default
+  // wheel zoom is cursor-anchored, which surprises users whose mental
+  // model is "zoom should pin the right edge of my current view." We
+  // disable ECharts' wheel zoom (`zoomOnMouseWheel: false` in the
+  // initial dataZoom config) and own the wheel ourselves: read current
+  // [start%, end%], shrink/grow the span by a delta proportional to
+  // wheel ticks, and KEEP `end` fixed so the rightmost-visible bar
+  // stays at the same data position across the zoom step.
+  //
+  // Drag-to-pan, touch pinch-zoom, and middle-click drag remain on
+  // ECharts' default behavior.
+  useEffect(() => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const dom = inst.getDom();
+    if (!dom) return;
+
+    const handler = (e: WheelEvent) => {
+      // Only intercept inside the chart's plot area. The default scroll
+      // behavior is preserved on margins so a user reaching the chart
+      // edge doesn't accidentally lock page scroll.
+      e.preventDefault();
+
+      const opt = inst.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> };
+      const dz = opt.dataZoom?.[0];
+      const currStart = dz?.start ?? 0;
+      const currEnd = dz?.end ?? 100;
+      const span = currEnd - currStart;
+      if (span <= 0) return;
+
+      // deltaY > 0 = wheel down = zoom OUT (grow span).
+      // deltaY < 0 = wheel up   = zoom IN  (shrink span).
+      // 0.15 per tick is the sensitivity sweet-spot from
+      // TradingView-style charts; adjust if it feels too coarse/fine.
+      const ZOOM_STEP = 0.15;
+      const direction = e.deltaY > 0 ? 1 + ZOOM_STEP : 1 / (1 + ZOOM_STEP);
+      let newSpan = span * direction;
+
+      // Clamp: minimum span = ~10 categories so the user can't zoom
+      // into a single-bar viewport. Maximum span = 100% (the entire
+      // axis range, which already includes the future-padding slots).
+      const minSpanPct = 100 * (10 / Math.max(10, (aggregatedBars?.length ?? 0) + FUTURE_BAR_PADDING));
+      newSpan = Math.max(minSpanPct, Math.min(100, newSpan));
+
+      // Anchor on the right: keep `end` fixed, derive `start`. This is
+      // the TradingView-style "pin the rightmost visible bar" behavior.
+      const newStart = Math.max(0, currEnd - newSpan);
+      const newEnd = Math.min(100, newStart + newSpan);
+
+      inst.dispatchAction({
+        type: "dataZoom",
+        dataZoomIndex: 0,
+        start: newStart,
+        end: newEnd,
+      });
+    };
+
+    // `passive: false` is required because the handler calls
+    // preventDefault() to stop the page from scrolling under the chart.
+    dom.addEventListener("wheel", handler, { passive: false });
+    return () => dom.removeEventListener("wheel", handler);
   }, [aggregatedBars]);
 
   // Post-render collision pass on the right-edge label chips.
@@ -431,6 +511,34 @@ function buildEChartsOption(
     if (i > 0 && days[i] !== days[i - 1]) return days[i];
     return formatBarTime(b.time);
   });
+  // Append FUTURE_BAR_PADDING phantom timestamps past the latest bar so
+  // the chart axis extends into "the future" with no candle data —
+  // TradingView-style right-side padding. Series data is keyed by
+  // bar INDEX, and we leave the series arrays at bars.length, so the
+  // phantom slots render as empty axis space rather than zero-valued
+  // bars. markLine references that use a numeric `xAxis` value still
+  // index into category space and remain anchored to their original
+  // real-bar positions.
+  if (bars.length > 0) {
+    const lastT = Date.parse(bars[bars.length - 1].time);
+    if (Number.isFinite(lastT)) {
+      const stepMs = timeframeMin * 60 * 1000;
+      let lastDayLabel = days[days.length - 1];
+      for (let i = 1; i <= FUTURE_BAR_PADDING; i++) {
+        const phantomIso = new Date(lastT + i * stepMs).toISOString();
+        const phantomDay = formatBarDay(phantomIso);
+        // Same day-vs-time labeling rule as real bars — surfaces day
+        // markers if a phantom timestamp crosses midnight (e.g. user
+        // on a 1h timeframe at end-of-day pans into tomorrow).
+        if (phantomDay !== lastDayLabel) {
+          times.push(phantomDay);
+          lastDayLabel = phantomDay;
+        } else {
+          times.push(formatBarTime(phantomIso));
+        }
+      }
+    }
+  }
   const overlayLines = buildOverlayLines(snapshot, overlays, palette);
   const orBands = buildOpeningRangeBands(snapshot, overlays);
   const vwapSeries = buildAvwapSeries(bars, overlays.vwap, palette, timeframeMin);
@@ -1064,7 +1172,24 @@ function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
   }
   const spanMs = last - first;
   if (spanMs <= VISIBLE_MS) return 0;
-  return Math.max(0, Math.min(99, 100 - (VISIBLE_MS / spanMs) * 100));
+  // The chart's xAxis category list extends FUTURE_BAR_PADDING bars
+  // past the last real bar (right-side padding). The 100% endpoint
+  // therefore corresponds to the last phantom slot, NOT the latest
+  // real bar — so the visible window for the same wall-clock 12h
+  // need a slightly higher start% to account for the padding eating
+  // into the 0-100% range. Math:
+  //   visible_categories = visible_real_bars + FUTURE_BAR_PADDING
+  //   total_categories   = real_bars + FUTURE_BAR_PADDING
+  //   start% = 100 - (visible_categories / total_categories) * 100
+  // For a 168h buffer of 5m bars (~2016) at 12h visible (144 real
+  // bars + 10 phantom): start% = 100 - (154/2026)*100 ≈ 92.4
+  // The trailing edge of the visible window includes the 10 phantom
+  // slots so the live bar isn't pinned hard against the right axis.
+  const realBarsApprox = bars.length;
+  const visibleRealBars = Math.ceil(realBarsApprox * (VISIBLE_MS / spanMs));
+  const visibleCategories = visibleRealBars + FUTURE_BAR_PADDING;
+  const totalCategories = realBarsApprox + FUTURE_BAR_PADDING;
+  return Math.max(0, Math.min(99, 100 - (visibleCategories / totalCategories) * 100));
 }
 
 // ── AVWAP — multi-anchor cumulative VWAP + ±σ bands ─────────────────
