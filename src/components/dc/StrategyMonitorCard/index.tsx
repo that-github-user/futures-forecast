@@ -31,6 +31,7 @@ import type {
 } from "../../../api/dcTypes";
 import type { LifecycleInfo } from "../../../lib/dcLifecycle";
 import { formatEntryDays } from "../../../lib/dcLifecycle";
+import { GateModePill } from "../GateModePill";
 import { SignalBadge } from "../SignalBadge";
 import { BodyContent } from "./BodyContent";
 import { isActiveLifecycleState, LegDetailBlock } from "./LegDetailBlock";
@@ -145,37 +146,7 @@ function StrategyMonitorCardImpl({
             {spec.name}
           </span>
           <SignalBadge signal={signal} />
-          {/* UNGATED pill — informational/structural cue that this
-              strategy bypasses the regime gate by design (SPY shorts +
-              straddles). Same height as the state chip but lower-
-              saturation muted color so it reads as descriptive, NOT a
-              live state. Tooltip is operator-actionable (what this
-              means RIGHT NOW), not historical rationale; the design
-              backstory lives in dcTypes.ts's gate_mode comment.
-              role/aria-label match the project's existing
-              non-text-status pattern (see IVSourceBadge in
-              LegDetailBlock.tsx). */}
-          {spec.gate_mode === "ungated" && (
-            <span
-              role="img"
-              aria-label="Ungated strategy — no regime gate"
-              title="By design — no regime gate. Always fires on entry day; never reaches GO+."
-              style={{
-                fontSize: 9,
-                fontWeight: 600,
-                color: colors.textMuted,
-                border: `1px solid ${colors.borderDim}`,
-                background: colors.bgInset,
-                padding: "2px 6px",
-                borderRadius: 6,
-                fontFamily: fonts.sans,
-                letterSpacing: 0.6,
-                textTransform: "uppercase",
-              }}
-            >
-              Ungated
-            </span>
-          )}
+          <GateModePill gateMode={spec.gate_mode} />
         </div>
         <span
           style={{
