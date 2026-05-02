@@ -5,15 +5,20 @@
    for. */
 
 .terminal-root {
-  /* Browser-zoom friendly: at 100% zoom the layout fills the viewport
-     exactly (height resolves to 100vh via the min-height). At higher
-     zoom levels the viewport CSS-px shrinks (Ctrl+ on Chrome/Firefox/
-     Safari reduces logical viewport size), the fixed-row tracks below
-     would crush the 1fr chart pane to nothing — `min-height: 100vh`
-     + `overflow-y: auto` lets the page scroll instead, preserving
-     each pane's intended size. The min-height on .terminal-middle
-     (added below) prevents the chart from collapsing. */
-  min-height: 100vh;
+  /* Browser-zoom friendly: terminal-root has FIXED height = 100vh and
+     scrolls internally when content exceeds that. The earlier
+     `min-height` approach was broken — terminal-root sits inside
+     `.app-content { overflow: hidden }`, so growing past 100vh just
+     gets clipped by the parent. With `height: 100vh + overflow-y:
+     auto`, the parent's overflow:hidden is satisfied (we're exactly
+     viewport-tall) and our own overflow-y: auto delivers the
+     scrollbar when content overflows our box.
+
+     At 100% zoom: content fits, no scrollbar. At 175% zoom on 1080p:
+     content overflows (nav 48 + headline ~150 + middle floor 360 +
+     scorecards 230 ≈ 788 CSS-px > 411 CSS-px viewport at 175%), the
+     terminal-root scrollbar appears, user can reach the scorecards. */
+  height: 100vh;
   padding: 24px 32px;
   display: grid;
   /* Headline row tracks auto so the telemetric score (≤96px) sits

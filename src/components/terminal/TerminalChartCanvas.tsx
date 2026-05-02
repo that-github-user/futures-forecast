@@ -305,15 +305,17 @@ export function TerminalChartCanvas({
           type: "inside",
           start: computeDefaultZoomStart(aggregatedBars),
           end: 100,
-          // We handle wheel ourselves on the chart container to anchor
-          // the zoom on the rightmost-visible bar (TradingView-style).
-          // ECharts' default wheel zoom is cursor-anchored, which
-          // surprises users whose mental model is "zooming should pin
-          // the right edge of my current view." See onWheel handler
-          // wired below.
+          // Disable ECharts' built-in wheel zoom. Our useEffect below
+          // binds a CAPTURE-phase wheel listener on inst.getDom() so
+          // we can implement TradingView-style right-anchored zoom
+          // (rightmost-visible bar stays pinned). The capture-phase
+          // binding is critical: ECharts also binds wheel listeners on
+          // the inner canvas (a child of getDom) and may
+          // stopPropagation, which would prevent a bubble-phase
+          // listener from ever firing. Capture phase runs FIRST,
+          // before ECharts' canvas listener.
           zoomOnMouseWheel: false,
-          // Keep drag-to-pan and touch-pinch behavior on (defaults).
-          // moveOnMouseMove: true (default), zoomOnPinch: true (default).
+          // Drag-to-pan and touch pinch remain ECharts defaults.
         },
       ];
     }
@@ -397,10 +399,21 @@ export function TerminalChartCanvas({
       });
     };
 
+    // `capture: true` is the load-bearing detail. ECharts binds its own
+    // wheel listener on the inner canvas (a child of `inst.getDom()`).
+    // Even with `zoomOnMouseWheel: false`, ECharts may still consume
+    // the event and call stopPropagation — which prevents a bubble-
+    // phase listener bound here on getDom() from EVER firing. Capture
+    // phase runs FIRST (window → ... → getDom (capture listeners) →
+    // canvas (target listeners)), so our handler fires reliably before
+    // any of ECharts' bubble-phase logic gets a chance to swallow the
+    // event. The earlier shipped version of this PR omitted `capture`
+    // and the chart wouldn't zoom at all in production.
+    //
     // `passive: false` is required because the handler calls
     // preventDefault() to stop the page from scrolling under the chart.
-    dom.addEventListener("wheel", handler, { passive: false });
-    return () => dom.removeEventListener("wheel", handler);
+    dom.addEventListener("wheel", handler, { passive: false, capture: true });
+    return () => dom.removeEventListener("wheel", handler, { capture: true });
   }, [aggregatedBars]);
 
   // Post-render collision pass on the right-edge label chips.
