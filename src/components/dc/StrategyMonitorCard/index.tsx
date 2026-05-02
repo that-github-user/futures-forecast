@@ -132,9 +132,12 @@ function StrategyMonitorCardImpl({
         gap: 10,
       }}
     >
-      {/* Header: name + signal badge + (optional UNGATED pill) + state chip */}
+      {/* Header: name + signal badge + (optional UNGATED pill) + state chip.
+          Inner div wraps so a long strategy name + 3 pills don't push the
+          right-side state chip off-row at the 300px column min — matches
+          StrategyCatalogCard's wrap behavior for parity. */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span
             style={{
               fontSize: 14,

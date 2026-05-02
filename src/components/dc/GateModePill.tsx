@@ -49,8 +49,9 @@ export function GateModePill({ gateMode }: Props) {
         label: "Fallback",
         ariaLabel: "Fallback gate — strategy missing rules in current refit",
         title:
-          "Missing from the latest deployment_rules refit. " +
-          "Default-permits at 1.0× until next monthly refit + sync.",
+          "Missing from the latest deployment_rules refit. Runs at " +
+          "base size on its entry day regardless of regime features " +
+          "(1.0×, never GO+), until next monthly refit + sync.",
         color: colors.accentAmber,
         border: colors.accentAmber + "55",
         background: colors.accentAmber + "14",
