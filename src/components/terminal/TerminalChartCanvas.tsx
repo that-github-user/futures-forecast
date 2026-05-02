@@ -347,9 +347,20 @@ export function TerminalChartCanvas({
     if (!dom) return;
 
     const handler = (e: WheelEvent) => {
-      // Only intercept inside the chart's plot area. The default scroll
-      // behavior is preserved on margins so a user reaching the chart
-      // edge doesn't accidentally lock page scroll.
+      // Pass through Ctrl+wheel and trackpad pinch (which browsers
+      // surface as wheel events with `ctrlKey: true`). The user's
+      // expectation in both cases is BROWSER zoom — the same Ctrl+
+      // gesture that zooms the rest of the page. With the layout
+      // fix shipped in this same PR (`min-height: 100vh` + `overflow-y:
+      // auto` on `.terminal-root`), browser zoom now works cleanly on
+      // the terminal page. Letting the event fall through here keeps
+      // the chart consistent with the rest of the page's zoom UX
+      // rather than carving out a chart-specific exception.
+      if (e.ctrlKey) return;
+      // Plain wheel: TradingView-style right-anchored chart zoom. The
+      // preventDefault() stops the page from scrolling under the chart
+      // — without it, wheel-up over the chart would scroll the (now-
+      // scrollable) page instead of zooming.
       e.preventDefault();
 
       const opt = inst.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> };
@@ -666,6 +677,13 @@ function buildEChartsOption(
         if (!candle) return "";
         const i = candle.dataIndex;
         const b = bars[i];
+        // Suppress the tooltip when the user hovers into the phantom
+        // future-bar padding zone (xAxis category indices >= bars.length
+        // — see FUTURE_BAR_PADDING). `bars[i]` is undefined there, so
+        // the existing defensive null-check covers it; ECharts hides
+        // the tooltip frame entirely when the formatter returns an
+        // empty string. No "--" rows clutter the right-side empty
+        // space.
         if (!b) return "";
         const fmt = (n: number) => n.toFixed(2);
         const lines = [
