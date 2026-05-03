@@ -899,20 +899,29 @@ function ActiveAdvisories({
       <ul className="active-advisories-list">
         {advisories.map((adv) => {
           const label = formatAdvisoryName(adv);
-          // Inline target price for the gap_fill.* family — pulled
-          // from the snapshot's gap_fill context so the trader sees
-          // the level ES needs to trade to in order to fill, without
-          // having to look at the chart. Format with 2 decimals to
-          // match the ES tick (0.25) precision.
+          // Inline target price for the gap_fill.* family. Suppressed
+          // for `gap_fill.filled` since the level just BECAME the
+          // price — adding "→ 5800" alongside "Gap filled" is
+          // redundant. Kept for `opened` (target = where to fill)
+          // and `failed` (post-mortem: the level that didn't get
+          // hit at RTH open). ES tick = 0.25, so toFixed(2) renders
+          // tick-aligned values cleanly.
           const showTarget =
-            adv.startsWith("gap_fill.") && gapFill !== null;
+            (adv === "gap_fill.opened" || adv === "gap_fill.failed") &&
+            gapFill !== null;
+          // Phrasing: "Open gap → fills 5800.00" reads less
+          // ambiguously than the bare arrow ("Open gap → 5800.00"
+          // could parse as "the gap is at 5800"). The verb "fills"
+          // anchors the price as the target rather than the level.
+          const targetPhrase =
+            adv === "gap_fill.failed" ? "missed" : "fills";
           return (
             <li
               key={adv}
               className="active-advisory"
               aria-label={
                 showTarget
-                  ? `Active advisory: ${label}, target ${gapFill!.target_price.toFixed(2)}`
+                  ? `Active advisory: ${label}, ${targetPhrase} ${gapFill!.target_price.toFixed(2)}`
                   : `Active advisory: ${label}`
               }
             >
@@ -927,7 +936,7 @@ function ActiveAdvisories({
                 {label}
                 {showTarget && (
                   <span className="active-advisory-target">
-                    {" → "}
+                    {` → ${targetPhrase} `}
                     {gapFill!.target_price.toFixed(2)}
                   </span>
                 )}
