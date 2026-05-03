@@ -344,24 +344,13 @@ function formatAdvisoryName(raw: string): string {
   // generic formatter would drop "gap_fill" (not in _ACRONYMS), leaving
   // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
   // in the live feed. Render the full "Gap fill <state>" instead.
-  if (raw.startsWith("gap_fill.")) {
-    const state = raw.split(".").slice(1).join(" ");
-    if (state) {
-      return `Gap fill ${state}`;
-    }
-  }
-
-  // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
-  // the namespace prefix would otherwise be split on the dot and the
-  // generic formatter would drop "gap_fill" (not an acronym), leaving
-  // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
-  // in the live feed. Render the full "Gap fill <state>" instead.
-  if (raw.startsWith("gap_fill.")) {
-    const state = raw.split(".").slice(1).join(" ");
-    if (state) {
-      return `Gap fill ${state}`;
-    }
-  }
+  // Trader-vocabulary phrasing per R2 review:
+  //   gap_fill.opened → "Open gap" (state: there's a currently-open gap)
+  //   gap_fill.filled → "Gap filled" (the gap closed)
+  //   gap_fill.failed → "Gap fill failed" (gap unfilled at RTH open)
+  if (raw === "gap_fill.opened") return "Open gap";
+  if (raw === "gap_fill.filled") return "Gap filled";
+  if (raw === "gap_fill.failed") return "Gap fill failed";
 
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
@@ -902,11 +891,12 @@ function ActiveAdvisories({ advisories }: { advisories: string[] }) {
             className="active-advisory"
             aria-label={`Active advisory: ${formatAdvisoryName(adv)}`}
           >
-            <span
-              className="feed-pulse importance-medium"
-              aria-hidden="true"
-            >
-              {PULSE_MARK.medium}
+            {/* Distinct pulse mark from the live event log's
+                ○/●/─ importance grading — `◉` reads as "live/on"
+                rather than reusing the log's "moderate importance"
+                ○. Avoids the visual grammar ambiguity R2 flagged. */}
+            <span className="active-advisory-pulse" aria-hidden="true">
+              ◉
             </span>
             <span className="active-advisory-name">
               {formatAdvisoryName(adv)}

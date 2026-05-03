@@ -1099,6 +1099,12 @@
   border-bottom: 1px solid var(--ink-20);
   padding-bottom: 12px;
   margin-bottom: -8px;  /* pull list closer; gap from .terminal-feed flex still applies */
+  /* Cap height so a heavy day (multiple sticky advisories) doesn't
+     starve the live event log + upcoming-events sections of space.
+     Internal scroll for the rare 4+ active advisories case. */
+  max-height: clamp(120px, 25vh, 200px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .active-advisories-header {
   margin: 0 0 8px;
@@ -1125,7 +1131,19 @@
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
-  color: var(--ink-100);  /* full ink — currently active state */
+  /* ink-80 (not full ink-100) so the live event log's freshest entries
+     — which fade ink-100 → ink-60 → ink-40 with age — still read as
+     the most-newsworthy items. Active Now is ambient state; the
+     live log is the recency-weighted signal. */
+  color: var(--ink-80, var(--ink-100));
+}
+.active-advisory-pulse {
+  font-size: 10px;
+  /* Distinct from the live log's importance pulses (●○─) so the
+     visual grammar doesn't conflate "importance level" with "active
+     state." Color uses --pos-cream to read as "live/on" against
+     the rolling log's neutral ink palette. */
+  color: var(--pos-cream, var(--ink-100));
 }
 
 
