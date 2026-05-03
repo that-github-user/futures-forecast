@@ -50,6 +50,17 @@ export interface LevelsData {
   pd_high: number | null;
   pd_low: number | null;
   pd_close: number | null;
+  /** Overnight High — extreme of the most-recent ETH overnight
+   *  window: ETH session reopen (18:00 ET — AFTER the 17:00→18:00
+   *  Globex maintenance break) through the next RTH open (09:30 ET).
+   *  Deliberately excludes the 16:00→17:00 after-cash-close hour
+   *  (ES trades there but it's not the "overnight session" per
+   *  operator definition). Frozen inside RTH at the just-completed
+   *  overnight's value; running pre-09:30 and during ETH evenings
+   *  as bars extend through the window. */
+  onh: number | null;
+  /** Overnight Low — see onh for window definition. */
+  onl: number | null;
   poc: number | null;
   vah: number | null;
   val: number | null;
