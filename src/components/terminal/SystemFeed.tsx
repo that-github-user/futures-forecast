@@ -156,13 +156,16 @@ const COOLDOWN_MS: Record<EventKind, number> = {
   tick:     0,        // cross-threshold semantics handle dedupe
   credit:   60_000,   // HYG/LQD updates daily-ish, but cheap insurance
   override: 60_000,   // session-close VWAP flicker is the typical case
+  advisory: 60_000,   // mirrors override; backend hysteresis provides
+                      //   primary smoothing but cooldown insurance
+                      //   handles any frontend-side dedup gaps
   regime:   90_000,   // boundary-threshold flicker most likely here
   bias:     60_000,   // synthesizer score zero-crossing flicker
 };
 
 // ─── Event types ─────────────────────────────────────────────────────
 
-type EventKind = "tick" | "credit" | "override" | "regime" | "bias";
+type EventKind = "tick" | "credit" | "override" | "advisory" | "regime" | "bias";
 type EventImportance = "high" | "medium" | "low";
 
 interface FeedEvent {
@@ -258,22 +261,86 @@ function creditEvent(
   };
 }
 
-/** Reformat backend kebab-case override names into trader vocabulary
- *  for the System Feed body. The backend emits names like
- *  `weekly-vwap-lost` for stable serialization + dashboard de-dup
- *  (see SynthesizerResponse.overrides), but raw kebab-case reads
- *  technical in operator copy. Map dash → space and uppercase the
- *  acronyms VWAP / VIX / GEX so the rendered body reads "weekly
- *  VWAP lost firing." instead of "weekly-vwap-lost firing."
+/** Reformat backend names into trader vocabulary for the System Feed
+ *  body. Handles two name shapes:
  *
- *  Unknown names pass through with kebab→space only — better to ship
- *  ungainly text for a future override than to drop it silently. */
-const _ACRONYMS = new Set(["vwap", "vix", "gex", "spx", "spy"]);
+ *  1. Override names (kebab-case, no namespace): `weekly-vwap-lost`
+ *     → `"weekly VWAP lost"`. Same backend-to-display mapping used
+ *     since PR #123.
+ *
+ *  2. Advisory names (namespaced, snake_case + dotted): the Tier 2
+ *     advisory system uses names like `levels.gap_failed.rth` or
+ *     `micro.range_expansion`. The leading namespace is routing
+ *     metadata (which system computed it); strip it. Sub-namespaces
+ *     after the action (e.g. `.rth`, `.eth_5pm`, `.sun_open`) are
+ *     contextual and surface as parenthetical suffixes.
+ *
+ *  Unknown shapes pass through with token-replacement only — better
+ *  to ship ungainly text for a future name than drop it silently.
+ *  Acronym uppercase applied at the end so VWAP / VIX / GEX read
+ *  correctly regardless of source style. */
+const _ACRONYMS = new Set([
+  "vwap", "vix", "gex", "spx", "spy", "rth", "eth", "fomc", "or",
+]);
+
+function _prettifyToken(token: string): string {
+  return _ACRONYMS.has(token) ? token.toUpperCase() : token;
+}
+
 function formatOverrideName(raw: string): string {
-  return raw
-    .split("-")
-    .map((word) => (_ACRONYMS.has(word) ? word.toUpperCase() : word))
+  // Override names: kebab-case, no namespace.
+  return raw.split("-").map(_prettifyToken).join(" ");
+}
+
+function formatAdvisoryName(raw: string): string {
+  // Advisory names: dotted namespace + snake_case action + optional
+  // sub-namespace. Examples:
+  //   "micro.range_expansion"        → "Range expansion"
+  //   "levels.gap_failed.rth"        → "Gap failed (RTH)"
+  //   "levels.gap_failed.sun_open"   → "Gap failed (Sun open)"
+  //   "vwap.retest_after_break"      → "VWAP retest after break"
+  //
+  // The first dot-segment (the source-system namespace) is dropped
+  // unless its token is an acronym we want to surface (vwap → VWAP).
+  // The last dot-segment, if present after the action, becomes a
+  // parenthetical suffix.
+  const parts = raw.split(".");
+  if (parts.length === 0) return raw;
+
+  // Decide whether to keep the leading namespace token. Drop generic
+  // routing names ("micro", "levels", "calendar"); keep acronyms
+  // because they're semantically meaningful (vwap → "VWAP retest").
+  const firstToken = parts[0];
+  const keepFirst = _ACRONYMS.has(firstToken);
+
+  let action: string;
+  let suffix: string | null = null;
+
+  if (parts.length === 1) {
+    action = parts[0];
+  } else if (parts.length === 2) {
+    action = keepFirst ? `${firstToken}.${parts[1]}` : parts[1];
+  } else {
+    // 3+ parts: namespace, action, sub-namespace
+    action = keepFirst ? `${firstToken}.${parts[1]}` : parts[1];
+    suffix = parts.slice(2).join(" ");
+  }
+
+  // Format the action: snake_case → space, prettify each token.
+  // Capitalize the first character so it reads as a sentence.
+  const actionFormatted = action
+    .split(/[._]/)
+    .map(_prettifyToken)
     .join(" ");
+  const head = actionFormatted.charAt(0).toUpperCase() + actionFormatted.slice(1);
+
+  if (suffix == null) return head;
+  // Pretty-print suffix tokens too (handles 'sun_open' → 'Sun open').
+  const suffixFormatted = suffix
+    .split(/[._\s]+/)
+    .map((t, i) => (i === 0 ? _prettifyToken(t).replace(/^./, (c) => c.toUpperCase()) : _prettifyToken(t)))
+    .join(" ");
+  return `${head} (${suffixFormatted})`;
 }
 
 function overrideEvent(
@@ -289,6 +356,27 @@ function overrideEvent(
     kind: "override",
     importance: "high",
     subject: "OVERRIDE",
+    body: fired ? `${pretty} firing.` : `${pretty} cleared.`,
+  };
+}
+
+function advisoryEvent(
+  advisory: string,
+  fired: boolean,
+  now: number,
+  idCounter: number,
+): FeedEvent {
+  const pretty = formatAdvisoryName(advisory);
+  return {
+    id: `${now}-advisory-${fired ? "fire" : "clear"}-${idCounter}`,
+    timestamp: now,
+    kind: "advisory",
+    // Medium importance vs override's high — advisories are
+    // noteworthy but don't desaturate the score. Hollow pulse mark
+    // (○) at the existing medium tier visually differentiates from
+    // the filled (●) override pulse.
+    importance: "medium",
+    subject: "ADVISORY",
     body: fired ? `${pretty} firing.` : `${pretty} cleared.`,
   };
 }
@@ -543,6 +631,29 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     for (const ov of prevOver) {
       if (!curOver.has(ov) && tryEmit("override", `${ov}:clear`, now)) {
         newEvents.push(overrideEvent(ov, false, now, idCounterRef.current++));
+      }
+    }
+
+    // ADVISORY — set diff on synthesizer.advisories[]. Same
+    // detection pattern as OVERRIDE but emits a separate event
+    // class (medium importance, hollow pulse, no §4.1.1 visual
+    // treatment). Cooldown keyed on (advisory-name, fire/clear).
+    // The backend's Tier 2 detectors do their own hysteresis
+    // smoothing per-detector; the frontend cooldown is insurance
+    // against any backend-side dedup gaps. Optional-chain on
+    // `advisories` so older snapshot payloads (pre-PR α deploy)
+    // render cleanly with no advisory events instead of a runtime
+    // error from accessing an undefined array.
+    const prevAdv = new Set(prev.synthesizer.advisories ?? []);
+    const curAdv = new Set(data.synthesizer.advisories ?? []);
+    for (const adv of curAdv) {
+      if (!prevAdv.has(adv) && tryEmit("advisory", `${adv}:fire`, now)) {
+        newEvents.push(advisoryEvent(adv, true, now, idCounterRef.current++));
+      }
+    }
+    for (const adv of prevAdv) {
+      if (!curAdv.has(adv) && tryEmit("advisory", `${adv}:clear`, now)) {
+        newEvents.push(advisoryEvent(adv, false, now, idCounterRef.current++));
       }
     }
 

@@ -90,7 +90,15 @@ export interface SynthesizerContribution {
 export interface SynthesizerData {
   score: number;
   confirms: number;
+  /** Hard-stop override names — non-empty list desaturates the
+   *  headline score chip per spec §4.1.1 ("the score is a lie"). */
   overrides: string[];
+  /** Tier 2 advisory event names — namespaced by source system
+   *  (e.g. "levels.gap_failed.rth", "micro.range_expansion"). Surfaced
+   *  on the System Feed as a separate event class (medium importance,
+   *  no §4.1.1 visual treatment). Defaults to empty list when no
+   *  Tier 2 detector has fired. */
+  advisories: string[];
   bias: "LONG" | "SHORT" | "FLAT";
   conviction: "HIGH" | "MEDIUM" | "LOW" | "NONE";
   contributions: SynthesizerContribution[];
