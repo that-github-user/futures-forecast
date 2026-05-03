@@ -779,7 +779,10 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     return (
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
-        <ActiveAdvisories advisories={activeAdvisories} />
+        <ActiveAdvisories
+          advisories={activeAdvisories}
+          gapFill={data?.gap_fill ?? null}
+        />
         <div className="terminal-feed-empty">Awaiting events.</div>
         <UpcomingEvents events={data?.calendar?.events ?? []} />
       </aside>
@@ -789,7 +792,10 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   return (
     <aside className="terminal-feed">
       <div className="terminal-feed-title">System Feed</div>
-      <ActiveAdvisories advisories={activeAdvisories} />
+      <ActiveAdvisories
+        advisories={activeAdvisories}
+        gapFill={data?.gap_fill ?? null}
+      />
       <ul className="terminal-feed-list">
         {events.map((ev) => {
           const age = nowMs - ev.timestamp;
@@ -879,30 +885,65 @@ function formatRelativeTimeLabel(timestampIso: string, time_et: string): string 
 // since 18:00 ET) without having to scroll the rolling log or have
 // been present at the moment of the original transition.
 
-function ActiveAdvisories({ advisories }: { advisories: string[] }) {
+function ActiveAdvisories({
+  advisories,
+  gapFill,
+}: {
+  advisories: string[];
+  gapFill: import("../../api/terminalTypes").GapFillContext | null;
+}) {
   if (advisories.length === 0) return null;
   return (
     <section className="active-advisories" aria-label="Currently firing advisories">
       <h4 className="active-advisories-header">active now</h4>
       <ul className="active-advisories-list">
-        {advisories.map((adv) => (
-          <li
-            key={adv}
-            className="active-advisory"
-            aria-label={`Active advisory: ${formatAdvisoryName(adv)}`}
-          >
-            {/* Distinct pulse mark from the live event log's
-                ○/●/─ importance grading — `◉` reads as "live/on"
-                rather than reusing the log's "moderate importance"
-                ○. Avoids the visual grammar ambiguity R2 flagged. */}
-            <span className="active-advisory-pulse" aria-hidden="true">
-              ◉
-            </span>
-            <span className="active-advisory-name">
-              {formatAdvisoryName(adv)}
-            </span>
-          </li>
-        ))}
+        {advisories.map((adv) => {
+          const label = formatAdvisoryName(adv);
+          // Inline target price for the gap_fill.* family. Suppressed
+          // for `gap_fill.filled` since the level just BECAME the
+          // price — adding "→ 5800" alongside "Gap filled" is
+          // redundant. Kept for `opened` (target = where to fill)
+          // and `failed` (post-mortem: the level that didn't get
+          // hit at RTH open). ES tick = 0.25, so toFixed(2) renders
+          // tick-aligned values cleanly.
+          const showTarget =
+            (adv === "gap_fill.opened" || adv === "gap_fill.failed") &&
+            gapFill !== null;
+          // Phrasing: "Open gap → fills 5800.00" reads less
+          // ambiguously than the bare arrow ("Open gap → 5800.00"
+          // could parse as "the gap is at 5800"). The verb "fills"
+          // anchors the price as the target rather than the level.
+          const targetPhrase =
+            adv === "gap_fill.failed" ? "missed" : "fills";
+          return (
+            <li
+              key={adv}
+              className="active-advisory"
+              aria-label={
+                showTarget
+                  ? `Active advisory: ${label}, ${targetPhrase} ${gapFill!.target_price.toFixed(2)}`
+                  : `Active advisory: ${label}`
+              }
+            >
+              {/* Distinct pulse mark from the live event log's
+                  ○/●/─ importance grading — `◉` reads as "live/on"
+                  rather than reusing the log's "moderate importance"
+                  ○. Avoids the visual grammar ambiguity R2 flagged. */}
+              <span className="active-advisory-pulse" aria-hidden="true">
+                ◉
+              </span>
+              <span className="active-advisory-name">
+                {label}
+                {showTarget && (
+                  <span className="active-advisory-target">
+                    {` → ${targetPhrase} `}
+                    {gapFill!.target_price.toFixed(2)}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

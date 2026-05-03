@@ -1145,6 +1145,13 @@
      the rolling log's neutral ink palette. */
   color: var(--pos-cream, var(--ink-100));
 }
+.active-advisory-target {
+  /* Tabular-numbers + slight de-emphasis: the price IS the
+     actionable info but should read as a sub-clause of the advisory
+     name, not compete with it. */
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-60);
+}
 
 
 /* ── Upcoming macro events (System 8 — Type I peripheral) ─────────
