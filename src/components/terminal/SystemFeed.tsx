@@ -55,12 +55,26 @@ import { useTick } from "../../hooks/useTick";
 const TICK_THRESHOLD = 1000;
 
 /** Number of consecutive same-direction ±1000 prints required to fire
- *  the TICK persistent advisory. Single ±1000 prints are common and
- *  noisy — sustained 3+ consecutive prints in the same direction is
- *  trader-vocabulary "real institutional pressure," not a single
- *  algo's program. Fired exactly once per streak (transition from
- *  count=2 → count=3); does not repeat-fire as the streak extends. */
-const TICK_PERSISTENT_THRESHOLD = 3;
+ *  the TICK persistent advisory. Trader literature
+ *  (Raschke / Fisher convention) treats 2-3 extreme prints as a
+ *  divergence-flag candidate and 5+ as an institutional-day
+ *  signature; 4 is the floor of "sustained" without firing on every
+ *  echoed program. At ~30s snapshot cadence, 4 = ~2 minutes of
+ *  one-sided pressure minimum.
+ *
+ *  Fired exactly once per streak (transition from count=N-1 → N);
+ *  does not repeat-fire as the streak extends past N. Tunable here
+ *  without leaking strategy parameters since TICK is a public
+ *  market-wide figure. */
+const TICK_PERSISTENT_THRESHOLD = 4;
+
+/** Maximum acceptable age of the breadth feed before the streak
+ *  counter resets. A weekend-spanning streak (Fri close +1200 →
+ *  Sun reopen +1100) is not a real signal — the gap means the prior
+ *  count was for a different session. 120s = two snapshot cycles
+ *  of staleness, which catches genuine data gaps without resetting
+ *  on a single missed poll. */
+const TICK_STALE_RESET_SECONDS = 120;
 
 /** Newest-first cap on the rendered list. §4.3 calls for "no load
  *  more — if it scrolled off, it's gone." Ten visible entries fit
@@ -167,16 +181,19 @@ function tickPersistentEvent(
   now: number,
   idCounter: number,
 ): FeedEvent {
-  const direction = sign > 0 ? "+1000+" : "−1000+";
+  // "TICK ×N" subject differentiates from single-print TICK events
+  // (which use subject="TICK"). Operator scanning the System Feed
+  // can spot the persistent advisory at a glance even though both
+  // events share the same kind/pulse-mark color tier.
+  const sideLabel = sign > 0 ? "+1000" : "−1000";
+  const flowLabel = sign > 0 ? "buying" : "selling";
   return {
     id: `${now}-tick-persistent-${idCounter}`,
     timestamp: now,
     kind: "tick",
     importance: "high",
-    subject: "TICK",
-    body: `${streakLen} consecutive ${direction} prints — sustained ${
-      sign > 0 ? "buying" : "selling"
-    } pressure beyond a single program.`,
+    subject: `TICK ×${streakLen}`,
+    body: `${streakLen} consecutive prints ≥ ${sideLabel} — sustained institutional ${flowLabel}.`,
   };
 }
 
@@ -301,17 +318,25 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
 
   // TICK persistent advisory state — tracks consecutive same-direction
   // ±TICK_THRESHOLD prints. Resets when a print drops below the
-  // threshold or flips sign. Fires once when the streak reaches
-  // TICK_PERSISTENT_THRESHOLD (transition from below → at), does NOT
-  // repeat-fire as the streak extends further. Counted on snapshot
-  // diffs (so each snapshot's tick value contributes at most one
-  // increment); cycles where breadth.tick is null leave the streak
-  // unchanged rather than resetting — a single missed snapshot during
-  // a real streak shouldn't break the count.
+  // threshold, flips sign, or the breadth feed goes stale beyond
+  // TICK_STALE_RESET_SECONDS (handles weekend-spanning streaks).
+  // Fires once when the streak reaches TICK_PERSISTENT_THRESHOLD
+  // (strict equality on the transition); does NOT repeat-fire as the
+  // streak extends further. Counts every snapshot whose breadth.tick
+  // is non-null — including the very first one a session sees, so
+  // 4 consecutive snapshots actually fires on the 4th, not the 5th.
+  // Strict-mode double-invoke safety: dedup'd via lastSnapshotRef.
   const tickStreakRef = useRef<{ length: number; sign: 1 | -1 | 0 }>({
     length: 0,
     sign: 0,
   });
+
+  // Identity guard against React 18 strict-mode double-invoke. The
+  // useEffect runs twice on mount in dev; without this guard the
+  // streak counter would double-increment on every cycle. We dedup
+  // by snapshot identity (data === lastSnapshot) — same reference
+  // means same poll, regardless of how many times the effect fires.
+  const lastSnapshotRef = useRef<TerminalSnapshot | null>(null);
 
   /** Returns true and records the emit if the (kind, key) pair is
    *  outside its cooldown window; false otherwise. Mutates
@@ -336,50 +361,90 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
 
   useEffect(() => {
     if (data == null) return;
+    // Strict-mode double-invoke guard. React 18 runs this effect twice
+    // on mount in dev; without this gate, every stateful detector
+    // (streak counter especially) would double-process the same
+    // snapshot. Bailing on identity match keeps all detection
+    // idempotent regardless of invocation count.
+    if (data === lastSnapshotRef.current) return;
+    lastSnapshotRef.current = data;
+
     const prev = prevRef.current;
     prevRef.current = data;
-    if (prev == null) return;  // first-cycle suppression
 
     const now = Date.now();
     const newEvents: FeedEvent[] = [];
 
-    // TICK — institutional-program threshold crossing.
-    // Cooldown=0 by design; cross-threshold semantics handle dedupe.
-    if (tickCrossedThreshold(prev.breadth.tick, data.breadth.tick)) {
-      newEvents.push(tickEvent(data.breadth.tick!, now, idCounterRef.current++));
-    }
-
     // TICK persistent advisory — sustained same-direction ±1000 prints.
-    // Tracks a streak counter across snapshot polls; fires once when
-    // the streak reaches TICK_PERSISTENT_THRESHOLD. Streak resets when
-    // a print drops below threshold or flips sign. Null TICK leaves the
-    // streak unchanged — a single missed snapshot shouldn't break a
-    // real run.
+    // Runs BEFORE the first-cycle suppression so the very first
+    // snapshot's tick contributes to the streak. Without this, "4
+    // consecutive prints" would actually require 5 post-mount
+    // snapshots — an off-by-one that delays the advisory by a full
+    // poll cycle. Streak resets when:
+    //   - tick drops below TICK_THRESHOLD (genuine break in pressure)
+    //   - tick flips sign (regime swing)
+    //   - prev → cur snapshot timestamp gap exceeds
+    //     TICK_STALE_RESET_SECONDS (catches weekend-spanning streaks
+    //     where Fri close + Sun reopen would otherwise read as
+    //     length=2 across a 50-hour gap)
+    // Null TICK leaves the streak unchanged (single missed snapshot
+    // ≠ real break). State machine + strict-equality fire gate so
+    // length=N+1, N+2 don't re-emit while a streak holds.
     const tickNow = data.breadth.tick;
+    const streak = tickStreakRef.current;
+    // Snapshot-gap-based session-boundary reset. `data.timestamp` and
+    // `prev.timestamp` are ISO strings the backend stamps at compose
+    // time. A gap > TICK_STALE_RESET_SECONDS means a real
+    // discontinuity (overnight halt, weekend, daemon restart, IBKR
+    // outage) — discard the prior streak rather than carry it across.
+    if (prev != null) {
+      const curMs = Date.parse(data.timestamp);
+      const prevMs = Date.parse(prev.timestamp);
+      if (
+        Number.isFinite(curMs)
+        && Number.isFinite(prevMs)
+        && curMs - prevMs > TICK_STALE_RESET_SECONDS * 1000
+      ) {
+        streak.length = 0;
+        streak.sign = 0;
+      }
+    }
     if (tickNow != null) {
       const tickSign: 1 | -1 | 0 =
         Math.abs(tickNow) >= TICK_THRESHOLD ? (tickNow >= 0 ? 1 : -1) : 0;
-      const streak = tickStreakRef.current;
       if (tickSign === 0) {
-        // Below threshold — break the streak.
         streak.length = 0;
         streak.sign = 0;
       } else if (tickSign === streak.sign) {
-        // Same direction — extend.
         streak.length += 1;
       } else {
-        // Sign flip OR fresh streak — reset to 1.
         streak.length = 1;
         streak.sign = tickSign;
       }
-      // Fire on the exact transition into TICK_PERSISTENT_THRESHOLD,
-      // not on every cycle while at-or-above. Strict equality so the
-      // 4th, 5th, ... consecutive prints don't re-emit.
       if (streak.length === TICK_PERSISTENT_THRESHOLD && streak.sign !== 0) {
         newEvents.push(
           tickPersistentEvent(streak.length, streak.sign, now, idCounterRef.current++),
         );
       }
+    }
+
+    // First-cycle suppression for diff-based detectors below. The
+    // streak counter above is NOT diff-based (it samples the current
+    // value), so it runs on cycle 1; the rest are prev-vs-cur diffs
+    // and have nothing to compare against on cycle 1. Narrows `prev`
+    // from `TerminalSnapshot | null` to `TerminalSnapshot` for the
+    // remainder of the body.
+    if (prev == null) {
+      if (newEvents.length > 0) {
+        setEvents((prevList) => [...newEvents, ...prevList].slice(0, MAX_EVENTS));
+      }
+      return;
+    }
+
+    // TICK — institutional-program threshold crossing.
+    // Cooldown=0 by design; cross-threshold semantics handle dedupe.
+    if (tickCrossedThreshold(prev.breadth.tick, data.breadth.tick)) {
+      newEvents.push(tickEvent(data.breadth.tick!, now, idCounterRef.current++));
     }
 
     // CREDIT — HYG/LQD lead signal transition. Cooldown keys on the
