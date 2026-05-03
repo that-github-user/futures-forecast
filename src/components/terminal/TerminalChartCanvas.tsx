@@ -1014,6 +1014,12 @@ function buildOverlayLines(
   // Spec §4.2: Prior-day HLC → ink-60, 1px DOTTED (all three).
   // PDH/PDC/PDL keeps a uniform 3-letter cadence with POC/VAH/VAL so
   // labels stack with consistent chip width.
+  //
+  // SET (CME settlement) is rendered alongside as a 4th prior-day
+  // line — distinct from PDC (16:00 ET RTH close) since the two
+  // diverge by a few ticks on event days. SET is what the headline
+  // ticker's change% references; surfacing it on the chart lets the
+  // trader see the actual mark-to-market level.
   if (overlays.priorHlc) {
     if (lv.pd_high != null) {
       lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PDH" });
@@ -1023,6 +1029,20 @@ function buildOverlayLines(
     }
     if (lv.pd_low != null) {
       lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PDL" });
+    }
+    // SET — distinct dashed style + ink-80 emphasis to differentiate
+    // from the dotted PDC line (often visually adjacent within a few
+    // ticks). Only render when the backend ships es_settlement; falls
+    // away cleanly during cold-start gaps where the close tick hasn't
+    // populated yet.
+    if (snapshot.es_settlement != null) {
+      lines.push({
+        value: snapshot.es_settlement,
+        color: palette.ink80,
+        style: "dashed",
+        width: 1,
+        label: "SET",
+      });
     }
   }
 

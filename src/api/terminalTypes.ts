@@ -164,6 +164,13 @@ export interface TerminalSnapshot {
   es_price: number | null;
   es_change: number | null;
   es_change_pct: number | null;
+  // CME-published settlement for the prior session (Tick Type 9).
+  // Distinct from levels.pd_close (PDC = 16:00 ET RTH close used by
+  // gap-fill state machine + chart PDC line). The headline ticker's
+  // change% is computed against es_settlement on the backend already
+  // (with fallback to pd_close on cold start). Frontend exposes it
+  // for the chart's SET reference line.
+  es_settlement: number | null;
   regime: RegimeData;
   gex: GexData;
   vwap: VwapData;
