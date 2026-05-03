@@ -864,9 +864,9 @@ function UpcomingEvents({
               {formatRelativeTimeLabel(ev.timestamp, ev.time_et)}
             </span>
             <span className="upcoming-pulse" aria-hidden="true">
-              {VOL_PULSE[ev.vol]}
+              {VOL_PULSE[ev.vol] ?? "●"}
             </span>
-            <span className="upcoming-name">{ev.name}</span>
+            <span className="upcoming-name" title={ev.name}>{ev.name}</span>
             {ev.is_imminent && (
               <span className="upcoming-countdown" aria-hidden="true">
                 ⏱ {ev.minutes_until}m
