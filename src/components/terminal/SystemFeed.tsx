@@ -76,6 +76,51 @@ const TICK_PERSISTENT_THRESHOLD = 4;
  *  on a single missed poll. */
 const TICK_STALE_RESET_SECONDS = 120;
 
+/** RTH gate for the streak counter. NYSE TICK is published only
+ *  during 09:30-16:00 ET; outside that window the IBKR ticker holds
+ *  the prior RTH close as a frozen `last` value — the streak counter
+ *  would happily increment it indefinitely across overnight polls
+ *  ("3 consecutive +1100 prints" while the same +1100 frozen value
+ *  is observed across 4 cycles). The single-print TICK event is
+ *  immune because `tickCrossedThreshold` returns false when both
+ *  prev and cur are at the same level. The streak counter has no
+ *  equivalent gate, so we add an explicit RTH check.
+ *
+ *  Pre-market early-close days (post-Thanksgiving 13:00 close, etc.)
+ *  are NOT specially handled here — the worst case is a few extra
+ *  legitimate-but-low-participation post-1pm advisories on those
+ *  days, which is acceptable. */
+const RTH_OPEN_HHMM = 9 * 60 + 30;   // 09:30 ET
+const RTH_CLOSE_HHMM = 16 * 60;      // 16:00 ET
+
+function isWithinRth(timestampIso: string): boolean {
+  const ms = Date.parse(timestampIso);
+  if (!Number.isFinite(ms)) return false;
+  // Convert UTC milliseconds to ET wall-clock minutes-since-midnight
+  // via Intl. The browser's Intl.DateTimeFormat handles DST
+  // (EDT/EST) transitions correctly without a tz library — the
+  // alternative was importing a 30-50KB tz package for one
+  // boundary check.
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date(ms));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wkd = get("weekday");
+  // Weekend short — NYSE never opens. Sat / Sun.
+  if (wkd === "Sat" || wkd === "Sun") return false;
+  // 'hour' from hour12: false renders 00-23. Convert to minutes.
+  const hh = parseInt(get("hour"), 10);
+  const mm = parseInt(get("minute"), 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
+  const minutes = hh * 60 + mm;
+  return minutes >= RTH_OPEN_HHMM && minutes < RTH_CLOSE_HHMM;
+}
+
 /** Newest-first cap on the rendered list. §4.3 calls for "no load
  *  more — if it scrolled off, it's gone." Ten visible entries fit
  *  the 280px sidebar at the design's 13px Berkeley Mono / 1.5
@@ -392,12 +437,23 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // length=N+1, N+2 don't re-emit while a streak holds.
     const tickNow = data.breadth.tick;
     const streak = tickStreakRef.current;
-    // Snapshot-gap-based session-boundary reset. `data.timestamp` and
-    // `prev.timestamp` are ISO strings the backend stamps at compose
-    // time. A gap > TICK_STALE_RESET_SECONDS means a real
-    // discontinuity (overnight halt, weekend, daemon restart, IBKR
-    // outage) — discard the prior streak rather than carry it across.
-    if (prev != null) {
+    // RTH gate — NYSE TICK isn't published outside 09:30-16:00 ET.
+    // IBKR returns the prior RTH close as a frozen value via
+    // `ticker.last`, which would otherwise cause the streak counter
+    // to fire on overnight polls of the same frozen value (see
+    // RTH_OPEN_HHMM constant for full rationale). Outside RTH we
+    // also reset the streak so a Friday-close streak doesn't carry
+    // into Monday's open.
+    const inRth = isWithinRth(data.timestamp);
+    if (!inRth) {
+      streak.length = 0;
+      streak.sign = 0;
+    } else if (prev != null) {
+      // Snapshot-gap-based session-boundary reset. Catches
+      // mid-RTH discontinuities (daemon restart, IBKR outage during
+      // open hours) that the RTH-only gate above doesn't cover —
+      // both prev and cur could be in RTH but separated by a gap
+      // larger than the normal poll cadence.
       const curMs = Date.parse(data.timestamp);
       const prevMs = Date.parse(prev.timestamp);
       if (
@@ -409,7 +465,11 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
         streak.sign = 0;
       }
     }
-    if (tickNow != null) {
+    // Streak-extension only runs inside RTH. Outside RTH the streak
+    // is already reset above and tickNow may be a frozen prior-close
+    // value masquerading as live data — incrementing the counter on
+    // it would be a false positive.
+    if (inRth && tickNow != null) {
       const tickSign: 1 | -1 | 0 =
         Math.abs(tickNow) >= TICK_THRESHOLD ? (tickNow >= 0 ? 1 : -1) : 0;
       if (tickSign === 0) {
