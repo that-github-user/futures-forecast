@@ -507,10 +507,10 @@
   flex-direction: column;
   gap: 14px;
   overflow-y: auto;
-  /* Match the parent's existing scroll-hidden vibe: no visible
-     scrollbar chrome, but allow scroll-through if MAX_EVENTS exceeds
-     the sidebar height (won't happen at MAX_EVENTS=12 / typical
-     viewport but stays graceful at smaller heights). */
+  /* Internal scroll: with the upcoming-events sibling sharing the
+     sidebar, the live event list now routinely scrolls — no longer
+     a fall-back-only path. Thin scrollbar matches the
+     scroll-hidden aesthetic of the parent. */
   scrollbar-width: thin;
   /* Flex sizing: shrink to share space with .upcoming-events at the
      bottom of the sidebar. Without `min-height: 0` the live event
@@ -1102,11 +1102,13 @@
   /* Pin to the bottom of the sidebar regardless of live-event-list
      growth — `flex-shrink: 0` prevents the section from collapsing
      when many live events are present, and the sibling list's
-     `min-height: 0` yields enough space. Also cap the list height
-     so a heavy day's docket (10+ events at 8:30/10:00 ET) doesn't
-     push the section off-screen on small viewports. */
+     `min-height: 0` yields enough space. Cap is responsive via
+     `clamp`: floor 180px (≈6 events visible) for small viewports,
+     30vh on typical desktop (~290-320px = ~10 events), ceiling
+     360px on tall monitors. Heavy 8:30 ET CPI/NFP clusters fit
+     without forcing internal scroll. */
   flex-shrink: 0;
-  max-height: 220px;
+  max-height: clamp(180px, 30vh, 360px);
   overflow-y: auto;
   scrollbar-width: thin;
 }
