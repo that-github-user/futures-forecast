@@ -339,6 +339,19 @@ function formatAdvisoryName(raw: string): string {
     }
   }
 
+  // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
+  // the namespace prefix would otherwise be split on the dot and the
+  // generic formatter would drop "gap_fill" (not in _ACRONYMS), leaving
+  // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
+  // in the live feed. Render the full "Gap fill <state>" instead.
+  // Trader-vocabulary phrasing per R2 review:
+  //   gap_fill.opened → "Open gap" (state: there's a currently-open gap)
+  //   gap_fill.filled → "Gap filled" (the gap closed)
+  //   gap_fill.failed → "Gap fill failed" (gap unfilled at RTH open)
+  if (raw === "gap_fill.opened") return "Open gap";
+  if (raw === "gap_fill.filled") return "Gap filled";
+  if (raw === "gap_fill.failed") return "Gap fill failed";
+
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
 
@@ -617,6 +630,12 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // and have nothing to compare against on cycle 1. Narrows `prev`
     // from `TerminalSnapshot | null` to `TerminalSnapshot` for the
     // remainder of the body.
+    //
+    // Sticky advisory state (e.g. gap_fill.opened firing for ~24h
+    // after Globex reopen) is surfaced separately via the persistent
+    // <ActiveAdvisories> section in the sidebar — the live event log
+    // remains a TRANSITIONS-ONLY view, so a mid-session page refresh
+    // doesn't re-emit history but the trader still sees current state.
     if (prev == null) {
       if (newEvents.length > 0) {
         setEvents((prevList) => [...newEvents, ...prevList].slice(0, MAX_EVENTS));
@@ -749,14 +768,18 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     }
   }, [data]);
 
+  const activeAdvisories = data?.synthesizer?.advisories ?? [];
+
   if (events.length === 0) {
     // Empty live-event log is the normal state at market open before
-    // any state-machine advisory has fired. Still render the
-    // upcoming-events section if calendar.events is populated — the
-    // forward-looking docket should not be gated on the rolling log.
+    // any state-machine TRANSITION has fired. Still render the
+    // active-advisories + upcoming-events sections — the live log
+    // is for transitions only; current state and forward calendar
+    // are independent.
     return (
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
+        <ActiveAdvisories advisories={activeAdvisories} />
         <div className="terminal-feed-empty">Awaiting events.</div>
         <UpcomingEvents events={data?.calendar?.events ?? []} />
       </aside>
@@ -766,6 +789,7 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   return (
     <aside className="terminal-feed">
       <div className="terminal-feed-title">System Feed</div>
+      <ActiveAdvisories advisories={activeAdvisories} />
       <ul className="terminal-feed-list">
         {events.map((ev) => {
           const age = nowMs - ev.timestamp;
@@ -844,6 +868,46 @@ function formatRelativeTimeLabel(timestampIso: string, time_et: string): string 
     return time_et;
   }
 }
+
+// ── Active advisories ─────────────────────────────────────────────
+//
+// Persistent display of currently-firing advisories. The live event
+// log below is TRANSITIONS-ONLY (X fired / X cleared). This section
+// reflects the snapshot's `synthesizer.advisories[]` directly, so a
+// trader who refreshes the page mid-session immediately sees the
+// current state of every sticky advisory (e.g. gap_fill.opened firing
+// since 18:00 ET) without having to scroll the rolling log or have
+// been present at the moment of the original transition.
+
+function ActiveAdvisories({ advisories }: { advisories: string[] }) {
+  if (advisories.length === 0) return null;
+  return (
+    <section className="active-advisories" aria-label="Currently firing advisories">
+      <h4 className="active-advisories-header">active now</h4>
+      <ul className="active-advisories-list">
+        {advisories.map((adv) => (
+          <li
+            key={adv}
+            className="active-advisory"
+            aria-label={`Active advisory: ${formatAdvisoryName(adv)}`}
+          >
+            {/* Distinct pulse mark from the live event log's
+                ○/●/─ importance grading — `◉` reads as "live/on"
+                rather than reusing the log's "moderate importance"
+                ○. Avoids the visual grammar ambiguity R2 flagged. */}
+            <span className="active-advisory-pulse" aria-hidden="true">
+              ◉
+            </span>
+            <span className="active-advisory-name">
+              {formatAdvisoryName(adv)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 
 function UpcomingEvents({
   events,
