@@ -914,7 +914,7 @@ function ActiveAdvisories({
           // could parse as "the gap is at 5800"). The verb "fills"
           // anchors the price as the target rather than the level.
           const targetPhrase =
-            adv === "gap_fill.failed" ? "missed" : "fills";
+            adv === "gap_fill.failed" ? "missed @" : "fills @";
           return (
             <li
               key={adv}
