@@ -296,6 +296,8 @@ const _ACRONYMS = new Set([
   "vwap", "vix", "gex", "spx", "spy",
   "rth", "eth", "fomc", "or",
   "poc", "hvn", "lvn", "va", "vah", "val", "ib",
+  // Macro-event acronyms (calendar.imminent.* slug formatting).
+  "cpi", "ppi", "pce", "nfp", "ism", "jolts", "adp", "gdp", "pmi",
 ]);
 
 function _prettifyToken(token: string): string {
@@ -315,7 +317,7 @@ function formatAdvisoryName(raw: string): string {
   //   "levels.gap_sun_failed"      → "Gap sun failed"
   //   "levels.poc_shift"           → "POC shift"
   //   "vwap.retest_after_break"    → "VWAP retest after break"
-  //   "calendar.fomc_drift"        → "FOMC drift"
+  //   "calendar.imminent.3.cpi"    → "Imminent: CPI"
   //
   // The first dot-segment (the source-system namespace) is dropped
   // unless its token is an acronym we want to surface (vwap → VWAP).
@@ -324,6 +326,19 @@ function formatAdvisoryName(raw: string): string {
   // any segment beyond [0,1] becomes a parenthetical suffix. No
   // current planned advisory exercises that branch but it stays as
   // forward-compat for any future genuinely-hierarchical name.
+
+  // Special-case `calendar.imminent.{vol}.{slug}` — rendered as
+  // "Imminent: <Pretty Name>" with the vol stripped (importance is
+  // conveyed by the SystemFeed pulse mark already; the full event
+  // name + tier is still visible in the upcoming-events section).
+  if (raw.startsWith("calendar.imminent.")) {
+    const tail = raw.split(".").slice(3).join("_");
+    if (tail) {
+      const pretty = tail.split("_").map(_prettifyToken).join(" ");
+      return `Imminent: ${pretty.charAt(0).toUpperCase()}${pretty.slice(1)}`;
+    }
+  }
+
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
 
@@ -773,6 +788,93 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
           );
         })}
       </ul>
+      <UpcomingEvents events={data?.calendar?.events ?? []} />
     </aside>
+  );
+}
+
+
+// ── Upcoming events section ───────────────────────────────────────
+//
+// Type I (peripheral) view of the next 24h macro docket. Always-
+// visible compact list when non-empty; vol-tier conveyed via stacked
+// pulse marks (●●● = vol 3, ●● = vol 2, ● = vol 1). Imminent events
+// (within tier-driven window) get an emphasis state with countdown
+// timer to promote to focal attention. Events past `now` are filtered
+// upstream by the backend's compute(); events more than 24h out are
+// excluded too.
+
+const VOL_PULSE: Record<1 | 2 | 3, string> = {
+  3: "●●●",
+  2: "●●",
+  1: "●",
+};
+
+function formatRelativeTimeLabel(timestampIso: string, time_et: string): string {
+  // Compute calendar-day offset (today/tomorrow/etc.) from the
+  // browser's local date relative to the event's ET date. The
+  // ET-formatted date is what the trader thinks in.
+  try {
+    const eventDate = new Date(timestampIso);
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const eventEtDate = fmt.format(eventDate);
+    const todayEtDate = fmt.format(new Date());
+    if (eventEtDate === todayEtDate) {
+      return time_et;
+    }
+    // Day offset: parse YYYY-MM-DD strings and diff by 1 day step.
+    const offsetDays = Math.round(
+      (Date.parse(eventEtDate) - Date.parse(todayEtDate)) / 86_400_000,
+    );
+    if (offsetDays === 1) return `tom ${time_et}`;
+    // Within next 24h, tomorrow is the only other case (the backend
+    // filters past 24h). Defensive: fall through to time only.
+    return time_et;
+  } catch {
+    return time_et;
+  }
+}
+
+function UpcomingEvents({
+  events,
+}: {
+  events: import("../../api/terminalTypes").MacroEvent[];
+}) {
+  if (events.length === 0) return null;
+  return (
+    <section className="upcoming-events" aria-label="Upcoming macro events">
+      <h4 className="upcoming-events-header">upcoming 24h</h4>
+      <ul className="upcoming-events-list">
+        {events.map((ev) => (
+          <li
+            key={`${ev.timestamp}|${ev.name}`}
+            className={`upcoming-event vol-${ev.vol}${ev.is_imminent ? " imminent" : ""}`}
+            aria-label={
+              ev.is_imminent
+                ? `Imminent macro event: ${ev.name} in ${ev.minutes_until} minutes (impact ${ev.vol})`
+                : `Upcoming macro event: ${ev.name} (impact ${ev.vol})`
+            }
+          >
+            <span className="upcoming-time">
+              {formatRelativeTimeLabel(ev.timestamp, ev.time_et)}
+            </span>
+            <span className="upcoming-pulse" aria-hidden="true">
+              {VOL_PULSE[ev.vol] ?? "●"}
+            </span>
+            <span className="upcoming-name" title={ev.name}>{ev.name}</span>
+            {ev.is_imminent && (
+              <span className="upcoming-countdown" aria-hidden="true">
+                ⏱ {ev.minutes_until}m
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

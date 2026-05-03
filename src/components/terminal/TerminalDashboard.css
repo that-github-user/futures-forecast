@@ -1066,3 +1066,91 @@
     font-size: 15px;
   }
 }
+
+
+/* ── Upcoming macro events (System 8 — Type I peripheral) ─────────
+   Compact docket section at the bottom of the System Feed sidebar.
+   Always-visible when non-empty so the trader registers the next-24h
+   schedule without focal attention. Imminent events (within their
+   tier-driven window) get a distinct accent + countdown to promote
+   to Type II focal awareness. Visual grammar follows the existing
+   feed pulse marks: ●●● = vol 3, ●● = vol 2, ● = vol 1. */
+.upcoming-events {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ink-20);
+  /* Stays inside the sidebar's overflow-y scroll; if the live event
+     list grows past viewport, the upcoming-events block scrolls into
+     view rather than being clipped. */
+}
+.upcoming-events-header {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-40);
+}
+.upcoming-events-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.upcoming-event {
+  display: grid;
+  grid-template-columns: 60px auto 1fr auto;
+  align-items: baseline;
+  column-gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-60);
+}
+.upcoming-time {
+  color: var(--ink-40);
+}
+.upcoming-pulse {
+  font-size: 9px;
+  letter-spacing: -0.5px;  /* tighten the stacked dots so ●●● reads as one mark */
+  color: var(--ink-40);
+}
+.upcoming-event.vol-3 .upcoming-pulse {
+  color: var(--ink-80, var(--ink-60));
+}
+.upcoming-event.vol-2 .upcoming-pulse {
+  color: var(--ink-60);
+}
+.upcoming-event.vol-1 .upcoming-pulse {
+  color: var(--ink-40);
+}
+.upcoming-name {
+  /* Truncate long event names rather than wrap — keeps the row
+     height predictable across the docket. Hover via title attribute
+     surfaces the full name (browsers default-render <li title="...">
+     as a tooltip; React's aria-label provides the screen-reader
+     equivalent). */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upcoming-countdown {
+  font-variant-numeric: tabular-nums;
+  color: var(--neg-persimmon, #c75a3c);
+}
+
+/* Imminent state — Type II focal-attention promotion. Pulse mark
+   gets the persimmon accent + the row text shifts to ink-100 so the
+   active event reads as the primary information in the section. */
+.upcoming-event.imminent {
+  color: var(--ink-100);
+}
+.upcoming-event.imminent .upcoming-time {
+  color: var(--ink-80, var(--ink-60));
+}
+.upcoming-event.imminent .upcoming-pulse {
+  color: var(--neg-persimmon, #c75a3c);
+}

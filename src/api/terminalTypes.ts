@@ -130,6 +130,24 @@ export interface TerminalIntradayBarsResponse {
   bars: TerminalIntradayBar[];
 }
 
+// Macro calendar (System 8 — advisory-only).
+// vol 1-3 impact tier mirrors economic-calendar provider schema:
+// 3 = highest (CPI/NFP/FOMC-equivalent), 2 = moderate (PCE/PPI/ISM),
+// 1 = light (Baker Hughes/CFTC reports). Imminent-window thresholds
+// are tier-driven (vol 3 → 60min, vol 2 → 30min, vol 1 → 15min).
+export interface MacroEvent {
+  timestamp: string;       // UTC ISO-8601
+  time_et: string;         // "HH:MM" ET wall-clock
+  name: string;
+  vol: 1 | 2 | 3;
+  minutes_until: number;   // positive int; rounded down
+  is_imminent: boolean;    // within tier-driven imminent window
+}
+
+export interface CalendarData {
+  events: MacroEvent[];    // next 24h, sorted ascending by timestamp
+}
+
 export interface TerminalSnapshot {
   timestamp: string;
   es_price: number | null;
@@ -141,4 +159,5 @@ export interface TerminalSnapshot {
   levels: LevelsData;
   breadth: BreadthData;
   synthesizer: SynthesizerData;
+  calendar: CalendarData;
 }
