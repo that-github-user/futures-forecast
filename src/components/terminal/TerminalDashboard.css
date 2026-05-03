@@ -1088,6 +1088,47 @@
 }
 
 
+/* ── Active advisories (persistent state indicator) ────────────────
+   Pinned at the top of the System Feed sidebar (between the title
+   and the live event log). Reflects synthesizer.advisories[] as
+   currently-firing state — independent of the diff-based event log
+   below. A trader refreshing mid-session sees what's active right
+   now without needing the transition event in the rolling log. */
+.active-advisories {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--ink-20);
+  padding-bottom: 12px;
+  margin-bottom: -8px;  /* pull list closer; gap from .terminal-feed flex still applies */
+}
+.active-advisories-header {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-40);
+}
+.active-advisories-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.active-advisory {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-100);  /* full ink — currently active state */
+}
+
+
 /* ── Upcoming macro events (System 8 — Type I peripheral) ─────────
    Compact docket section at the bottom of the System Feed sidebar.
    Always-visible when non-empty so the trader registers the next-24h
