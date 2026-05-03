@@ -54,6 +54,73 @@ import { useTick } from "../../hooks/useTick";
  *  TICK is a public market-wide figure. */
 const TICK_THRESHOLD = 1000;
 
+/** Number of consecutive same-direction ±1000 prints required to fire
+ *  the TICK persistent advisory. Trader literature
+ *  (Raschke / Fisher convention) treats 2-3 extreme prints as a
+ *  divergence-flag candidate and 5+ as an institutional-day
+ *  signature; 4 is the floor of "sustained" without firing on every
+ *  echoed program. At ~30s snapshot cadence, 4 = ~2 minutes of
+ *  one-sided pressure minimum.
+ *
+ *  Fired exactly once per streak (transition from count=N-1 → N);
+ *  does not repeat-fire as the streak extends past N. Tunable here
+ *  without leaking strategy parameters since TICK is a public
+ *  market-wide figure. */
+const TICK_PERSISTENT_THRESHOLD = 4;
+
+/** Maximum acceptable age of the breadth feed before the streak
+ *  counter resets. A weekend-spanning streak (Fri close +1200 →
+ *  Sun reopen +1100) is not a real signal — the gap means the prior
+ *  count was for a different session. 120s = two snapshot cycles
+ *  of staleness, which catches genuine data gaps without resetting
+ *  on a single missed poll. */
+const TICK_STALE_RESET_SECONDS = 120;
+
+/** RTH gate for the streak counter. NYSE TICK is published only
+ *  during 09:30-16:00 ET; outside that window the IBKR ticker holds
+ *  the prior RTH close as a frozen `last` value — the streak counter
+ *  would happily increment it indefinitely across overnight polls
+ *  ("3 consecutive +1100 prints" while the same +1100 frozen value
+ *  is observed across 4 cycles). The single-print TICK event is
+ *  immune because `tickCrossedThreshold` returns false when both
+ *  prev and cur are at the same level. The streak counter has no
+ *  equivalent gate, so we add an explicit RTH check.
+ *
+ *  Pre-market early-close days (post-Thanksgiving 13:00 close, etc.)
+ *  are NOT specially handled here — the worst case is a few extra
+ *  legitimate-but-low-participation post-1pm advisories on those
+ *  days, which is acceptable. */
+const RTH_OPEN_HHMM = 9 * 60 + 30;   // 09:30 ET
+const RTH_CLOSE_HHMM = 16 * 60;      // 16:00 ET
+
+function isWithinRth(timestampIso: string): boolean {
+  const ms = Date.parse(timestampIso);
+  if (!Number.isFinite(ms)) return false;
+  // Convert UTC milliseconds to ET wall-clock minutes-since-midnight
+  // via Intl. The browser's Intl.DateTimeFormat handles DST
+  // (EDT/EST) transitions correctly without a tz library — the
+  // alternative was importing a 30-50KB tz package for one
+  // boundary check.
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date(ms));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wkd = get("weekday");
+  // Weekend short — NYSE never opens. Sat / Sun.
+  if (wkd === "Sat" || wkd === "Sun") return false;
+  // 'hour' from hour12: false renders 00-23. Convert to minutes.
+  const hh = parseInt(get("hour"), 10);
+  const mm = parseInt(get("minute"), 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
+  const minutes = hh * 60 + mm;
+  return minutes >= RTH_OPEN_HHMM && minutes < RTH_CLOSE_HHMM;
+}
+
 /** Newest-first cap on the rendered list. §4.3 calls for "no load
  *  more — if it scrolled off, it's gone." Ten visible entries fit
  *  the 280px sidebar at the design's 13px Berkeley Mono / 1.5
@@ -150,6 +217,28 @@ function tickEvent(value: number, now: number, idCounter: number): FeedEvent {
     importance: "high",
     subject: "TICK",
     body: `Print of ${sign}${mag} indicates institutional program execution.`,
+  };
+}
+
+function tickPersistentEvent(
+  streakLen: number,
+  sign: 1 | -1,
+  now: number,
+  idCounter: number,
+): FeedEvent {
+  // "TICK ×N" subject differentiates from single-print TICK events
+  // (which use subject="TICK"). Operator scanning the System Feed
+  // can spot the persistent advisory at a glance even though both
+  // events share the same kind/pulse-mark color tier.
+  const sideLabel = sign > 0 ? "+1000" : "−1000";
+  const flowLabel = sign > 0 ? "buying" : "selling";
+  return {
+    id: `${now}-tick-persistent-${idCounter}`,
+    timestamp: now,
+    kind: "tick",
+    importance: "high",
+    subject: `TICK ×${streakLen}`,
+    body: `${streakLen} consecutive prints ≥ ${sideLabel} — sustained institutional ${flowLabel}.`,
   };
 }
 
@@ -272,6 +361,28 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   // and rationale.
   const cooldownRef = useRef<Map<string, number>>(new Map());
 
+  // TICK persistent advisory state — tracks consecutive same-direction
+  // ±TICK_THRESHOLD prints. Resets when a print drops below the
+  // threshold, flips sign, or the breadth feed goes stale beyond
+  // TICK_STALE_RESET_SECONDS (handles weekend-spanning streaks).
+  // Fires once when the streak reaches TICK_PERSISTENT_THRESHOLD
+  // (strict equality on the transition); does NOT repeat-fire as the
+  // streak extends further. Counts every snapshot whose breadth.tick
+  // is non-null — including the very first one a session sees, so
+  // 4 consecutive snapshots actually fires on the 4th, not the 5th.
+  // Strict-mode double-invoke safety: dedup'd via lastSnapshotRef.
+  const tickStreakRef = useRef<{ length: number; sign: 1 | -1 | 0 }>({
+    length: 0,
+    sign: 0,
+  });
+
+  // Identity guard against React 18 strict-mode double-invoke. The
+  // useEffect runs twice on mount in dev; without this guard the
+  // streak counter would double-increment on every cycle. We dedup
+  // by snapshot identity (data === lastSnapshot) — same reference
+  // means same poll, regardless of how many times the effect fires.
+  const lastSnapshotRef = useRef<TerminalSnapshot | null>(null);
+
   /** Returns true and records the emit if the (kind, key) pair is
    *  outside its cooldown window; false otherwise. Mutates
    *  cooldownRef as a side-effect when emitting is permitted.
@@ -295,12 +406,100 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
 
   useEffect(() => {
     if (data == null) return;
+    // Strict-mode double-invoke guard. React 18 runs this effect twice
+    // on mount in dev; without this gate, every stateful detector
+    // (streak counter especially) would double-process the same
+    // snapshot. Bailing on identity match keeps all detection
+    // idempotent regardless of invocation count.
+    if (data === lastSnapshotRef.current) return;
+    lastSnapshotRef.current = data;
+
     const prev = prevRef.current;
     prevRef.current = data;
-    if (prev == null) return;  // first-cycle suppression
 
     const now = Date.now();
     const newEvents: FeedEvent[] = [];
+
+    // TICK persistent advisory — sustained same-direction ±1000 prints.
+    // Runs BEFORE the first-cycle suppression so the very first
+    // snapshot's tick contributes to the streak. Without this, "4
+    // consecutive prints" would actually require 5 post-mount
+    // snapshots — an off-by-one that delays the advisory by a full
+    // poll cycle. Streak resets when:
+    //   - tick drops below TICK_THRESHOLD (genuine break in pressure)
+    //   - tick flips sign (regime swing)
+    //   - prev → cur snapshot timestamp gap exceeds
+    //     TICK_STALE_RESET_SECONDS (catches weekend-spanning streaks
+    //     where Fri close + Sun reopen would otherwise read as
+    //     length=2 across a 50-hour gap)
+    // Null TICK leaves the streak unchanged (single missed snapshot
+    // ≠ real break). State machine + strict-equality fire gate so
+    // length=N+1, N+2 don't re-emit while a streak holds.
+    const tickNow = data.breadth.tick;
+    const streak = tickStreakRef.current;
+    // RTH gate — NYSE TICK isn't published outside 09:30-16:00 ET.
+    // IBKR returns the prior RTH close as a frozen value via
+    // `ticker.last`, which would otherwise cause the streak counter
+    // to fire on overnight polls of the same frozen value (see
+    // RTH_OPEN_HHMM constant for full rationale). Outside RTH we
+    // also reset the streak so a Friday-close streak doesn't carry
+    // into Monday's open.
+    const inRth = isWithinRth(data.timestamp);
+    if (!inRth) {
+      streak.length = 0;
+      streak.sign = 0;
+    } else if (prev != null) {
+      // Snapshot-gap-based session-boundary reset. Catches
+      // mid-RTH discontinuities (daemon restart, IBKR outage during
+      // open hours) that the RTH-only gate above doesn't cover —
+      // both prev and cur could be in RTH but separated by a gap
+      // larger than the normal poll cadence.
+      const curMs = Date.parse(data.timestamp);
+      const prevMs = Date.parse(prev.timestamp);
+      if (
+        Number.isFinite(curMs)
+        && Number.isFinite(prevMs)
+        && curMs - prevMs > TICK_STALE_RESET_SECONDS * 1000
+      ) {
+        streak.length = 0;
+        streak.sign = 0;
+      }
+    }
+    // Streak-extension only runs inside RTH. Outside RTH the streak
+    // is already reset above and tickNow may be a frozen prior-close
+    // value masquerading as live data — incrementing the counter on
+    // it would be a false positive.
+    if (inRth && tickNow != null) {
+      const tickSign: 1 | -1 | 0 =
+        Math.abs(tickNow) >= TICK_THRESHOLD ? (tickNow >= 0 ? 1 : -1) : 0;
+      if (tickSign === 0) {
+        streak.length = 0;
+        streak.sign = 0;
+      } else if (tickSign === streak.sign) {
+        streak.length += 1;
+      } else {
+        streak.length = 1;
+        streak.sign = tickSign;
+      }
+      if (streak.length === TICK_PERSISTENT_THRESHOLD && streak.sign !== 0) {
+        newEvents.push(
+          tickPersistentEvent(streak.length, streak.sign, now, idCounterRef.current++),
+        );
+      }
+    }
+
+    // First-cycle suppression for diff-based detectors below. The
+    // streak counter above is NOT diff-based (it samples the current
+    // value), so it runs on cycle 1; the rest are prev-vs-cur diffs
+    // and have nothing to compare against on cycle 1. Narrows `prev`
+    // from `TerminalSnapshot | null` to `TerminalSnapshot` for the
+    // remainder of the body.
+    if (prev == null) {
+      if (newEvents.length > 0) {
+        setEvents((prevList) => [...newEvents, ...prevList].slice(0, MAX_EVENTS));
+      }
+      return;
+    }
 
     // TICK — institutional-program threshold crossing.
     // Cooldown=0 by design; cross-threshold semantics handle dedupe.
