@@ -341,6 +341,18 @@ function formatAdvisoryName(raw: string): string {
 
   // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
   // the namespace prefix would otherwise be split on the dot and the
+  // generic formatter would drop "gap_fill" (not in _ACRONYMS), leaving
+  // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
+  // in the live feed. Render the full "Gap fill <state>" instead.
+  if (raw.startsWith("gap_fill.")) {
+    const state = raw.split(".").slice(1).join(" ");
+    if (state) {
+      return `Gap fill ${state}`;
+    }
+  }
+
+  // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
+  // the namespace prefix would otherwise be split on the dot and the
   // generic formatter would drop "gap_fill" (not an acronym), leaving
   // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
   // in the live feed. Render the full "Gap fill <state>" instead.
@@ -630,6 +642,19 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // from `TerminalSnapshot | null` to `TerminalSnapshot` for the
     // remainder of the body.
     if (prev == null) {
+      // Surface advisories that are ALREADY firing when the page
+      // loads. Without this, sticky advisories (like gap_fill.opened
+      // which fires at the 18:00 ET Globex reopen and stays active
+      // through the watch window) would be invisible to a trader who
+      // refreshes mid-session — they'd be classified as "baseline"
+      // and never emitted as feed events. Emitting on first cycle
+      // gives the trader an at-a-glance "what's currently active"
+      // view; subsequent cycles take over via the diff path and
+      // suppress duplicates because prevAdv now contains them.
+      const initialAdvisories = data.synthesizer.advisories ?? [];
+      for (const adv of initialAdvisories) {
+        newEvents.push(advisoryEvent(adv, true, now, idCounterRef.current++));
+      }
       if (newEvents.length > 0) {
         setEvents((prevList) => [...newEvents, ...prevList].slice(0, MAX_EVENTS));
       }
