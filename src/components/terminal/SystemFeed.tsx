@@ -750,10 +750,15 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   }, [data]);
 
   if (events.length === 0) {
+    // Empty live-event log is the normal state at market open before
+    // any state-machine advisory has fired. Still render the
+    // upcoming-events section if calendar.events is populated — the
+    // forward-looking docket should not be gated on the rolling log.
     return (
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
         <div className="terminal-feed-empty">Awaiting events.</div>
+        <UpcomingEvents events={data?.calendar?.events ?? []} />
       </aside>
     );
   }
