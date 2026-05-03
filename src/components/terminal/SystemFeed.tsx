@@ -279,8 +279,23 @@ function creditEvent(
  *  to ship ungainly text for a future name than drop it silently.
  *  Acronym uppercase applied at the end so VWAP / VIX / GEX read
  *  correctly regardless of source style. */
+// Acronyms preserved as ALL-CAPS in the rendered display string. Both
+// override and advisory namespaces draw from this set; tokens not
+// listed render in their original lowercase form (with first-char
+// capitalization where appropriate). Trader-vocabulary set:
+//   vwap/vix/gex/spx/spy — index + derived
+//   rth/eth                — session-window discriminators in
+//                            advisory sub-namespaces
+//   fomc                   — econ-calendar landmark
+//   or                     — opening range
+//   poc / hvn / lvn         — Market Profile (point of control,
+//                            high-volume node, low-volume node)
+//   va / vah / val          — Market Profile (value area + high/low)
+//   ib                     — initial balance (first-hour range)
 const _ACRONYMS = new Set([
-  "vwap", "vix", "gex", "spx", "spy", "rth", "eth", "fomc", "or",
+  "vwap", "vix", "gex", "spx", "spy",
+  "rth", "eth", "fomc", "or",
+  "poc", "hvn", "lvn", "va", "vah", "val", "ib",
 ]);
 
 function _prettifyToken(token: string): string {
@@ -293,17 +308,22 @@ function formatOverrideName(raw: string): string {
 }
 
 function formatAdvisoryName(raw: string): string {
-  // Advisory names: dotted namespace + snake_case action + optional
-  // sub-namespace. Examples:
-  //   "micro.range_expansion"        → "Range expansion"
-  //   "levels.gap_failed.rth"        → "Gap failed (RTH)"
-  //   "levels.gap_failed.sun_open"   → "Gap failed (Sun open)"
-  //   "vwap.retest_after_break"      → "VWAP retest after break"
+  // Advisory names: dotted namespace + snake_case action. Examples:
+  //   "micro.range_expansion"      → "Range expansion"
+  //   "levels.gap_rth_failed"      → "Gap RTH failed"
+  //   "levels.gap_eth_5pm_failed"  → "Gap ETH 5pm failed"
+  //   "levels.gap_sun_failed"      → "Gap sun failed"
+  //   "levels.poc_shift"           → "POC shift"
+  //   "vwap.retest_after_break"    → "VWAP retest after break"
+  //   "calendar.fomc_drift"        → "FOMC drift"
   //
   // The first dot-segment (the source-system namespace) is dropped
   // unless its token is an acronym we want to surface (vwap → VWAP).
-  // The last dot-segment, if present after the action, becomes a
-  // parenthetical suffix.
+  // Three-segment names (legacy shape used during scaffold drafting,
+  // before the gap-fail trio was flattened) still parse correctly:
+  // any segment beyond [0,1] becomes a parenthetical suffix. No
+  // current planned advisory exercises that branch but it stays as
+  // forward-compat for any future genuinely-hierarchical name.
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
 
@@ -644,6 +664,11 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // `advisories` so older snapshot payloads (pre-PR α deploy)
     // render cleanly with no advisory events instead of a runtime
     // error from accessing an undefined array.
+    // TODO: drop `?? []` after the backend rollout (vega-pilot
+    //       PR #105) lands and `advisories` is guaranteed present
+    //       on every snapshot. The TS type is non-optional, so
+    //       this guard is purely runtime cover for the deploy
+    //       transition window.
     const prevAdv = new Set(prev.synthesizer.advisories ?? []);
     const curAdv = new Set(data.synthesizer.advisories ?? []);
     for (const adv of curAdv) {
