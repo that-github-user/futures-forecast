@@ -339,6 +339,18 @@ function formatAdvisoryName(raw: string): string {
     }
   }
 
+  // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
+  // the namespace prefix would otherwise be split on the dot and the
+  // generic formatter would drop "gap_fill" (not an acronym), leaving
+  // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
+  // in the live feed. Render the full "Gap fill <state>" instead.
+  if (raw.startsWith("gap_fill.")) {
+    const state = raw.split(".").slice(1).join(" ");
+    if (state) {
+      return `Gap fill ${state}`;
+    }
+  }
+
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
 
