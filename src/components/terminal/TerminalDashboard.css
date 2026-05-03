@@ -19,13 +19,20 @@
      scorecards 230 ≈ 788 CSS-px > 411 CSS-px viewport at 175%), the
      terminal-root scrollbar appears, user can reach the scorecards. */
   height: 100vh;
-  padding: 24px 32px;
+  /* Edge-to-edge: terminal aesthetic with the framed outer border
+     (24/32px ink-40 padding + 1px section gap) was visually noisy
+     and made right-side window anchoring / browser resize awkward.
+     Sections sit flush against the viewport edge now; their own
+     internal padding (.terminal-headline / .terminal-feed /
+     .terminal-cards) preserves the breathing room previously
+     contributed by the outer frame. */
+  padding: 0;
   display: grid;
   /* Headline row tracks auto so the telemetric score (≤96px) sits
      comfortably alongside regime/price columns at all widths. */
   grid-template-rows: 48px auto 1fr 230px;
-  gap: 1px;
-  background: var(--ink-40);
+  gap: 0;
+  background: var(--paper);
   color: var(--ink-100);
   font-family: var(--font-mono);
   font-weight: 300;
@@ -36,6 +43,10 @@
   overflow-y: auto;
 }
 .terminal-root > section { background: var(--paper); }
+/* Section separators replace the previously-rendered 1px ink-40 gap
+   with explicit hairline borders. Avoids double-borders by only
+   adding a border-bottom on each section that has a sibling below. */
+.terminal-root > section + section { border-top: 1px solid var(--ink-20); }
 
 /* ── Headline strip ────────────────────────────────────────── */
 .terminal-headline {
