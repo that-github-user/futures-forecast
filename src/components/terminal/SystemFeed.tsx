@@ -779,7 +779,10 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     return (
       <aside className="terminal-feed">
         <div className="terminal-feed-title">System Feed</div>
-        <ActiveAdvisories advisories={activeAdvisories} />
+        <ActiveAdvisories
+          advisories={activeAdvisories}
+          gapFill={data?.gap_fill ?? null}
+        />
         <div className="terminal-feed-empty">Awaiting events.</div>
         <UpcomingEvents events={data?.calendar?.events ?? []} />
       </aside>
@@ -879,30 +882,56 @@ function formatRelativeTimeLabel(timestampIso: string, time_et: string): string 
 // since 18:00 ET) without having to scroll the rolling log or have
 // been present at the moment of the original transition.
 
-function ActiveAdvisories({ advisories }: { advisories: string[] }) {
+function ActiveAdvisories({
+  advisories,
+  gapFill,
+}: {
+  advisories: string[];
+  gapFill: import("../../api/terminalTypes").GapFillContext | null;
+}) {
   if (advisories.length === 0) return null;
   return (
     <section className="active-advisories" aria-label="Currently firing advisories">
       <h4 className="active-advisories-header">active now</h4>
       <ul className="active-advisories-list">
-        {advisories.map((adv) => (
-          <li
-            key={adv}
-            className="active-advisory"
-            aria-label={`Active advisory: ${formatAdvisoryName(adv)}`}
-          >
-            {/* Distinct pulse mark from the live event log's
-                ○/●/─ importance grading — `◉` reads as "live/on"
-                rather than reusing the log's "moderate importance"
-                ○. Avoids the visual grammar ambiguity R2 flagged. */}
-            <span className="active-advisory-pulse" aria-hidden="true">
-              ◉
-            </span>
-            <span className="active-advisory-name">
-              {formatAdvisoryName(adv)}
-            </span>
-          </li>
-        ))}
+        {advisories.map((adv) => {
+          const label = formatAdvisoryName(adv);
+          // Inline target price for the gap_fill.* family — pulled
+          // from the snapshot's gap_fill context so the trader sees
+          // the level ES needs to trade to in order to fill, without
+          // having to look at the chart. Format with 2 decimals to
+          // match the ES tick (0.25) precision.
+          const showTarget =
+            adv.startsWith("gap_fill.") && gapFill !== null;
+          return (
+            <li
+              key={adv}
+              className="active-advisory"
+              aria-label={
+                showTarget
+                  ? `Active advisory: ${label}, target ${gapFill!.target_price.toFixed(2)}`
+                  : `Active advisory: ${label}`
+              }
+            >
+              {/* Distinct pulse mark from the live event log's
+                  ○/●/─ importance grading — `◉` reads as "live/on"
+                  rather than reusing the log's "moderate importance"
+                  ○. Avoids the visual grammar ambiguity R2 flagged. */}
+              <span className="active-advisory-pulse" aria-hidden="true">
+                ◉
+              </span>
+              <span className="active-advisory-name">
+                {label}
+                {showTarget && (
+                  <span className="active-advisory-target">
+                    {" → "}
+                    {gapFill!.target_price.toFixed(2)}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

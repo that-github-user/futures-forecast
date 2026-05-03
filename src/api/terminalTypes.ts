@@ -148,6 +148,17 @@ export interface CalendarData {
   events: MacroEvent[];    // next 24h, sorted ascending by timestamp
 }
 
+// Gap-fill target context. Populated when the gap_fill.* advisory is
+// firing — carries the prior pre-halt close ES needs to trade to in
+// order to fill the gap. Frontend's ActiveAdvisories renders inline
+// alongside the "Open gap" label so the trader sees the level without
+// having to look at the chart.
+export interface GapFillContext {
+  target_price: number;
+  direction: "up" | "down";
+  open_price: number;
+}
+
 export interface TerminalSnapshot {
   timestamp: string;
   es_price: number | null;
@@ -160,4 +171,5 @@ export interface TerminalSnapshot {
   breadth: BreadthData;
   synthesizer: SynthesizerData;
   calendar: CalendarData;
+  gap_fill: GapFillContext | null;
 }
