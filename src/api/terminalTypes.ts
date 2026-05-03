@@ -50,6 +50,12 @@ export interface LevelsData {
   pd_high: number | null;
   pd_low: number | null;
   pd_close: number | null;
+  /** Overnight High — extreme of the most-recent ETH (non-RTH)
+   *  contiguous bar run (prior 16:00 ET → next 09:30 ET). Frozen
+   *  inside RTH; running pre-09:30 and during ETH evenings. */
+  onh: number | null;
+  /** Overnight Low — see onh. */
+  onl: number | null;
   poc: number | null;
   vah: number | null;
   val: number | null;
