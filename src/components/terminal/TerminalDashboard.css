@@ -501,6 +501,15 @@
      the sidebar height (won't happen at MAX_EVENTS=12 / typical
      viewport but stays graceful at smaller heights). */
   scrollbar-width: thin;
+  /* Flex sizing: shrink to share space with .upcoming-events at the
+     bottom of the sidebar. Without `min-height: 0` the live event
+     list refuses to shrink below content-height (flex-default), and
+     .terminal-feed's `overflow-y: hidden` clips the upcoming-events
+     section off the bottom. With `flex: 1 1 auto` + `min-height: 0`
+     the live list scrolls internally and yields enough space for
+     UpcomingEvents to remain visible. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .terminal-feed-event {
   /* Two-row grid: row 1 = time + pulse + subject; row 2 = body
@@ -1079,9 +1088,16 @@
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--ink-20);
-  /* Stays inside the sidebar's overflow-y scroll; if the live event
-     list grows past viewport, the upcoming-events block scrolls into
-     view rather than being clipped. */
+  /* Pin to the bottom of the sidebar regardless of live-event-list
+     growth — `flex-shrink: 0` prevents the section from collapsing
+     when many live events are present, and the sibling list's
+     `min-height: 0` yields enough space. Also cap the list height
+     so a heavy day's docket (10+ events at 8:30/10:00 ET) doesn't
+     push the section off-screen on small viewports. */
+  flex-shrink: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .upcoming-events-header {
   margin: 0 0 8px;
