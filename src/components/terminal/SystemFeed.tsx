@@ -792,7 +792,10 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   return (
     <aside className="terminal-feed">
       <div className="terminal-feed-title">System Feed</div>
-      <ActiveAdvisories advisories={activeAdvisories} />
+      <ActiveAdvisories
+        advisories={activeAdvisories}
+        gapFill={data?.gap_fill ?? null}
+      />
       <ul className="terminal-feed-list">
         {events.map((ev) => {
           const age = nowMs - ev.timestamp;
