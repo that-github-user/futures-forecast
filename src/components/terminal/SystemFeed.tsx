@@ -253,17 +253,20 @@ function prettifyToken(token: string): string {
 }
 
 /** Override names are kebab-case (e.g. `weekly-vwap-lost`). Same
- *  acronym set as advisories applies; tokens not in ACRONYMS are
- *  passed through unchanged save for sentence-cap on the first.
- *  Mirrors the pre-server-migration formatter so Active Now and
- *  the live log render override names identically. */
+ *  acronym set as advisories applies. First token gets a sentence-cap
+ *  unless it's an acronym (already upper). Style-aligned with
+ *  formatAdvisoryName — slight divergence from the pre-server-migration
+ *  formatter (which left "weekly" lowercase); the new behavior reads
+ *  more cleanly as a sentence start in the live log. */
 function formatOverrideName(raw: string): string {
-  const tokens = raw.split("-").map(prettifyToken);
-  if (tokens.length === 0) return raw;
+  const rawTokens = raw.split("-");
+  const tokens = rawTokens.map(prettifyToken);
   const first = tokens[0];
-  tokens[0] = ACRONYMS.has(raw.split("-")[0])
-    ? first
-    : first.charAt(0).toUpperCase() + first.slice(1);
+  // If prettifyToken upper-cased the first token (acronym), keep it;
+  // else sentence-cap.
+  tokens[0] = first === rawTokens[0]
+    ? first.charAt(0).toUpperCase() + first.slice(1)
+    : first;
   return tokens.join(" ");
 }
 
@@ -351,6 +354,17 @@ function formatAdvisoryName(raw: string): string {
 
 // ─── Render helpers ──────────────────────────────────────────────────
 
+/** Match the gap_fill body shape: `→ <verb> @ <price><suffix>$`.
+ *  Price is digits-dot-digits (backend always emits 2dp via `:.2f`);
+ *  bounding it as `\d+\.\d+` rather than `[\d.]+` prevents the greedy
+ *  class from swallowing the trailing `.` in the live (non-baseline)
+ *  shape and emitting a double period. Two suffix forms:
+ *    live:     `<price>.`                          → group 3 absent
+ *    baseline: `<price> (active at server start).` → group 3 present
+ */
+const GAP_FILL_BODY_RE =
+  /→ (fills|missed) @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
+
 /** Re-format a server-rendered event body so it uses the same
  *  trader-vocabulary phrasing as Active Now. The backend ships a
  *  display-ready `body` plus the raw `name` (e.g. `gap_fill.opened`,
@@ -369,11 +383,11 @@ function renderEventBody(ev: FeedEvent): string {
   if (ev.name == null) return ev.body;
   if (ev.kind === "advisory") {
     const pretty = formatAdvisoryName(ev.name);
-    // Server suffixes (in priority order — gap_fill ones are most
-    // specific so checked first).
-    const m = ev.body.match(/→ (fills|missed) @ ([\d.]+)\.?\s*(\(active at server start\)\.)?$/);
+    // Gap-fill suffix (most specific — contains `→ verb @ price`).
+    const m = ev.body.match(GAP_FILL_BODY_RE);
     if (m) {
-      return m[3]
+      const isBaseline = ev.body.endsWith("(active at server start).");
+      return isBaseline
         ? `${pretty} → ${m[1]} @ ${m[2]} (active at server start).`
         : `${pretty} → ${m[1]} @ ${m[2]}.`;
     }
