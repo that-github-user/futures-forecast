@@ -157,6 +157,11 @@ export interface GapFillContext {
   target_price: number;
   direction: "up" | "down";
   open_price: number;
+  // CME settlement (Tick Type 9) for the prior session, surfaced
+  // when it differs meaningfully from target_price (≥ 0.5pt). Drives
+  // the gap_fill.set_reached intermediate-target advisory body and
+  // (optionally) inline rendering. Null on quiet days where SET ≈ PDC.
+  settlement_price: number | null;
 }
 
 // Server-recorded transition event for the System Feed sidebar.
