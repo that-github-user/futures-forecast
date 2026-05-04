@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
 import { useTimezone, type TZOption } from "../../hooks/useTimezone";
+import { useDensity, type DensityOption } from "../../hooks/useDensity";
 import {
   TerminalChartCanvas,
   VWAP_ANCHORS,
@@ -258,6 +259,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
   const { tz, setTz, formatChartTime, formatChartDay, tzLabel } = useTimezone();
+  const { density, setDensity } = useDensity();
   const toggleBool = (key: "pocVa" | "priorHlc") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
   const setVwap = (next: VwapOverlayState) =>
@@ -266,7 +268,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
     setOverlays((prev) => ({ ...prev, openingRange: next }));
 
   return (
-    <section className="terminal-middle">
+    <section className="terminal-middle" data-density={density}>
       <div className="terminal-chart">
         <div className="terminal-chart-tf">
           {TIMEFRAMES.map((tf) => (
@@ -281,6 +283,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
             </button>
           ))}
           <ChartTzSelector tz={tz} setTz={setTz} tzLabel={tzLabel} />
+          <DensitySelector density={density} setDensity={setDensity} />
         </div>
         <div className="terminal-chart-toggles">
           <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
@@ -351,6 +354,47 @@ function ChartTzSelector({
           {o === "local" ? `TZ · Local · ${tzLabel}` : `TZ · ${o}`}
         </option>
       ))}
+    </select>
+  );
+}
+
+/* ── Density selector ──────────────────────────────────────────────
+ *
+ * Two-state typography density toggle for the sidebar surfaces
+ * (System Feed live event log, Active Now, Upcoming 24h calendar).
+ * Default "compact" matches the trader-terminal aesthetic with
+ * maximum information density. "Comfortable" bumps font sizes ~+2px
+ * and loosens line-height for readability — addresses the "too
+ * small" complaint without forcing the change on operators who
+ * prefer the dense view.
+ *
+ * Persisted via `useDensity` (storage key `dc.density`); the parent
+ * MiddleBand applies `data-density` on the `.terminal-middle` root
+ * so CSS overrides can target the sidebar surfaces with a single
+ * `[data-density="comfortable"] ...` selector. No prop drilling
+ * needed beyond the dashboard root.
+ */
+function DensitySelector({
+  density,
+  setDensity,
+}: {
+  density: DensityOption;
+  setDensity: (next: DensityOption) => void;
+}) {
+  return (
+    <select
+      className="terminal-chart-tz"
+      value={density}
+      onChange={(e) => setDensity(e.target.value as DensityOption)}
+      aria-label="Sidebar density"
+      title={
+        density === "compact"
+          ? "Switch to comfortable (larger sidebar text)"
+          : "Switch to compact (denser sidebar text)"
+      }
+    >
+      <option value="compact">Density · Compact</option>
+      <option value="comfortable">Density · Comfortable</option>
     </select>
   );
 }

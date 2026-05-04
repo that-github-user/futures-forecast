@@ -1249,3 +1249,41 @@
 .upcoming-event.imminent .upcoming-pulse {
   color: var(--neg-persimmon, #c75a3c);
 }
+
+
+/* ── Density: comfortable ───────────────────────────────────────────
+ *
+ * Bumped sidebar typography for traders who find the default 10-12px
+ * compact-aesthetic too small. Selector is scoped to .terminal-middle
+ * (the dashboard root that carries data-density="comfortable"), so
+ * the chart canvas and main grid keep their original sizing — only
+ * the sidebar surfaces expand. Default state has no selector match,
+ * so compact remains the no-cost path.
+ */
+
+.terminal-middle[data-density="comfortable"] .terminal-feed-title {
+  font-size: 13px;
+}
+
+.terminal-middle[data-density="comfortable"] .terminal-feed-event {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.terminal-middle[data-density="comfortable"] .terminal-feed-empty {
+  font-size: 13px;
+}
+
+.terminal-middle[data-density="comfortable"] .active-advisories-header,
+.terminal-middle[data-density="comfortable"] .upcoming-events-header {
+  font-size: 12px;
+}
+
+.terminal-middle[data-density="comfortable"] .active-advisory {
+  font-size: 14px;
+}
+
+.terminal-middle[data-density="comfortable"] .upcoming-event {
+  font-size: 13px;
+  line-height: 1.5;
+}
