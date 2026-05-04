@@ -358,9 +358,11 @@ function formatAdvisoryName(raw: string): string {
  *  Price is digits-dot-digits (backend always emits 2dp via `:.2f`);
  *  bounding it as `\d+\.\d+` rather than `[\d.]+` prevents the greedy
  *  class from swallowing the trailing `.` in the live (non-baseline)
- *  shape and emitting a double period. Two suffix forms:
- *    live:     `<price>.`                          → group 3 absent
- *    baseline: `<price> (active at server start).` → group 3 present
+ *  shape and emitting a double period. Two suffix forms (non-
+ *  capturing alternation — caller discriminates via `endsWith` on
+ *  the body, not via a regex group):
+ *    live:     `<price>.`
+ *    baseline: `<price> (active at server start).`
  */
 const GAP_FILL_BODY_RE =
   /→ (fills|missed) @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
