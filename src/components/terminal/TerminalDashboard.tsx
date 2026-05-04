@@ -305,7 +305,12 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           tzLabel={tzLabel}
         />
       </div>
-      <SystemFeed data={data} />
+      <SystemFeed
+        data={data}
+        tz={tz}
+        formatChartTime={formatChartTime}
+        tzLabel={tzLabel}
+      />
     </section>
   );
 }

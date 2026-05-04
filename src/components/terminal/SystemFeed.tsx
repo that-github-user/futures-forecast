@@ -45,7 +45,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TerminalSnapshot } from "../../api/terminalTypes";
 import { useTick } from "../../hooks/useTick";
-import { useTimezone } from "../../hooks/useTimezone";
+import type { TZOption } from "../../hooks/useTimezone";
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -430,17 +430,29 @@ function ageClass(ageMs: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────
 
-export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
+export function SystemFeed({
+  data,
+  tz,
+  formatChartTime,
+  tzLabel,
+}: {
+  data: TerminalSnapshot | null;
+  // Timezone props are owned by TerminalDashboard's `useTimezone()`
+  // so a dropdown change in the same tab propagates immediately. A
+  // local `useTimezone()` call here would create its own useState —
+  // the hook's cross-tab `storage` listener does NOT fire for the
+  // same window, so the dropdown's setter wouldn't reach this
+  // component until a reload.
+  tz: TZOption;
+  formatChartTime: (iso: string, withSeconds?: boolean) => string;
+  tzLabel: string;
+}) {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const idCounterRef = useRef(0);
   // Tick the component every minute so the age-based color class
   // updates without waiting for a snapshot poll. The fade is the
   // visual cue that an event is "leaving memory."
   const nowMs = useTick(60_000);
-  // User-selected timezone for display. Live-event timestamps and
-  // upcoming-event labels both convert through this so the trader
-  // sees a single consistent clock across the dashboard.
-  const { tz, formatChartTime, tzLabel } = useTimezone();
 
   // TICK persistent advisory state — frontend-only because the
   // streak counter is per-client (each open page tracks its own
@@ -656,7 +668,7 @@ const TZ_IANA_FOR_LABEL: Record<"ET" | "CT" | "MT" | "PT", string> = {
 
 function formatRelativeTimeLabel(
   timestampIso: string,
-  tz: import("../../hooks/useTimezone").TZOption,
+  tz: TZOption,
   formatChartTime: (iso: string, withSeconds?: boolean) => string,
 ): string {
   // Display time in the user's selected TZ. Day offset (today/tom)
@@ -769,7 +781,7 @@ function UpcomingEvents({
   tzLabel,
 }: {
   events: import("../../api/terminalTypes").MacroEvent[];
-  tz: import("../../hooks/useTimezone").TZOption;
+  tz: TZOption;
   formatChartTime: (iso: string, withSeconds?: boolean) => string;
   tzLabel: string;
 }) {
