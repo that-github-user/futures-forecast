@@ -131,37 +131,14 @@ const MAX_EVENTS = 12;
  *  color from --ink-100 → --ink-60 → --ink-40 over ~5 minutes." */
 const FADE_WINDOW_MS = 5 * 60 * 1000;
 
-/** Per-(kind, subject-key) cooldown (ms). Suppresses repeat-fire of
- *  the same logical event within the window — protects against
- *  boundary-flicker spam (e.g. regime label oscillating across a
- *  threshold every cycle, an override clearing-and-re-firing at
- *  session close, the synthesizer bias jittering across a zero-
- *  crossing).
- *
- *  Granularity is (kind, destination-state) so distinct transitions
- *  remain visible — "regime → quiet" and "regime → mean_reverting"
- *  use different cooldown slots. The first transition of a flicker
- *  surfaces; subsequent same-direction repeats are suppressed.
- *
- *  TICK has cooldown=0 because its cross-threshold gate already
- *  handles deduping (the magnitude must dip below ±1000 before
- *  another fire can register). Distinct programs in opposite
- *  directions (+1200 then −1100) ARE both newsworthy and should
- *  surface; cross-threshold semantics permit that.
- *
- *  REGIME gets the longest cooldown because post-PR-#6 calibration
- *  put more strategies near boundary thresholds, raising the
- *  flicker risk. */
-const COOLDOWN_MS: Record<EventKind, number> = {
-  tick:     0,        // cross-threshold semantics handle dedupe
-  credit:   60_000,   // HYG/LQD updates daily-ish, but cheap insurance
-  override: 60_000,   // session-close VWAP flicker is the typical case
-  advisory: 60_000,   // mirrors override; backend hysteresis provides
-                      //   primary smoothing but cooldown insurance
-                      //   handles any frontend-side dedup gaps
-  regime:   90_000,   // boundary-threshold flicker most likely here
-  bias:     60_000,   // synthesizer score zero-crossing flicker
-};
+// Cooldown logic and per-detector helpers (tickCrossedThreshold,
+// tickEvent, creditEvent, overrideEvent, advisoryEvent, regimeEvent,
+// biasEvent) moved server-side in vega-pilot PR #119. Backend's
+// `event_log` module dedupes via set-diff on overrides/advisories
+// and value-equality on bias/regime/credit; the frontend renders
+// `data.events` directly. The TICK persistent streak detector below
+// is the only frontend-only state that survived — per-client streak
+// counters don't fit cleanly server-side without per-session tracking.
 
 // ─── Event types ─────────────────────────────────────────────────────
 
@@ -192,36 +169,7 @@ const PULSE_MARK: Record<EventImportance, string> = {
   low: "─",
 };
 
-// ─── Detection helpers ───────────────────────────────────────────────
-
-/** Two-sample crossing test for the TICK threshold. Fires when:
- *    - magnitude crosses from below to ≥ threshold, OR
- *    - sign flips while still extreme (prev=+1050, cur=−1100 — an
- *      institutional program reversing direction is at least as
- *      newsworthy as a fresh program; the cross-only gate would
- *      have suppressed this case).
- *  Avoids the "stays above threshold same direction" → repeat-fire
- *  case. */
-function tickCrossedThreshold(prev: number | null, cur: number | null): boolean {
-  if (cur == null) return false;
-  if (Math.abs(cur) < TICK_THRESHOLD) return false;
-  if (prev == null) return false;  // first-cycle suppression
-  if (Math.abs(prev) < TICK_THRESHOLD) return true;  // crossed up from below
-  return Math.sign(prev) !== Math.sign(cur);  // sign-flip while extreme
-}
-
-function tickEvent(value: number, now: number, idCounter: number): FeedEvent {
-  const sign = value >= 0 ? "+" : "−";  // Unicode minus for typographic parity
-  const mag = Math.abs(Math.round(value));
-  return {
-    id: `${now}-tick-${idCounter}`,
-    timestamp: now,
-    kind: "tick",
-    importance: "high",
-    subject: "TICK",
-    body: `Print of ${sign}${mag} indicates institutional program execution.`,
-  };
-}
+// ─── Detection helpers (TICK persistent streak only) ───────────────
 
 function tickPersistentEvent(
   streakLen: number,
@@ -242,22 +190,6 @@ function tickPersistentEvent(
     importance: "high",
     subject: `TICK ×${streakLen}`,
     body: `${streakLen} consecutive prints ≥ ${sideLabel} — sustained institutional ${flowLabel}.`,
-  };
-}
-
-function creditEvent(
-  prev: TerminalSnapshot["breadth"]["hyg_lqd_lead_signal"],
-  cur: TerminalSnapshot["breadth"]["hyg_lqd_lead_signal"],
-  now: number,
-  idCounter: number,
-): FeedEvent {
-  return {
-    id: `${now}-credit-${idCounter}`,
-    timestamp: now,
-    kind: "credit",
-    importance: "medium",
-    subject: "CREDIT",
-    body: `HYG/LQD lead signal ${prev} → ${cur}.`,
   };
 }
 
@@ -302,11 +234,6 @@ const _ACRONYMS = new Set([
 
 function _prettifyToken(token: string): string {
   return _ACRONYMS.has(token) ? token.toUpperCase() : token;
-}
-
-function formatOverrideName(raw: string): string {
-  // Override names: kebab-case, no namespace.
-  return raw.split("-").map(_prettifyToken).join(" ");
 }
 
 function formatAdvisoryName(raw: string): string {
@@ -391,76 +318,6 @@ function formatAdvisoryName(raw: string): string {
   return `${head} (${suffixFormatted})`;
 }
 
-function overrideEvent(
-  override: string,
-  fired: boolean,
-  now: number,
-  idCounter: number,
-): FeedEvent {
-  const pretty = formatOverrideName(override);
-  return {
-    id: `${now}-override-${fired ? "fire" : "clear"}-${idCounter}`,
-    timestamp: now,
-    kind: "override",
-    importance: "high",
-    subject: "OVERRIDE",
-    body: fired ? `${pretty} firing.` : `${pretty} cleared.`,
-  };
-}
-
-function advisoryEvent(
-  advisory: string,
-  fired: boolean,
-  now: number,
-  idCounter: number,
-): FeedEvent {
-  const pretty = formatAdvisoryName(advisory);
-  return {
-    id: `${now}-advisory-${fired ? "fire" : "clear"}-${idCounter}`,
-    timestamp: now,
-    kind: "advisory",
-    // Medium importance vs override's high — advisories are
-    // noteworthy but don't desaturate the score. Hollow pulse mark
-    // (○) at the existing medium tier visually differentiates from
-    // the filled (●) override pulse.
-    importance: "medium",
-    subject: "ADVISORY",
-    body: fired ? `${pretty} firing.` : `${pretty} cleared.`,
-  };
-}
-
-function regimeEvent(
-  prev: string,
-  cur: string,
-  now: number,
-  idCounter: number,
-): FeedEvent {
-  return {
-    id: `${now}-regime-${idCounter}`,
-    timestamp: now,
-    kind: "regime",
-    importance: "medium",
-    subject: "REGIME",
-    body: `${prev.replace("_", " ")} → ${cur.replace("_", " ")}.`,
-  };
-}
-
-function biasEvent(
-  prev: string,
-  cur: string,
-  now: number,
-  idCounter: number,
-): FeedEvent {
-  return {
-    id: `${now}-bias-${idCounter}`,
-    timestamp: now,
-    kind: "bias",
-    importance: "medium",
-    subject: "BIAS",
-    body: `${prev} → ${cur}.`,
-  };
-}
-
 // ─── Render helpers ──────────────────────────────────────────────────
 
 function formatTimestamp(ms: number): string {
@@ -485,113 +342,69 @@ function ageClass(ageMs: number): string {
 
 export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   const [events, setEvents] = useState<FeedEvent[]>([]);
-  const prevRef = useRef<TerminalSnapshot | null>(null);
   const idCounterRef = useRef(0);
   // Tick the component every minute so the age-based color class
   // updates without waiting for a snapshot poll. The fade is the
   // visual cue that an event is "leaving memory."
   const nowMs = useTick(60_000);
 
-  // Per-(kind, destination-state) cooldown timestamps. Survives
-  // re-renders via useRef. See COOLDOWN_MS for window definitions
-  // and rationale.
-  const cooldownRef = useRef<Map<string, number>>(new Map());
-
-  // TICK persistent advisory state — tracks consecutive same-direction
-  // ±TICK_THRESHOLD prints. Resets when a print drops below the
-  // threshold, flips sign, or the breadth feed goes stale beyond
-  // TICK_STALE_RESET_SECONDS (handles weekend-spanning streaks).
-  // Fires once when the streak reaches TICK_PERSISTENT_THRESHOLD
-  // (strict equality on the transition); does NOT repeat-fire as the
-  // streak extends further. Counts every snapshot whose breadth.tick
-  // is non-null — including the very first one a session sees, so
-  // 4 consecutive snapshots actually fires on the 4th, not the 5th.
-  // Strict-mode double-invoke safety: dedup'd via lastSnapshotRef.
+  // TICK persistent advisory state — frontend-only because the
+  // streak counter is per-client (each open page tracks its own
+  // poll history). Server-side event log doesn't carry this; the
+  // detector below is the only diff-based code that survived the
+  // server-side migration. State semantics unchanged: 4 consecutive
+  // ±TICK_THRESHOLD same-sign prints fire once via strict equality
+  // on the streak length.
   const tickStreakRef = useRef<{ length: number; sign: 1 | -1 | 0 }>({
     length: 0,
     sign: 0,
   });
-
-  // Identity guard against React 18 strict-mode double-invoke. The
-  // useEffect runs twice on mount in dev; without this guard the
-  // streak counter would double-increment on every cycle. We dedup
-  // by snapshot identity (data === lastSnapshot) — same reference
-  // means same poll, regardless of how many times the effect fires.
+  const tickStreakFiredRef = useRef<FeedEvent | null>(null);
+  // Snapshot identity guard for React 18 strict-mode double-invoke.
   const lastSnapshotRef = useRef<TerminalSnapshot | null>(null);
-
-  /** Returns true and records the emit if the (kind, key) pair is
-   *  outside its cooldown window; false otherwise. Mutates
-   *  cooldownRef as a side-effect when emitting is permitted.
-   *
-   *  Contract: call EXACTLY ONCE per (kind, key) per detection pass.
-   *  A second call with the same args within one pass would see
-   *  `now - last < window` (window is non-zero) and return false,
-   *  silently dropping the event. The current detection code uses
-   *  each tryEmit invocation as the inline gate of an `if (...)`
-   *  branch — single-call by construction. Refactors that extract
-   *  the call into a separate guard need to preserve this. */
-  const tryEmit = (kind: EventKind, key: string, now: number): boolean => {
-    const window = COOLDOWN_MS[kind];
-    if (window === 0) return true;
-    const fullKey = `${kind}:${key}`;
-    const last = cooldownRef.current.get(fullKey);
-    if (last != null && now - last < window) return false;
-    cooldownRef.current.set(fullKey, now);
-    return true;
-  };
+  // Track previous timestamp for the staleness-reset edge case
+  // (Friday-close streak shouldn't carry into Monday's open).
+  const prevTimestampRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (data == null) return;
-    // Strict-mode double-invoke guard. React 18 runs this effect twice
-    // on mount in dev; without this gate, every stateful detector
-    // (streak counter especially) would double-process the same
-    // snapshot. Bailing on identity match keeps all detection
-    // idempotent regardless of invocation count.
     if (data === lastSnapshotRef.current) return;
     lastSnapshotRef.current = data;
 
-    const prev = prevRef.current;
-    prevRef.current = data;
+    // Server-recorded events are authoritative for transitions —
+    // OVERRIDE / ADVISORY / BIAS / REGIME / CREDIT / TICK-cross all
+    // come from `data.events`. Frontend just renders. Survives hard-
+    // refresh: backend filters to current ETH session, so a trader
+    // joining mid-session sees the full session's transition history.
+    //
+    // Convert backend FeedEvent (timestamp_ms) to local FeedEvent
+    // (timestamp). The backend payload is already ordered newest-
+    // first per server-side ring buffer.
+    const serverEvents: FeedEvent[] = (data.events ?? []).map((ev) => ({
+      id: ev.id,
+      timestamp: ev.timestamp_ms,
+      kind: ev.kind as EventKind,
+      importance: ev.importance as EventImportance,
+      subject: ev.subject,
+      body: ev.body,
+    }));
 
+    // TICK persistent streak — runs alongside the server events
+    // because the streak length is browser-session state.
     const now = Date.now();
-    const newEvents: FeedEvent[] = [];
-
-    // TICK persistent advisory — sustained same-direction ±1000 prints.
-    // Runs BEFORE the first-cycle suppression so the very first
-    // snapshot's tick contributes to the streak. Without this, "4
-    // consecutive prints" would actually require 5 post-mount
-    // snapshots — an off-by-one that delays the advisory by a full
-    // poll cycle. Streak resets when:
-    //   - tick drops below TICK_THRESHOLD (genuine break in pressure)
-    //   - tick flips sign (regime swing)
-    //   - prev → cur snapshot timestamp gap exceeds
-    //     TICK_STALE_RESET_SECONDS (catches weekend-spanning streaks
-    //     where Fri close + Sun reopen would otherwise read as
-    //     length=2 across a 50-hour gap)
-    // Null TICK leaves the streak unchanged (single missed snapshot
-    // ≠ real break). State machine + strict-equality fire gate so
-    // length=N+1, N+2 don't re-emit while a streak holds.
     const tickNow = data.breadth.tick;
     const streak = tickStreakRef.current;
-    // RTH gate — NYSE TICK isn't published outside 09:30-16:00 ET.
-    // IBKR returns the prior RTH close as a frozen value via
-    // `ticker.last`, which would otherwise cause the streak counter
-    // to fire on overnight polls of the same frozen value (see
-    // RTH_OPEN_HHMM constant for full rationale). Outside RTH we
-    // also reset the streak so a Friday-close streak doesn't carry
-    // into Monday's open.
+    const prevTs = prevTimestampRef.current;
+    prevTimestampRef.current = data.timestamp;
+
     const inRth = isWithinRth(data.timestamp);
     if (!inRth) {
       streak.length = 0;
       streak.sign = 0;
-    } else if (prev != null) {
-      // Snapshot-gap-based session-boundary reset. Catches
-      // mid-RTH discontinuities (daemon restart, IBKR outage during
-      // open hours) that the RTH-only gate above doesn't cover —
-      // both prev and cur could be in RTH but separated by a gap
-      // larger than the normal poll cadence.
+      tickStreakFiredRef.current = null;
+    } else if (prevTs != null) {
       const curMs = Date.parse(data.timestamp);
-      const prevMs = Date.parse(prev.timestamp);
+      const prevMs = Date.parse(prevTs);
       if (
         Number.isFinite(curMs)
         && Number.isFinite(prevMs)
@@ -599,173 +412,44 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       ) {
         streak.length = 0;
         streak.sign = 0;
+        tickStreakFiredRef.current = null;
       }
     }
-    // Streak-extension only runs inside RTH. Outside RTH the streak
-    // is already reset above and tickNow may be a frozen prior-close
-    // value masquerading as live data — incrementing the counter on
-    // it would be a false positive.
+
+    let streakEvent: FeedEvent | null = null;
     if (inRth && tickNow != null) {
       const tickSign: 1 | -1 | 0 =
         Math.abs(tickNow) >= TICK_THRESHOLD ? (tickNow >= 0 ? 1 : -1) : 0;
       if (tickSign === 0) {
         streak.length = 0;
         streak.sign = 0;
+        tickStreakFiredRef.current = null;
       } else if (tickSign === streak.sign) {
         streak.length += 1;
       } else {
         streak.length = 1;
         streak.sign = tickSign;
+        tickStreakFiredRef.current = null;
       }
-      if (streak.length === TICK_PERSISTENT_THRESHOLD && streak.sign !== 0) {
-        newEvents.push(
-          tickPersistentEvent(streak.length, streak.sign, now, idCounterRef.current++),
+      if (
+        streak.length === TICK_PERSISTENT_THRESHOLD
+        && streak.sign !== 0
+        && tickStreakFiredRef.current == null
+      ) {
+        streakEvent = tickPersistentEvent(
+          streak.length, streak.sign, now, idCounterRef.current++,
         );
+        tickStreakFiredRef.current = streakEvent;
       }
     }
 
-    // First-cycle suppression for diff-based detectors below. The
-    // streak counter above is NOT diff-based (it samples the current
-    // value), so it runs on cycle 1; the rest are prev-vs-cur diffs
-    // and have nothing to compare against on cycle 1. Narrows `prev`
-    // from `TerminalSnapshot | null` to `TerminalSnapshot` for the
-    // remainder of the body.
-    //
-    // Sticky advisory state (e.g. gap_fill.opened firing for ~24h
-    // after Globex reopen) is surfaced separately via the persistent
-    // <ActiveAdvisories> section in the sidebar — the live event log
-    // remains a TRANSITIONS-ONLY view, so a mid-session page refresh
-    // doesn't re-emit history but the trader still sees current state.
-    if (prev == null) {
-      if (newEvents.length > 0) {
-        setEvents((prevList) => [...newEvents, ...prevList].slice(0, MAX_EVENTS));
-      }
-      return;
-    }
-
-    // TICK — institutional-program threshold crossing.
-    // Cooldown=0 by design; cross-threshold semantics handle dedupe.
-    if (tickCrossedThreshold(prev.breadth.tick, data.breadth.tick)) {
-      newEvents.push(tickEvent(data.breadth.tick!, now, idCounterRef.current++));
-    }
-
-    // CREDIT — HYG/LQD lead signal transition. Cooldown keys on the
-    // destination state so bullish→bearish and bearish→bullish each
-    // get their own slot ("transition into bearish" can't repeat
-    // within 60s but a transition into bullish can fire freely).
-    if (
-      data.breadth.hyg_lqd_lead_signal !== prev.breadth.hyg_lqd_lead_signal
-      // Skip "unknown" transitions — they signal data unavailability,
-      // not a real regime shift. Operator gets enough surface from
-      // the breadth scorecard's own state without spamming the feed.
-      && data.breadth.hyg_lqd_lead_signal !== "unknown"
-      && prev.breadth.hyg_lqd_lead_signal !== "unknown"
-      && tryEmit("credit", data.breadth.hyg_lqd_lead_signal, now)
-    ) {
-      newEvents.push(creditEvent(
-        prev.breadth.hyg_lqd_lead_signal,
-        data.breadth.hyg_lqd_lead_signal,
-        now,
-        idCounterRef.current++,
-      ));
-    }
-
-    // OVERRIDE — set diff on synthesizer.overrides[]. Cooldown keys
-    // on (override-name, fire/clear) so each override flickering on
-    // and off uses two distinct slots, but a single override
-    // clearing-then-re-firing within the window collapses to one
-    // event (the first one).
-    const prevOver = new Set(prev.synthesizer.overrides);
-    const curOver = new Set(data.synthesizer.overrides);
-    for (const ov of curOver) {
-      if (!prevOver.has(ov) && tryEmit("override", `${ov}:fire`, now)) {
-        newEvents.push(overrideEvent(ov, true, now, idCounterRef.current++));
-      }
-    }
-    for (const ov of prevOver) {
-      if (!curOver.has(ov) && tryEmit("override", `${ov}:clear`, now)) {
-        newEvents.push(overrideEvent(ov, false, now, idCounterRef.current++));
-      }
-    }
-
-    // ADVISORY — set diff on synthesizer.advisories[]. Same
-    // detection pattern as OVERRIDE but emits a separate event
-    // class (medium importance, hollow pulse, no §4.1.1 visual
-    // treatment). Cooldown keyed on (advisory-name, fire/clear).
-    // The backend's Tier 2 detectors do their own hysteresis
-    // smoothing per-detector; the frontend cooldown is insurance
-    // against any backend-side dedup gaps. Optional-chain on
-    // `advisories` so older snapshot payloads (pre-PR α deploy)
-    // render cleanly with no advisory events instead of a runtime
-    // error from accessing an undefined array.
-    // TODO: drop `?? []` after the backend rollout (vega-pilot
-    //       PR #105) lands and `advisories` is guaranteed present
-    //       on every snapshot. The TS type is non-optional, so
-    //       this guard is purely runtime cover for the deploy
-    //       transition window.
-    const prevAdv = new Set(prev.synthesizer.advisories ?? []);
-    const curAdv = new Set(data.synthesizer.advisories ?? []);
-    for (const adv of curAdv) {
-      if (!prevAdv.has(adv) && tryEmit("advisory", `${adv}:fire`, now)) {
-        newEvents.push(advisoryEvent(adv, true, now, idCounterRef.current++));
-      }
-    }
-    for (const adv of prevAdv) {
-      if (!curAdv.has(adv) && tryEmit("advisory", `${adv}:clear`, now)) {
-        newEvents.push(advisoryEvent(adv, false, now, idCounterRef.current++));
-      }
-    }
-
-    // REGIME — regime_label transition. Skip "unknown" on either side
-    // for the same reason as CREDIT: data-availability, not regime
-    // shift.
-    if (
-      data.regime.regime_label !== prev.regime.regime_label
-      && data.regime.regime_label !== "unknown"
-      && prev.regime.regime_label !== "unknown"
-      && tryEmit("regime", data.regime.regime_label, now)
-    ) {
-      newEvents.push(regimeEvent(
-        prev.regime.regime_label,
-        data.regime.regime_label,
-        now,
-        idCounterRef.current++,
-      ));
-    }
-
-    // BIAS — LONG/SHORT/FLAT transition.
-    if (
-      data.synthesizer.bias !== prev.synthesizer.bias
-      && tryEmit("bias", data.synthesizer.bias, now)
-    ) {
-      newEvents.push(biasEvent(
-        prev.synthesizer.bias,
-        data.synthesizer.bias,
-        now,
-        idCounterRef.current++,
-      ));
-    }
-
-    // GAMMA lane (forward-compat, fires nothing today). When the GEX
-    // backend feed lands and gex.available flips to true:
-    //   - flip_strike retest events: detect when price crossed
-    //     flip_strike between cycles
-    //   - dealer_posture transitions: dampen ↔ amplify changes
-    // TODO: wire when backend ships gex.available=true.
-    //
-    // VANNA lane: requires DEX feed (volsig / optionsdepth / etc.).
-    // Deferred indefinitely pending subscription.
-
-    if (newEvents.length > 0) {
-      // Newest first, bounded to MAX_EVENTS. Within a single cycle
-      // events are kept in detection order (TICK first → BIAS last)
-      // — TICK is the highest-importance event class, so detection
-      // order naturally puts the most-newsworthy item at the top of
-      // the cycle's block.
-      setEvents((prevList) =>
-        [...newEvents, ...prevList].slice(0, MAX_EVENTS),
-      );
-    }
+    // Merge the server events with the (at-most-one) streak event.
+    // Streak event is local-only — it's not in `data.events` because
+    // the streak is per-client state. Ordered newest-first overall.
+    const merged: FeedEvent[] = streakEvent != null
+      ? [streakEvent, ...serverEvents]
+      : serverEvents;
+    setEvents(merged.slice(0, MAX_EVENTS));
   }, [data]);
 
   const activeAdvisories = data?.synthesizer?.advisories ?? [];
