@@ -1259,31 +1259,70 @@
  * the chart canvas and main grid keep their original sizing — only
  * the sidebar surfaces expand. Default state has no selector match,
  * so compact remains the no-cost path.
+ *
+ * IMPORTANT: container-level bumps (e.g. .terminal-feed-event 14px)
+ * cascade only to children WITHOUT their own explicit `font-size`
+ * declaration. The .feed-time / .feed-pulse / .feed-subject /
+ * .feed-body children all set their own sizes elsewhere in this
+ * file; without explicit overrides here they'd shadow the parent
+ * and the bump would be visually a near-noop on the largest sidebar
+ * surface. Each child with an explicit declaration gets its own
+ * override below; only the genuinely-inheriting children
+ * (.upcoming-name, .upcoming-time, .upcoming-countdown,
+ * .active-advisory-name, .active-advisory-target) pick up the
+ * parent's bumped value automatically.
  */
 
-.terminal-middle[data-density="comfortable"] .terminal-feed-title {
+/* Section headers — three sidebar sections share the same 11px
+   visual weight in compact mode. Bump them together so the
+   hierarchy stays harmonized at the larger size (R2 round-1 NIT). */
+.terminal-middle[data-density="comfortable"] .terminal-feed-title,
+.terminal-middle[data-density="comfortable"] .active-advisories-header,
+.terminal-middle[data-density="comfortable"] .upcoming-events-header {
   font-size: 13px;
 }
 
+/* Live event log — container + each child with an explicit
+   font-size declaration (R1 round-1 BLOCKER). Without these the
+   12-14px container bump wouldn't reach the actual event text. */
 .terminal-middle[data-density="comfortable"] .terminal-feed-event {
   font-size: 14px;
   line-height: 1.5;
+}
+.terminal-middle[data-density="comfortable"] .feed-time {
+  font-size: 12px;
+}
+.terminal-middle[data-density="comfortable"] .feed-pulse {
+  font-size: 12px;
+}
+.terminal-middle[data-density="comfortable"] .feed-subject {
+  font-size: 13px;
+}
+.terminal-middle[data-density="comfortable"] .feed-body {
+  font-size: 14px;
 }
 
 .terminal-middle[data-density="comfortable"] .terminal-feed-empty {
   font-size: 13px;
 }
 
-.terminal-middle[data-density="comfortable"] .active-advisories-header,
-.terminal-middle[data-density="comfortable"] .upcoming-events-header {
-  font-size: 12px;
-}
-
+/* Active Now — container bump cascades to .active-advisory-name and
+   .active-advisory-target (no explicit declarations); the pulse
+   mark has its own 10px declaration that needs an explicit override. */
 .terminal-middle[data-density="comfortable"] .active-advisory {
   font-size: 14px;
 }
+.terminal-middle[data-density="comfortable"] .active-advisory-pulse {
+  font-size: 12px;
+}
 
+/* Upcoming 24h — container bump cascades to .upcoming-time /
+   .upcoming-name / .upcoming-countdown; the pulse mark has its own
+   9px declaration that needs an explicit override. */
 .terminal-middle[data-density="comfortable"] .upcoming-event {
   font-size: 13px;
   line-height: 1.5;
+}
+.terminal-middle[data-density="comfortable"] .upcoming-pulse {
+  font-size: 11px;
 }
