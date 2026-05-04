@@ -156,12 +156,28 @@ interface FeedEvent {
   importance: EventImportance;
   /** All-caps system-name word that follows the pulse mark. */
   subject: string;
-  /** One-line body sentence. Mono register — the italic-serif lead-in
-   *  the spec calls for is intentionally NOT applied here pending the
-   *  broader LUMEN-vs-DC theming question; ship the structure now,
-   *  layer the typography polish later if desired. */
+  /** One-line body sentence. Server-rendered; client may re-format
+   *  via `name` for advisories/overrides to match Active Now's
+   *  vocabulary (see `renderEventBody`). */
   body: string;
+  /** Raw event identifier when applicable (e.g., "gap_fill.opened" /
+   *  "weekly-vwap-lost"). Lets the client re-prettify the body's
+   *  name portion via formatAdvisoryName / formatOverrideName so
+   *  both surfaces (Active Now + live event log) use the same
+   *  trader-vocabulary phrasing. Null for streak events + non-
+   *  named transitions (bias, regime, credit, tick-cross). */
+  name?: string | null;
 }
+
+// Allowed kind/importance values from the backend. Defensive guard
+// against backend introducing a new lane (e.g., gamma) — unrecognized
+// values are filtered out rather than rendered with no CSS rule.
+const ALLOWED_KINDS = new Set<EventKind>([
+  "tick", "credit", "override", "advisory", "regime", "bias",
+]);
+const ALLOWED_IMPORTANCE = new Set<EventImportance>([
+  "high", "medium", "low",
+]);
 
 const PULSE_MARK: Record<EventImportance, string> = {
   high: "●",
@@ -224,7 +240,7 @@ function tickPersistentEvent(
 //                            high-volume node, low-volume node)
 //   va / vah / val          — Market Profile (value area + high/low)
 //   ib                     — initial balance (first-hour range)
-const _ACRONYMS = new Set([
+const ACRONYMS = new Set([
   "vwap", "vix", "gex", "spx", "spy",
   "rth", "eth", "fomc", "or",
   "poc", "hvn", "lvn", "va", "vah", "val", "ib",
@@ -232,8 +248,23 @@ const _ACRONYMS = new Set([
   "cpi", "ppi", "pce", "nfp", "ism", "jolts", "adp", "gdp", "pmi",
 ]);
 
-function _prettifyToken(token: string): string {
-  return _ACRONYMS.has(token) ? token.toUpperCase() : token;
+function prettifyToken(token: string): string {
+  return ACRONYMS.has(token) ? token.toUpperCase() : token;
+}
+
+/** Override names are kebab-case (e.g. `weekly-vwap-lost`). Same
+ *  acronym set as advisories applies; tokens not in ACRONYMS are
+ *  passed through unchanged save for sentence-cap on the first.
+ *  Mirrors the pre-server-migration formatter so Active Now and
+ *  the live log render override names identically. */
+function formatOverrideName(raw: string): string {
+  const tokens = raw.split("-").map(prettifyToken);
+  if (tokens.length === 0) return raw;
+  const first = tokens[0];
+  tokens[0] = ACRONYMS.has(raw.split("-")[0])
+    ? first
+    : first.charAt(0).toUpperCase() + first.slice(1);
+  return tokens.join(" ");
 }
 
 function formatAdvisoryName(raw: string): string {
@@ -261,14 +292,14 @@ function formatAdvisoryName(raw: string): string {
   if (raw.startsWith("calendar.imminent.")) {
     const tail = raw.split(".").slice(3).join("_");
     if (tail) {
-      const pretty = tail.split("_").map(_prettifyToken).join(" ");
+      const pretty = tail.split("_").map(prettifyToken).join(" ");
       return `Imminent: ${pretty.charAt(0).toUpperCase()}${pretty.slice(1)}`;
     }
   }
 
   // Special-case `gap_fill.{opened,failed,filled}` — the underscore in
   // the namespace prefix would otherwise be split on the dot and the
-  // generic formatter would drop "gap_fill" (not in _ACRONYMS), leaving
+  // generic formatter would drop "gap_fill" (not in ACRONYMS), leaving
   // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
   // in the live feed. Render the full "Gap fill <state>" instead.
   // Trader-vocabulary phrasing per R2 review:
@@ -286,7 +317,7 @@ function formatAdvisoryName(raw: string): string {
   // routing names ("micro", "levels", "calendar"); keep acronyms
   // because they're semantically meaningful (vwap → "VWAP retest").
   const firstToken = parts[0];
-  const keepFirst = _ACRONYMS.has(firstToken);
+  const keepFirst = ACRONYMS.has(firstToken);
 
   let action: string;
   let suffix: string | null = null;
@@ -305,7 +336,7 @@ function formatAdvisoryName(raw: string): string {
   // Capitalize the first character so it reads as a sentence.
   const actionFormatted = action
     .split(/[._]/)
-    .map(_prettifyToken)
+    .map(prettifyToken)
     .join(" ");
   const head = actionFormatted.charAt(0).toUpperCase() + actionFormatted.slice(1);
 
@@ -313,12 +344,57 @@ function formatAdvisoryName(raw: string): string {
   // Pretty-print suffix tokens too (handles 'sun_open' → 'Sun open').
   const suffixFormatted = suffix
     .split(/[._\s]+/)
-    .map((t, i) => (i === 0 ? _prettifyToken(t).replace(/^./, (c) => c.toUpperCase()) : _prettifyToken(t)))
+    .map((t, i) => (i === 0 ? prettifyToken(t).replace(/^./, (c) => c.toUpperCase()) : prettifyToken(t)))
     .join(" ");
   return `${head} (${suffixFormatted})`;
 }
 
 // ─── Render helpers ──────────────────────────────────────────────────
+
+/** Re-format a server-rendered event body so it uses the same
+ *  trader-vocabulary phrasing as Active Now. The backend ships a
+ *  display-ready `body` plus the raw `name` (e.g. `gap_fill.opened`,
+ *  `weekly-vwap-lost`). When `name` is present, we re-prettify the
+ *  name portion via formatAdvisoryName / formatOverrideName and
+ *  reattach the suffix the server appended (`firing.` / `cleared.` /
+ *  `(active at server start).` / `→ fills @ X.` / `→ missed @ X.`).
+ *  Falls back to the server body for unrecognized shapes — better
+ *  to ship the server's text than drop the event silently.
+ *
+ *  Why client-side: Active Now reformats raw advisory IDs into
+ *  trader vocabulary ("Open gap" not "gap_fill.opened"); a trader
+ *  scanning the sidebar would otherwise read the same advisory
+ *  with two different names across the two surfaces. */
+function renderEventBody(ev: FeedEvent): string {
+  if (ev.name == null) return ev.body;
+  if (ev.kind === "advisory") {
+    const pretty = formatAdvisoryName(ev.name);
+    // Server suffixes (in priority order — gap_fill ones are most
+    // specific so checked first).
+    const m = ev.body.match(/→ (fills|missed) @ ([\d.]+)\.?\s*(\(active at server start\)\.)?$/);
+    if (m) {
+      return m[3]
+        ? `${pretty} → ${m[1]} @ ${m[2]} (active at server start).`
+        : `${pretty} → ${m[1]} @ ${m[2]}.`;
+    }
+    if (ev.body.endsWith("(active at server start).")) {
+      return `${pretty} (active at server start).`;
+    }
+    if (ev.body.endsWith("cleared.")) return `${pretty} cleared.`;
+    if (ev.body.endsWith("firing.")) return `${pretty} firing.`;
+    return ev.body;
+  }
+  if (ev.kind === "override") {
+    const pretty = formatOverrideName(ev.name);
+    if (ev.body.endsWith("(active at server start).")) {
+      return `${pretty} (active at server start).`;
+    }
+    if (ev.body.endsWith("cleared.")) return `${pretty} cleared.`;
+    if (ev.body.endsWith("firing.")) return `${pretty} firing.`;
+    return ev.body;
+  }
+  return ev.body;
+}
 
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
@@ -380,14 +456,22 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
     // Convert backend FeedEvent (timestamp_ms) to local FeedEvent
     // (timestamp). The backend payload is already ordered newest-
     // first per server-side ring buffer.
-    const serverEvents: FeedEvent[] = (data.events ?? []).map((ev) => ({
-      id: ev.id,
-      timestamp: ev.timestamp_ms,
-      kind: ev.kind as EventKind,
-      importance: ev.importance as EventImportance,
-      subject: ev.subject,
-      body: ev.body,
-    }));
+    const serverEvents: FeedEvent[] = (data.events ?? [])
+      // Defensive filter: backend introducing a new lane shouldn't
+      // crash the renderer. Unrecognized kinds drop silently.
+      .filter((ev) =>
+        ALLOWED_KINDS.has(ev.kind as EventKind)
+        && ALLOWED_IMPORTANCE.has(ev.importance as EventImportance),
+      )
+      .map((ev) => ({
+        id: ev.id,
+        timestamp: ev.timestamp_ms,
+        kind: ev.kind as EventKind,
+        importance: ev.importance as EventImportance,
+        subject: ev.subject,
+        body: ev.body,
+        name: ev.name,
+      }));
 
     // TICK persistent streak — runs alongside the server events
     // because the streak length is browser-session state.
@@ -483,11 +567,12 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
       <ul className="terminal-feed-list">
         {events.map((ev) => {
           const age = nowMs - ev.timestamp;
+          const body = renderEventBody(ev);
           return (
             <li
               key={ev.id}
               className={`terminal-feed-event ${ev.kind} ${ageClass(age)}`}
-              aria-label={`${ev.importance} importance, ${ev.subject}: ${ev.body}`}
+              aria-label={`${ev.importance} importance, ${ev.subject}: ${body}`}
             >
               <span className="feed-time">{formatTimestamp(ev.timestamp)}</span>
               {/* Pulse marks are decorative carriers of `importance`.
@@ -502,7 +587,7 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
                 {PULSE_MARK[ev.importance]}
               </span>
               <span className="feed-subject">{ev.subject}</span>
-              <span className="feed-body">{ev.body}</span>
+              <span className="feed-body">{body}</span>
             </li>
           );
         })}
