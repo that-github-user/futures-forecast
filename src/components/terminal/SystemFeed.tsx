@@ -45,6 +45,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TerminalSnapshot } from "../../api/terminalTypes";
 import { useTick } from "../../hooks/useTick";
+import { useTimezone } from "../../hooks/useTimezone";
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -412,13 +413,10 @@ function renderEventBody(ev: FeedEvent): string {
   return ev.body;
 }
 
-function formatTimestamp(ms: number): string {
-  const d = new Date(ms);
-  const hh = d.getHours().toString().padStart(2, "0");
-  const mm = d.getMinutes().toString().padStart(2, "0");
-  const ss = d.getSeconds().toString().padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
-}
+// Live-event timestamps are rendered via the user-selectable
+// timezone hook (see SystemFeed component). The previous local helper
+// used `new Date(ms).getHours()` which silently picked up the
+// browser's TZ regardless of the trader's TZ-dropdown selection.
 
 /** Linear color interpolation across the fade window. 0..1/3 of the
  *  way through reads ink-100, 1/3..2/3 reads ink-60, 2/3..1.0 reads
@@ -439,6 +437,10 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
   // updates without waiting for a snapshot poll. The fade is the
   // visual cue that an event is "leaving memory."
   const nowMs = useTick(60_000);
+  // User-selected timezone for display. Live-event timestamps and
+  // upcoming-event labels both convert through this so the trader
+  // sees a single consistent clock across the dashboard.
+  const { tz, formatChartTime, tzLabel } = useTimezone();
 
   // TICK persistent advisory state — frontend-only because the
   // streak counter is per-client (each open page tracks its own
@@ -568,7 +570,12 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
           gapFill={data?.gap_fill ?? null}
         />
         <div className="terminal-feed-empty">Awaiting events.</div>
-        <UpcomingEvents events={data?.calendar?.events ?? []} />
+        <UpcomingEvents
+          events={data?.calendar?.events ?? []}
+          tz={tz}
+          formatChartTime={formatChartTime}
+          tzLabel={tzLabel}
+        />
       </aside>
     );
   }
@@ -590,7 +597,9 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
               className={`terminal-feed-event ${ev.kind} ${ageClass(age)}`}
               aria-label={`${ev.importance} importance, ${ev.subject}: ${body}`}
             >
-              <span className="feed-time">{formatTimestamp(ev.timestamp)}</span>
+              <span className="feed-time">
+                {formatChartTime(new Date(ev.timestamp).toISOString(), true)}
+              </span>
               {/* Pulse marks are decorative carriers of `importance`.
                   Screen readers would otherwise announce "black
                   circle" / "white circle" / "horizontal bar" with no
@@ -608,7 +617,12 @@ export function SystemFeed({ data }: { data: TerminalSnapshot | null }) {
           );
         })}
       </ul>
-      <UpcomingEvents events={data?.calendar?.events ?? []} />
+      <UpcomingEvents
+        events={data?.calendar?.events ?? []}
+        tz={tz}
+        formatChartTime={formatChartTime}
+        tzLabel={tzLabel}
+      />
     </aside>
   );
 }
@@ -630,33 +644,46 @@ const VOL_PULSE: Record<1 | 2 | 3, string> = {
   1: "●",
 };
 
-function formatRelativeTimeLabel(timestampIso: string, time_et: string): string {
-  // Compute calendar-day offset (today/tomorrow/etc.) from the
-  // browser's local date relative to the event's ET date. The
-  // ET-formatted date is what the trader thinks in.
+// IANA tz name lookup for the day-offset calculation. `local` falls
+// through to the browser default (Intl.DateTimeFormat with no
+// `timeZone` option uses the user's system zone).
+const TZ_IANA_FOR_LABEL: Record<"ET" | "CT" | "MT" | "PT", string> = {
+  ET: "America/New_York",
+  CT: "America/Chicago",
+  MT: "America/Denver",
+  PT: "America/Los_Angeles",
+};
+
+function formatRelativeTimeLabel(
+  timestampIso: string,
+  tz: import("../../hooks/useTimezone").TZOption,
+  formatChartTime: (iso: string, withSeconds?: boolean) => string,
+): string {
+  // Display time in the user's selected TZ. Day offset (today/tom)
+  // is computed against the same TZ so a PT user sees an event at
+  // 08:30 ET / 05:30 PT correctly labeled "tom 05:30" when checking
+  // late Sunday night PT (= early Monday ET).
+  const time = formatChartTime(timestampIso, false);
   try {
-    const eventDate = new Date(timestampIso);
-    const fmt = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/New_York",
+    const dateOpts: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    });
-    const eventEtDate = fmt.format(eventDate);
-    const todayEtDate = fmt.format(new Date());
-    if (eventEtDate === todayEtDate) {
-      return time_et;
-    }
-    // Day offset: parse YYYY-MM-DD strings and diff by 1 day step.
+      ...(tz !== "local" ? { timeZone: TZ_IANA_FOR_LABEL[tz] } : {}),
+    };
+    const fmt = new Intl.DateTimeFormat("en-CA", dateOpts);
+    const eventDate = fmt.format(new Date(timestampIso));
+    const todayDate = fmt.format(new Date());
+    if (eventDate === todayDate) return time;
     const offsetDays = Math.round(
-      (Date.parse(eventEtDate) - Date.parse(todayEtDate)) / 86_400_000,
+      (Date.parse(eventDate) - Date.parse(todayDate)) / 86_400_000,
     );
-    if (offsetDays === 1) return `tom ${time_et}`;
+    if (offsetDays === 1) return `tom ${time}`;
     // Within next 24h, tomorrow is the only other case (the backend
     // filters past 24h). Defensive: fall through to time only.
-    return time_et;
+    return time;
   } catch {
-    return time_et;
+    return time;
   }
 }
 
@@ -737,13 +764,19 @@ function ActiveAdvisories({
 
 function UpcomingEvents({
   events,
+  tz,
+  formatChartTime,
+  tzLabel,
 }: {
   events: import("../../api/terminalTypes").MacroEvent[];
+  tz: import("../../hooks/useTimezone").TZOption;
+  formatChartTime: (iso: string, withSeconds?: boolean) => string;
+  tzLabel: string;
 }) {
   if (events.length === 0) return null;
   return (
     <section className="upcoming-events" aria-label="Upcoming macro events">
-      <h4 className="upcoming-events-header">upcoming 24h</h4>
+      <h4 className="upcoming-events-header">upcoming 24h ({tzLabel})</h4>
       <ul className="upcoming-events-list">
         {events.map((ev) => (
           <li
@@ -756,7 +789,7 @@ function UpcomingEvents({
             }
           >
             <span className="upcoming-time">
-              {formatRelativeTimeLabel(ev.timestamp, ev.time_et)}
+              {formatRelativeTimeLabel(ev.timestamp, tz, formatChartTime)}
             </span>
             <span className="upcoming-pulse" aria-hidden="true">
               {VOL_PULSE[ev.vol] ?? "●"}
