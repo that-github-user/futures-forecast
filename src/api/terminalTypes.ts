@@ -159,6 +159,27 @@ export interface GapFillContext {
   open_price: number;
 }
 
+// Server-recorded transition event for the System Feed sidebar.
+// Mirrors backend FeedEvent (futures_terminal/api/schemas.py).
+// The backend records OVERRIDE/ADVISORY/BIAS/REGIME/CREDIT/TICK
+// transitions to a ring buffer; snapshot.events surfaces them
+// filtered to the current ETH session. Frontend renders directly
+// — no local diff detection needed (which silently dropped any
+// events fired before page load on hard-refresh).
+export interface FeedEvent {
+  id: string;
+  timestamp_ms: number;
+  kind: "tick" | "credit" | "override" | "advisory" | "regime" | "bias";
+  importance: "high" | "medium" | "low";
+  subject: string;
+  body: string;
+  // Raw event identifier (e.g. "gap_fill.opened" for advisories,
+  // override key like "weekly-vwap-lost"). Lets the frontend
+  // re-format with formatAdvisoryName when richer rendering is
+  // needed; falls back to the server-rendered `body`.
+  name: string | null;
+}
+
 export interface TerminalSnapshot {
   timestamp: string;
   es_price: number | null;
@@ -179,4 +200,7 @@ export interface TerminalSnapshot {
   synthesizer: SynthesizerData;
   calendar: CalendarData;
   gap_fill: GapFillContext | null;
+  // Server-recorded System Feed events for the current ETH session.
+  // Backend handles all diff detection now — frontend just renders.
+  events: FeedEvent[];
 }
