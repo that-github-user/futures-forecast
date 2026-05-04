@@ -1014,6 +1014,16 @@ function buildOverlayLines(
   // Spec §4.2: Prior-day HLC → ink-60, 1px DOTTED (all three).
   // PDH/PDC/PDL keeps a uniform 3-letter cadence with POC/VAH/VAL so
   // labels stack with consistent chip width.
+  //
+  // SET (CME settlement) joins as a 4th prior-day reference. On most
+  // days SET ≈ PDC ± 1 tick (≤0.25), in which case rendering both
+  // lines stacked is visually noisy — they read as a single ambiguous
+  // level. Suppression rule (R2-flagged): when |SET − PDC| < ES_TICK,
+  // skip the SET line and let PDC carry both labels. On event days
+  // where SET diverges from PDC by 5-15+ pts (e.g., Friday 5/1/2026:
+  // PDC=7247.75 vs SET=7258.00), both lines render distinctly.
+  // Color: SET stays at ink-60 dashed (not ink-80) so the prior-day
+  // cluster reads as one visual tier. Dash vs dot still differentiates.
   if (overlays.priorHlc) {
     if (lv.pd_high != null) {
       lines.push({ value: lv.pd_high, color: palette.ink60, style: "dotted", width: 1, label: "PDH" });
@@ -1023,6 +1033,21 @@ function buildOverlayLines(
     }
     if (lv.pd_low != null) {
       lines.push({ value: lv.pd_low, color: palette.ink60, style: "dotted", width: 1, label: "PDL" });
+    }
+    if (snapshot.es_settlement != null) {
+      const ES_TICK = 0.25;
+      const setEqualsPdc =
+        lv.pd_close != null
+        && Math.abs(snapshot.es_settlement - lv.pd_close) < ES_TICK;
+      if (!setEqualsPdc) {
+        lines.push({
+          value: snapshot.es_settlement,
+          color: palette.ink60,
+          style: "dashed",
+          width: 1,
+          label: "SET",
+        });
+      }
     }
   }
 
