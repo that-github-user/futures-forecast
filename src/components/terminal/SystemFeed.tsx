@@ -307,12 +307,15 @@ function formatAdvisoryName(raw: string): string {
   // just "Opened" / "Failed" / "Filled" — unrecognizable as a gap event
   // in the live feed. Render the full "Gap fill <state>" instead.
   // Trader-vocabulary phrasing per R2 review:
-  //   gap_fill.opened → "Open gap" (state: there's a currently-open gap)
-  //   gap_fill.filled → "Gap filled" (the gap closed)
-  //   gap_fill.failed → "Gap fill failed" (gap unfilled at RTH open)
+  //   gap_fill.opened      → "Open gap" (state: there's a currently-open gap)
+  //   gap_fill.filled      → "Gap filled" (the gap closed)
+  //   gap_fill.failed      → "Gap fill failed" (gap unfilled at RTH open)
+  //   gap_fill.set_reached → "SET reached" (intermediate target hit
+  //                          on event days where SET ≠ PDC)
   if (raw === "gap_fill.opened") return "Open gap";
   if (raw === "gap_fill.filled") return "Gap filled";
   if (raw === "gap_fill.failed") return "Gap fill failed";
+  if (raw === "gap_fill.set_reached") return "SET reached";
 
   const parts = raw.split(".");
   if (parts.length === 0) return raw;
@@ -368,6 +371,14 @@ function formatAdvisoryName(raw: string): string {
 const GAP_FILL_BODY_RE =
   /→ (fills|missed) @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
 
+/** Match the gap_fill.set_reached body shape: `<server-name> @ <price><suffix>$`.
+ *  No `→ verb @` prefix because there's no fill-or-miss verb to assign
+ *  — settlement is just a price level that was crossed, not a fill
+ *  outcome. Same digit-bound + suffix-alternation rationale as
+ *  GAP_FILL_BODY_RE. */
+const SET_REACHED_BODY_RE =
+  / @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
+
 /** Re-format a server-rendered event body so it uses the same
  *  trader-vocabulary phrasing as Active Now. The backend ships a
  *  display-ready `body` plus the raw `name` (e.g. `gap_fill.opened`,
@@ -386,13 +397,26 @@ function renderEventBody(ev: FeedEvent): string {
   if (ev.name == null) return ev.body;
   if (ev.kind === "advisory") {
     const pretty = formatAdvisoryName(ev.name);
-    // Gap-fill suffix (most specific — contains `→ verb @ price`).
+    // Gap-fill verb-suffix (most specific — contains `→ verb @ price`).
     const m = ev.body.match(GAP_FILL_BODY_RE);
     if (m) {
       const isBaseline = ev.body.endsWith("(active at server start).");
       return isBaseline
         ? `${pretty} → ${m[1]} @ ${m[2]} (active at server start).`
         : `${pretty} → ${m[1]} @ ${m[2]}.`;
+    }
+    // SET-reached suffix: `<name> @ price.` — no verb. Only the
+    // gap_fill.set_reached advisory uses this shape. Gate on the
+    // name to avoid false matches on any future advisory that
+    // happens to carry a `@ price` reference in its body.
+    if (ev.name === "gap_fill.set_reached") {
+      const sm = ev.body.match(SET_REACHED_BODY_RE);
+      if (sm) {
+        const isBaseline = ev.body.endsWith("(active at server start).");
+        return isBaseline
+          ? `${pretty} @ ${sm[1]} (active at server start).`
+          : `${pretty} @ ${sm[1]}.`;
+      }
     }
     if (ev.body.endsWith("(active at server start).")) {
       return `${pretty} (active at server start).`;
@@ -728,26 +752,35 @@ function ActiveAdvisories({
           // price — adding "→ 5800" alongside "Gap filled" is
           // redundant. Kept for `opened` (target = where to fill)
           // and `failed` (post-mortem: the level that didn't get
-          // hit at RTH open). ES tick = 0.25, so toFixed(2) renders
-          // tick-aligned values cleanly.
-          const showTarget =
+          // hit at RTH open). gap_fill.set_reached renders the
+          // SETTLEMENT price inline (different field on GapFillContext)
+          // since SET — not PDC — is the anchor for that advisory.
+          // ES tick = 0.25, so toFixed(2) renders tick-aligned values.
+          const showPdcTarget =
             (adv === "gap_fill.opened" || adv === "gap_fill.failed") &&
             gapFill !== null;
+          const showSetTarget =
+            adv === "gap_fill.set_reached" &&
+            gapFill !== null &&
+            gapFill.settlement_price !== null;
           // Phrasing: "Open gap → fills 5800.00" reads less
           // ambiguously than the bare arrow ("Open gap → 5800.00"
           // could parse as "the gap is at 5800"). The verb "fills"
           // anchors the price as the target rather than the level.
-          const targetPhrase =
+          // SET-reached uses a bare "@ <price>" since the advisory
+          // name itself ("SET reached") already says what happened.
+          const pdcPhrase =
             adv === "gap_fill.failed" ? "missed @" : "fills @";
+          const ariaLabel = showPdcTarget
+            ? `Active advisory: ${label}, ${pdcPhrase} ${gapFill!.target_price.toFixed(2)}`
+            : showSetTarget
+              ? `Active advisory: ${label} at ${gapFill!.settlement_price!.toFixed(2)}`
+              : `Active advisory: ${label}`;
           return (
             <li
               key={adv}
               className="active-advisory"
-              aria-label={
-                showTarget
-                  ? `Active advisory: ${label}, ${targetPhrase} ${gapFill!.target_price.toFixed(2)}`
-                  : `Active advisory: ${label}`
-              }
+              aria-label={ariaLabel}
             >
               {/* Distinct pulse mark from the live event log's
                   ○/●/─ importance grading — `◉` reads as "live/on"
@@ -758,10 +791,16 @@ function ActiveAdvisories({
               </span>
               <span className="active-advisory-name">
                 {label}
-                {showTarget && (
+                {showPdcTarget && (
                   <span className="active-advisory-target">
-                    {` → ${targetPhrase} `}
+                    {` → ${pdcPhrase} `}
                     {gapFill!.target_price.toFixed(2)}
+                  </span>
+                )}
+                {showSetTarget && (
+                  <span className="active-advisory-target">
+                    {` @ `}
+                    {gapFill!.settlement_price!.toFixed(2)}
                   </span>
                 )}
               </span>
