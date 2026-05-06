@@ -1,9 +1,11 @@
+import { useState } from "react";
 import type {
   DCBrokerOrder,
   DCBrokerPosition,
   DCBrokerState,
   DCPosition,
   DCRiskStatus,
+  DCStrategySpec,
 } from "../../api/dcTypes";
 import {
   type BrokerDcGroup,
@@ -11,6 +13,7 @@ import {
   groupBrokerLegs,
 } from "../../lib/brokerGrouping";
 import { useTimezone } from "../../hooks/useTimezone";
+import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import { tableStyle, thStyle, tdStyle, tdMono } from "./tableStyles";
@@ -23,6 +26,26 @@ interface Props {
 
 export function DCPositionsTab({ positions, risk, brokerState }: Props) {
   const { formatPositionDateTime, tzLabel } = useTimezone();
+  // Strategy specs (cached) provide the per-strategy thresholds the
+  // exit monitor checks against — profit_target_pct, sl_ratio_exit,
+  // exit_time, max_dit, etc. Used by the expanded detail panel to
+  // render "X% of way to PT" and similar progress against threshold.
+  const { specs } = useStrategySpecs();
+  const specByName: Record<string, DCStrategySpec> = {};
+  for (const s of specs ?? []) {
+    specByName[s.name] = s;
+  }
+  // Track which rows are expanded. Set keyed by position.id so toggle
+  // is O(1) and survives positions list mutation between polls.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggleExpand = (id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Risk status cards */}
@@ -52,10 +75,13 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
           are filtered server-side. */}
       <BrokerRealityPanel brokerState={brokerState} daemonPositions={positions} />
 
-      {/* Open positions table */}
+      {/* Open positions table — expandable rows with live monitoring. */}
       <div className="panel" style={{ padding: 12 }}>
         <div className="panel-header" style={{ marginBottom: 8 }}>
           <span className="panel-title">Daemon Tracked Positions ({positions.length})</span>
+          <span style={{ fontSize: 11, color: colors.textMuted, marginLeft: 12 }}>
+            Click a row to expand exit-criteria + bracket details
+          </span>
         </div>
         {positions.length === 0 ? (
           <div style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", padding: 24 }}>
@@ -66,42 +92,36 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
             <table style={tableStyle} aria-label="Daemon-tracked positions">
               <thead>
                 <tr>
+                  <th style={{ ...thStyle, width: 24 }} aria-label="Expand row" />
                   <th style={thStyle}>Strategy</th>
                   <th style={thStyle}>Signal</th>
                   <th style={thStyle}>Entry</th>
-                  <th style={thStyle}>Put K</th>
-                  <th style={thStyle}>Call K</th>
-                  <th style={thStyle}>Front Exp</th>
-                  <th style={thStyle}>Back Exp</th>
+                  <th style={thStyle}>Strikes</th>
+                  <th style={thStyle} title="Days until front-leg expiry">DTE</th>
                   <th style={thStyle}>Debit</th>
-                  <th style={thStyle}>Broker Δ</th>
-                  <th style={thStyle}>Qty</th>
-                  <th style={thStyle}>SPX@Entry</th>
+                  <th style={thStyle} title="Live unrealized P&L (mid mark)">P&amp;L</th>
+                  <th style={thStyle} title="P&L as fraction of entry premium / target">P&amp;L %</th>
+                  <th style={thStyle} title="Live S/L ratio (front_premium / back_premium)">S/L</th>
+                  <th style={thStyle}>TP</th>
                   <th style={thStyle}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p) => (
-                  <tr key={p.id}>
-                    <td style={tdStyle}>{p.strategy_name}</td>
-                    <td style={tdStyle}><SignalBadge signal={p.signal} /></td>
-                    <td style={tdStyle} title={`Rendered: ${formatPositionDateTime(p.entry_time)} ${tzLabel} • Raw broker timestamp: ${p.entry_time}`}>
-                      {formatPositionDateTime(p.entry_time)} <span style={{ color: colors.textMuted }}>{tzLabel}</span>
-                    </td>
-                    <td style={tdMono}>{p.put_strike}</td>
-                    <td style={tdMono}>{p.call_strike}</td>
-                    <td style={tdStyle}>{p.front_exp}</td>
-                    <td style={tdStyle}>{p.back_exp}</td>
-                    <td style={tdMono}>${p.entry_debit.toFixed(2)}</td>
-                    <td style={driftCellStyle(p.debit_drift)}
-                        title={driftTooltip(p)}>
-                      {formatDrift(p.debit_drift)}
-                    </td>
-                    <td style={tdMono}>{p.quantity}</td>
-                    <td style={tdMono}>{p.spx_at_entry?.toFixed(2) ?? "—"}</td>
-                    <td style={tdStyle}>{p.status}</td>
-                  </tr>
-                ))}
+                {positions.map((p) => {
+                  const isExpanded = expanded.has(p.id);
+                  const spec = specByName[p.strategy_name];
+                  return (
+                    <PositionRows
+                      key={p.id}
+                      position={p}
+                      spec={spec}
+                      isExpanded={isExpanded}
+                      onToggle={() => toggleExpand(p.id)}
+                      formatPositionDateTime={formatPositionDateTime}
+                      tzLabel={tzLabel}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -110,6 +130,469 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
     </div>
   );
 }
+
+// ── PositionRows: a (summary row, optional detail row) pair ──────
+//
+// One render component returns TWO <tr> elements: the slim summary
+// row that's always visible, and (when expanded) a second row with
+// colSpan covering the whole table for the detail panel. Returning
+// a fragment from the parent map keeps the DOM table-valid (no
+// nesting issues) while letting the detail layout breathe across
+// the full width.
+
+function PositionRows({
+  position: p,
+  spec,
+  isExpanded,
+  onToggle,
+  formatPositionDateTime,
+  tzLabel,
+}: {
+  position: DCPosition;
+  spec: DCStrategySpec | undefined;
+  isExpanded: boolean;
+  onToggle: () => void;
+  formatPositionDateTime: (iso: string) => string;
+  tzLabel: string;
+}) {
+  const dte = daysUntil(p.front_exp);
+  const pnl = p.unrealized_pnl ?? null;
+  const pnlPct = p.pnl_pct ?? null;
+  const slLive = p.live_sl_ratio ?? null;
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          // Keyboard a11y: Enter / Space toggle expansion. Without
+          // this, keyboard-only users couldn't access the detail
+          // panel.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        style={{
+          cursor: "pointer",
+          // Soft hover-ish background only when expanded so the
+          // detail panel reads as visually attached to its summary.
+          background: isExpanded ? withAlpha(colors.accentBlue, 0.06) : "transparent",
+        }}
+        aria-expanded={isExpanded}
+      >
+        <td style={{ ...tdStyle, fontFamily: fonts.mono, color: colors.textMuted, width: 24 }}
+            aria-hidden="true">
+          {isExpanded ? "▼" : "▶"}
+        </td>
+        <td style={tdStyle}>{p.strategy_name}</td>
+        <td style={tdStyle}><SignalBadge signal={p.signal} /></td>
+        <td style={tdStyle}
+            title={`Rendered: ${formatPositionDateTime(p.entry_time)} ${tzLabel} • Raw: ${p.entry_time}`}>
+          {formatPositionDateTime(p.entry_time)}{" "}
+          <span style={{ color: colors.textMuted }}>{tzLabel}</span>
+        </td>
+        <td style={tdMono}>{p.put_strike}P / {p.call_strike}C</td>
+        <td style={tdMono}>{dte ?? "—"}</td>
+        <td style={tdMono}>${p.entry_debit.toFixed(2)}</td>
+        <td style={pnl == null ? tdMono : pnlCellStyle(pnl)}>
+          {pnl == null ? "—" : formatDollarPnl(pnl)}
+        </td>
+        <td style={pnlPct == null ? tdMono : pnlCellStyle(pnlPct)}
+            title={
+              spec && pnlPct != null
+                ? `Current ${(pnlPct * 100).toFixed(1)}% of entry; PT at ${(spec.profit_target_pct * 100).toFixed(0)}%`
+                : undefined
+            }>
+          {pnlPct == null ? "—" : `${pnlPct >= 0 ? "+" : ""}${(pnlPct * 100).toFixed(1)}%`}
+        </td>
+        <td style={slLive == null ? tdMono : slCellStyle(slLive, spec?.sl_ratio_exit ?? null)}
+            title={
+              spec?.sl_ratio_exit != null && slLive != null
+                ? `Live ${slLive.toFixed(3)} vs exit threshold ${spec.sl_ratio_exit.toFixed(3)}`
+                : "Live front/back premium ratio"
+            }>
+          {slLive == null ? "—" : slLive.toFixed(3)}
+        </td>
+        <td style={tdMono}
+            title={
+              p.bracket_order_id != null
+                ? `Bracket orderId=${p.bracket_order_id}; cancellation cascades from any non-TP exit`
+                : isHoldToExpiration(spec)
+                  ? "Strategy held to expiration — no profit target. Time/DIT exit handles wind-down."
+                  : "No broker-side TP attached. Daemon-side _check_profit_target is the fallback."
+            }>
+          {p.bracket_target_price != null
+            ? `$${p.bracket_target_price.toFixed(2)}`
+            : p.bracket_order_id != null
+              ? "✓"
+              : isHoldToExpiration(spec)
+                ? <span style={{ color: colors.textMuted, fontStyle: "italic" }}>hold</span>
+                : "—"}
+        </td>
+        <td style={tdStyle}>{p.status}</td>
+      </tr>
+      {isExpanded && (
+        <tr style={{ background: withAlpha(colors.accentBlue, 0.04) }}>
+          <td colSpan={12} style={{ padding: "12px 16px", borderBottom: `1px solid ${colors.borderDim}` }}>
+            <PositionDetailPanel position={p} spec={spec} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+
+// ── PositionDetailPanel ─────────────────────────────────────────
+//
+// Shown inside the expanded row. Three sections in a responsive
+// grid:
+//   1. Position metadata (qty, SPX@entry, broker drift, bracket id)
+//   2. Exit-criteria progress (PT, S/L, DIT, time-to-exit)
+//   3. Strategy reference (entry rules, exit rules from the spec)
+//
+// All four exit-criteria progress bars handle missing data
+// gracefully — the dashboard surfaces "—" for whichever metric the
+// daemon hasn't computed yet, so an early-render row doesn't
+// block on partial data.
+
+function PositionDetailPanel({
+  position: p, spec,
+}: {
+  position: DCPosition;
+  spec: DCStrategySpec | undefined;
+}) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+      gap: 16,
+      fontFamily: fonts.sans,
+      fontSize: 12,
+    }}>
+      {/* Position metadata */}
+      <DetailSection title="Position">
+        <DetailRow label="Quantity" value={`${p.quantity} contract${p.quantity === 1 ? "" : "s"}`} />
+        <DetailRow label="SPX @ entry" value={p.spx_at_entry?.toFixed(2) ?? "—"} />
+        <DetailRow
+          label="Broker drift"
+          value={formatDrift(p.debit_drift)}
+          valueColor={driftColor(p.debit_drift)}
+          tooltip={driftTooltip(p)}
+        />
+        <DetailRow label="Front exp" value={p.front_exp} />
+        <DetailRow label="Back exp" value={p.back_exp} />
+      </DetailSection>
+
+      {/* Bracket section. Three mutually-exclusive states:
+          - bracket_order_id present → IBKR holds a GTC TP. Show its price.
+          - no bracket + hold-to-expiration spec → strategy by design has
+            no PT; daemon's time/DIT path handles wind-down. NOT a fallback.
+          - no bracket + non-hold spec → bracket submission failed OR
+            legacy position. Daemon-side _check_profit_target is the
+            actual fallback. */}
+      <DetailSection title="Profit-target bracket">
+        {p.bracket_order_id != null ? (
+          <>
+            <DetailRow
+              label="Status"
+              value="Active at broker"
+              valueColor={colors.accentGreen}
+              tooltip="IBKR is holding a GTC limit at the target. Daemon-side TP monitor is a no-op for this position. Any non-TP exit cancels the bracket first to prevent double-fills."
+            />
+            <DetailRow label="Order ID" value={`#${p.bracket_order_id}`} />
+            <DetailRow
+              label="Target price"
+              value={p.bracket_target_price != null ? `$${p.bracket_target_price.toFixed(2)}` : "—"}
+              tooltip="GTC limit price. Bracket fills when spread mark trades through this level."
+            />
+          </>
+        ) : isHoldToExpiration(spec) ? (
+          <DetailRow
+            label="Status"
+            value="Hold to expiry"
+            valueColor={colors.accentGreen}
+            tooltip={
+              `Strategy has profit_target_pct=${spec!.profit_target_pct} (≥ 1.0), ` +
+              "the documented 'hold to expiration' sentinel. No profit " +
+              "target applies — exit happens via time/DIT path on the " +
+              "front-leg expiry day. This is NOT a fallback or failure."
+            }
+          />
+        ) : (
+          <DetailRow
+            label="Status"
+            value="Daemon-side"
+            valueColor={colors.textMuted}
+            tooltip="No broker-side TP. Daemon's _check_profit_target monitors P&L each cycle and submits a close when hit. Reasons: bracket submission failed at entry, partial close cancelled it, or legacy position from before PR #126."
+          />
+        )}
+      </DetailSection>
+
+      {/* Exit-criteria progress */}
+      <DetailSection title="Exit criteria">
+        <ExitCriterionRow
+          label="Profit target"
+          current={p.pnl_pct}
+          threshold={spec?.profit_target_pct ?? null}
+          format={(v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`}
+          tooltip={
+            spec?.profit_target_pct != null
+              ? `PT fires when P&L% ≥ ${(spec.profit_target_pct * 100).toFixed(0)}%`
+              : undefined
+          }
+        />
+        <ExitCriterionRow
+          label="S/L ratio"
+          current={p.live_sl_ratio}
+          threshold={spec?.sl_ratio_exit ?? null}
+          format={(v) => v.toFixed(3)}
+          // S/L exit fires when ratio DROPS below threshold (front
+          // decayed too far / back didn't hold value). Inverse
+          // direction from PT.
+          inverse
+          // SPY credit structures (short puts, straddles) have no
+          // S/L exit — render the row as 'not applicable' instead of
+          // showing a number with no threshold context.
+          notApplicable={spec != null && spec.sl_ratio_exit == null}
+          tooltip={
+            spec?.sl_ratio_exit != null
+              ? `S/L exit fires when live ratio < ${spec.sl_ratio_exit.toFixed(3)}`
+              : "No S/L exit configured for this strategy"
+          }
+        />
+        <ExitCriterionRow
+          label="Days in trade"
+          current={daysSince(p.entry_date)}
+          threshold={spec?.max_dit ?? null}
+          format={(v) => `${v}d`}
+          tooltip={
+            spec?.max_dit != null
+              ? `DIT exit fires when days held ≥ ${spec.max_dit} (and time ≥ exit_time on that day)`
+              : "No DIT exit for this strategy"
+          }
+        />
+        <DetailRow
+          label="Time exit"
+          value={
+            spec?.exit_time != null
+              ? `${spec.exit_time} ET on ${p.front_exp}`
+              : "—"
+          }
+          tooltip="Hard time stop on front-leg expiry day. Fires regardless of P&L."
+        />
+      </DetailSection>
+    </div>
+  );
+}
+
+// Visual: section heading + flex column of label/value rows.
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 10, color: colors.textMuted, textTransform: "uppercase",
+        letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
+      }}>
+        {title}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  label, value, valueColor, tooltip,
+}: {
+  label: string;
+  value: React.ReactNode;
+  valueColor?: string;
+  tooltip?: string;
+}) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}
+         title={tooltip}>
+      <span style={{ color: colors.textMuted, fontSize: 11 }}>{label}</span>
+      <span style={{
+        fontFamily: fonts.mono, fontSize: 12,
+        color: valueColor ?? colors.textPrimary,
+      }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// Progress bar showing current vs threshold for an exit criterion.
+// `inverse=true` reverses the direction (S/L: lower is worse).
+//
+// Math (the part round-1 reviewers caught wrong):
+//   Forward (PT, DIT): pct = current / threshold. At threshold,
+//     bar full red. Beyond, overfills (capped 1.5).
+//   Inverse (S/L): pct = threshold / current. At threshold, bar
+//     full red. Below threshold (we're past firing), pct > 1.
+//     Far above threshold, pct → 0 (empty bar). This is monotonic
+//     and domain-correct for typical S/L values where threshold ≈
+//     0.09 and current ranges 0.10–0.80. The previous "(1 - current)
+//     / (1 - threshold)" formula assumed both were fractions of 1
+//     and inflated closeness-to-firing for typical ratios.
+//
+// `notApplicable=true` renders "Not applicable" instead of the
+// current value when the strategy doesn't have an exit threshold
+// for this criterion (e.g., S/L for SPY credit structures with
+// sl_ratio_exit=null).
+function ExitCriterionRow({
+  label, current, threshold, format, inverse, tooltip,
+  notApplicable,
+}: {
+  label: string;
+  current: number | null | undefined;
+  threshold: number | null | undefined;
+  format: (v: number) => string;
+  inverse?: boolean;
+  tooltip?: string;
+  notApplicable?: boolean;
+}) {
+  if (notApplicable) {
+    return (
+      <div title={tooltip}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: colors.textMuted, fontSize: 11 }}>{label}</span>
+          <span style={{
+            fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+            fontStyle: "italic",
+          }}>
+            Not applicable
+          </span>
+        </div>
+      </div>
+    );
+  }
+  const hasBoth = current != null && threshold != null;
+  // Progress: 0 = not started, 1 = at threshold (would fire), >1 = past.
+  let pct: number | null = null;
+  if (hasBoth && threshold > 0 && current > 0) {
+    if (inverse) {
+      // S/L: pct = threshold / current. Clamp [0, 1.5]. Higher
+      // current = lower pct (further from firing).
+      pct = Math.max(0, Math.min(1.5, threshold / current));
+    } else {
+      // PT / DIT: current/threshold, capped 0..1.5 for visual.
+      pct = Math.max(0, Math.min(1.5, current / threshold));
+    }
+  }
+  return (
+    <div title={tooltip}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+        <span style={{ color: colors.textMuted, fontSize: 11 }}>{label}</span>
+        <span style={{ fontFamily: fonts.mono, fontSize: 12 }}>
+          {current == null ? "—" : format(current)}
+          {threshold != null && (
+            <span style={{ color: colors.textMuted }}> / {format(threshold)}</span>
+          )}
+        </span>
+      </div>
+      {pct != null && (
+        <div style={{
+          height: 4, background: colors.bgInset, borderRadius: 2, overflow: "hidden",
+        }}>
+          <div style={{
+            height: "100%",
+            width: `${Math.min(100, pct * 100)}%`,
+            background: pct >= 1.0 ? colors.accentRed
+                     : pct >= 0.75 ? colors.accentAmber
+                     : colors.accentGreen,
+            transition: "width 200ms ease",
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Cell styling helpers ─────────────────────────────────────────
+
+function pnlCellStyle(v: number): React.CSSProperties {
+  return {
+    ...tdMono,
+    color: v > 0 ? colors.accentGreen : v < 0 ? colors.accentRed : colors.textMuted,
+  };
+}
+
+// S/L color: green when comfortably above exit threshold, amber as
+// it drops toward threshold, red when at-or-below.
+function slCellStyle(live: number, threshold: number | null): React.CSSProperties {
+  const base = tdMono;
+  if (threshold == null) return { ...base, color: colors.textPrimary };
+  if (live <= threshold) return { ...base, color: colors.accentRed };
+  if (live <= threshold * 1.15) return { ...base, color: colors.accentAmber };
+  return { ...base, color: colors.accentGreen };
+}
+
+function formatDollarPnl(v: number): string {
+  const sign = v >= 0 ? "+" : "-";
+  return `${sign}$${Math.abs(v).toFixed(0)}`;
+}
+
+// Does the strategy intentionally hold to expiration (no profit
+// target)? `profit_target_pct >= 1.0` is the documented sentinel
+// per config/strategies.py — used by 7d 50p / 7d 30p style "ride
+// it to expiry" plays. The dashboard distinguishes this from
+// "bracket failed / missing" so the trader doesn't see a
+// misleading "Daemon-side fallback" cue on positions that have
+// no PT by design.
+function isHoldToExpiration(spec: DCStrategySpec | undefined): boolean {
+  return spec != null && spec.profit_target_pct >= 1.0;
+}
+
+
+// ── Date helpers (no library; SPX exp strings are YYYYMMDD) ─────
+
+function daysUntil(yyyymmdd: string): number | null {
+  const parsed = parseSpxDate(yyyymmdd);
+  if (parsed == null) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = (parsed.getTime() - today.getTime()) / 86_400_000;
+  return Math.round(diff);
+}
+
+function daysSince(yyyy_mm_dd: string | null | undefined): number | null {
+  if (!yyyy_mm_dd) return null;
+  // entry_date stored as ISO 'YYYY-MM-DD' — different format from front_exp.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyy_mm_dd);
+  if (!m) return null;
+  const entry = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = (today.getTime() - entry.getTime()) / 86_400_000;
+  return Math.max(0, Math.round(diff));
+}
+
+function parseSpxDate(yyyymmdd: string): Date | null {
+  if (!/^\d{8}$/.test(yyyymmdd)) return null;
+  const y = parseInt(yyyymmdd.slice(0, 4));
+  const m = parseInt(yyyymmdd.slice(4, 6)) - 1;
+  const d = parseInt(yyyymmdd.slice(6, 8));
+  return new Date(y, m, d);
+}
+
+
+// ── Drift color helper (used by DetailRow tooltip + value) ──────
+
+function driftColor(d: number | null | undefined): string {
+  if (d == null) return colors.textMuted;
+  const mag = Math.abs(d);
+  if (mag < DRIFT_WARN) return colors.accentGreen;
+  if (mag < DRIFT_ERROR) return colors.accentAmber;
+  return colors.accentRed;
+}
+
 
 function RiskCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
