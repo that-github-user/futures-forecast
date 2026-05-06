@@ -1152,6 +1152,15 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-60);
 }
+.active-override {
+  /* Overrides outrank advisories (high vs medium importance in the
+     event_log grading). Bump to ink-100 so the row reads as the
+     priority state in the active-now stack. The shared pulse rule
+     above already colors the dot --pos-cream; overriding the row
+     color here pushes the override name to full ink while leaving
+     the advisory rows at ink-80. */
+  color: var(--ink-100);
+}
 
 
 /* ── Upcoming macro events (System 8 — Type I peripheral) ─────────

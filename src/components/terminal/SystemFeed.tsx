@@ -358,26 +358,18 @@ function formatAdvisoryName(raw: string): string {
 
 // ─── Render helpers ──────────────────────────────────────────────────
 
-/** Match the gap_fill body shape: `→ <verb> @ <price><suffix>$`.
+/** Match the gap_fill body shape: `→ <verb> @ <price>.$`.
  *  Price is digits-dot-digits (backend always emits 2dp via `:.2f`);
  *  bounding it as `\d+\.\d+` rather than `[\d.]+` prevents the greedy
- *  class from swallowing the trailing `.` in the live (non-baseline)
- *  shape and emitting a double period. Two suffix forms (non-
- *  capturing alternation — caller discriminates via `endsWith` on
- *  the body, not via a regex group):
- *    live:     `<price>.`
- *    baseline: `<price> (active at server start).`
- */
-const GAP_FILL_BODY_RE =
-  /→ (fills|missed) @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
+ *  class from swallowing the trailing `.` and emitting a double
+ *  period. */
+const GAP_FILL_BODY_RE = /→ (fills|missed) @ (\d+\.\d+)\.$/;
 
-/** Match the gap_fill.set_reached body shape: `<server-name> @ <price><suffix>$`.
- *  No `→ verb @` prefix because there's no fill-or-miss verb to assign
- *  — settlement is just a price level that was crossed, not a fill
- *  outcome. Same digit-bound + suffix-alternation rationale as
- *  GAP_FILL_BODY_RE. */
-const SET_REACHED_BODY_RE =
-  / @ (\d+\.\d+)(?:\.|\s+\(active at server start\)\.)$/;
+/** Match the gap_fill.set_reached body shape: `<server-name> @ <price>.$`.
+ *  No `→ verb @` prefix because there's no fill-or-miss verb to
+ *  assign — settlement is just a price level that was crossed, not
+ *  a fill outcome. */
+const SET_REACHED_BODY_RE = / @ (\d+\.\d+)\.$/;
 
 /** Re-format a server-rendered event body so it uses the same
  *  trader-vocabulary phrasing as Active Now. The backend ships a
@@ -385,9 +377,9 @@ const SET_REACHED_BODY_RE =
  *  `weekly-vwap-lost`). When `name` is present, we re-prettify the
  *  name portion via formatAdvisoryName / formatOverrideName and
  *  reattach the suffix the server appended (`firing.` / `cleared.` /
- *  `(active at server start).` / `→ fills @ X.` / `→ missed @ X.`).
- *  Falls back to the server body for unrecognized shapes — better
- *  to ship the server's text than drop the event silently.
+ *  `→ fills @ X.` / `→ missed @ X.`). Falls back to the server body
+ *  for unrecognized shapes — better to ship the server's text than
+ *  drop the event silently.
  *
  *  Why client-side: Active Now reformats raw advisory IDs into
  *  trader vocabulary ("Open gap" not "gap_fill.opened"); a trader
@@ -397,29 +389,11 @@ function renderEventBody(ev: FeedEvent): string {
   if (ev.name == null) return ev.body;
   if (ev.kind === "advisory") {
     const pretty = formatAdvisoryName(ev.name);
-    // Gap-fill verb-suffix (most specific — contains `→ verb @ price`).
     const m = ev.body.match(GAP_FILL_BODY_RE);
-    if (m) {
-      const isBaseline = ev.body.endsWith("(active at server start).");
-      return isBaseline
-        ? `${pretty} → ${m[1]} @ ${m[2]} (active at server start).`
-        : `${pretty} → ${m[1]} @ ${m[2]}.`;
-    }
-    // SET-reached suffix: `<name> @ price.` — no verb. Only the
-    // gap_fill.set_reached advisory uses this shape. Gate on the
-    // name to avoid false matches on any future advisory that
-    // happens to carry a `@ price` reference in its body.
+    if (m) return `${pretty} → ${m[1]} @ ${m[2]}.`;
     if (ev.name === "gap_fill.set_reached") {
       const sm = ev.body.match(SET_REACHED_BODY_RE);
-      if (sm) {
-        const isBaseline = ev.body.endsWith("(active at server start).");
-        return isBaseline
-          ? `${pretty} @ ${sm[1]} (active at server start).`
-          : `${pretty} @ ${sm[1]}.`;
-      }
-    }
-    if (ev.body.endsWith("(active at server start).")) {
-      return `${pretty} (active at server start).`;
+      if (sm) return `${pretty} @ ${sm[1]}.`;
     }
     if (ev.body.endsWith("cleared.")) return `${pretty} cleared.`;
     if (ev.body.endsWith("firing.")) return `${pretty} firing.`;
@@ -427,9 +401,6 @@ function renderEventBody(ev: FeedEvent): string {
   }
   if (ev.kind === "override") {
     const pretty = formatOverrideName(ev.name);
-    if (ev.body.endsWith("(active at server start).")) {
-      return `${pretty} (active at server start).`;
-    }
     if (ev.body.endsWith("cleared.")) return `${pretty} cleared.`;
     if (ev.body.endsWith("firing.")) return `${pretty} firing.`;
     return ev.body;
@@ -591,6 +562,7 @@ export function SystemFeed({
   }, [data]);
 
   const activeAdvisories = data?.synthesizer?.advisories ?? [];
+  const activeOverrides = data?.synthesizer?.overrides ?? [];
 
   if (events.length === 0) {
     // Empty live-event log is the normal state at market open before
@@ -603,6 +575,7 @@ export function SystemFeed({
         <div className="terminal-feed-title">System Feed</div>
         <ActiveAdvisories
           advisories={activeAdvisories}
+          overrides={activeOverrides}
           gapFill={data?.gap_fill ?? null}
         />
         <div className="terminal-feed-empty">Awaiting events.</div>
@@ -621,6 +594,7 @@ export function SystemFeed({
       <div className="terminal-feed-title">System Feed</div>
       <ActiveAdvisories
         advisories={activeAdvisories}
+        overrides={activeOverrides}
         gapFill={data?.gap_fill ?? null}
       />
       <ul className="terminal-feed-list">
@@ -725,26 +699,48 @@ function formatRelativeTimeLabel(
 
 // ── Active advisories ─────────────────────────────────────────────
 //
-// Persistent display of currently-firing advisories. The live event
-// log below is TRANSITIONS-ONLY (X fired / X cleared). This section
-// reflects the snapshot's `synthesizer.advisories[]` directly, so a
-// trader who refreshes the page mid-session immediately sees the
-// current state of every sticky advisory (e.g. gap_fill.opened firing
-// since 18:00 ET) without having to scroll the rolling log or have
-// been present at the moment of the original transition.
+// Persistent display of currently-firing overrides + advisories. The
+// live event log below is TRANSITIONS-ONLY (X fired / X cleared).
+// This section reflects the snapshot's
+// `synthesizer.{overrides,advisories}` directly, so a trader who
+// refreshes the page mid-session immediately sees the current state
+// of every sticky signal (e.g. gap_fill.opened firing since 18:00 ET,
+// or weekly-vwap-lost active since the daily session) without having
+// to scroll the rolling log or have been present at the moment of
+// the original transition.
+//
+// Overrides render first (they outrank advisories: high vs medium
+// importance in the event_log grading) with a distinct pulse mark.
 
 function ActiveAdvisories({
   advisories,
+  overrides,
   gapFill,
 }: {
   advisories: string[];
+  overrides: string[];
   gapFill: import("../../api/terminalTypes").GapFillContext | null;
 }) {
-  if (advisories.length === 0) return null;
+  if (advisories.length === 0 && overrides.length === 0) return null;
   return (
-    <section className="active-advisories" aria-label="Currently firing advisories">
+    <section className="active-advisories" aria-label="Currently firing signals">
       <h4 className="active-advisories-header">active now</h4>
       <ul className="active-advisories-list">
+        {overrides.map((ov) => {
+          const label = formatOverrideName(ov);
+          return (
+            <li
+              key={`override:${ov}`}
+              className="active-advisory active-override"
+              aria-label={`Active override: ${label}`}
+            >
+              <span className="active-advisory-pulse" aria-hidden="true">
+                ●
+              </span>
+              <span className="active-advisory-name">{label}</span>
+            </li>
+          );
+        })}
         {advisories.map((adv) => {
           const label = formatAdvisoryName(adv);
           // Inline target price for the gap_fill.* family. Suppressed
