@@ -23,7 +23,6 @@
 import { Component, useEffect } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { colors, fonts } from "../../../styles/tokens";
-import type { DCPosition } from "../../../api/dcTypes";
 import { useCapitalAllocation } from "../../../hooks/useCapitalAllocation";
 import { useCapitalSummary } from "../../../hooks/useCapitalSummary";
 import { useStrategySpecs } from "../../../hooks/useStrategySpecs";
@@ -33,9 +32,11 @@ import { HeaderBand } from "./HeaderBand";
 import { PolicyPicker } from "./PolicyPicker";
 import { SizingGrid } from "./SizingGrid";
 
-interface Props {
-  positions: DCPosition[];
-}
+// No props — the Capital tab is a pure what-if calculator. It used to
+// take open positions for account-aware sizing but those leaked
+// operator state into other viewers' grid; sizing now reads only
+// portfolio_size + policy from per-viewer localStorage.
+type Props = Record<string, never>;
 
 // Defense in depth: any render crash inside the Capital tab body now shows a
 // small error panel instead of unmounting the dashboard. The root cause
@@ -104,7 +105,7 @@ export function CapitalAllocationTab(props: Props) {
   );
 }
 
-function CapitalAllocationTabInner({ positions }: Props) {
+function CapitalAllocationTabInner(_props: Props) {
   const capital = useCapitalAllocation();
   const { summary, loading } = useCapitalSummary();
   const { specs } = useStrategySpecs();
@@ -191,7 +192,6 @@ function CapitalAllocationTabInner({ positions }: Props) {
         specs={specs ?? []}
         policy={selectedPolicy}
         portfolioSize={capital.portfolioSize}
-        positions={positions}
       />
 
       {/* Panel C — compounding projection (reactive to policy + portfolio size +

@@ -1,17 +1,27 @@
 /**
  * SuggestedRow — capital-allocation sizing recommendation ("Suggested:
- * N cts"). Rendered only when the caller supplies a policy +
- * portfolioSize AND the lifecycle state + signal warrant a
- * recommendation (shouldShowSuggested below).
+ * N cts"). A pure what-if calculator: each viewer sets their own
+ * portfolio size + allocation policy on the Capital tab, and this row
+ * answers "given that, here's the size you'd take on this signal."
+ *
+ * Why account-neutral: this row is visible to anyone who toggled
+ * "Use capital for signals." It must not surface margin information
+ * tied to the daemon's specific account — viewers don't know what
+ * other plays the daemon has running, and warning them about caps
+ * the daemon would hit is operator-private state. The math is
+ * therefore computed against a CLEAN slate (no open margin deducted),
+ * and margin-cap reasons are filtered out of the skip messaging.
+ *
+ * Operator-facing margin status lives on the Positions tab's
+ * MarginCard — separate surface, separate audience.
  */
 
 import { colors, fonts } from "../../../styles/tokens";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
-import type { DCAllocationPolicy, DCPosition, DCStrategySpec } from "../../../api/dcTypes";
+import type { DCAllocationPolicy, DCStrategySpec } from "../../../api/dcTypes";
 import {
   computeSizingBreakdown,
   computeSuggestedContracts,
-  formatMarginUsage,
   SPX_MULTIPLIER,
 } from "../../../lib/dcSizing";
 import type { LegData } from "./types";
@@ -41,13 +51,24 @@ export function shouldShowSuggested(
   return activeEnough && hasGoSignal;
 }
 
+// Margin-state-derived skip reasons leak account-specific info. The
+// "Insufficient margin available" reason mathematically reduces to
+// "your stated portfolio × global_pct can't fit one contract" once
+// open-margin is zeroed — that's pure what-if feedback, not state
+// leakage, but the wording reads as a margin warning either way.
+// Strip these so the only skip message is "Suggested: skip".
+const ACCOUNT_TIED_REASONS = new Set([
+  "Over global margin cap",
+  "Over per-strategy margin cap",
+  "Insufficient margin available",
+]);
+
 export function SuggestedRow({
   spec,
   signal,
   policy,
   portfolioSize,
   currentDalMult,
-  openPositions,
   legData,
 }: {
   spec: DCStrategySpec;
@@ -55,7 +76,6 @@ export function SuggestedRow({
   policy: DCAllocationPolicy;
   portfolioSize: number;
   currentDalMult: number;
-  openPositions: DCPosition[];
   legData: LegData;
 }) {
   const sizedSignal: "GO" | "GO_PLUS" = signal === "GO_PLUS" ? "GO_PLUS" : "GO";
@@ -65,28 +85,41 @@ export function SuggestedRow({
   const marginPerContract =
     liveDebit != null ? liveDebit * SPX_MULTIPLIER : (spec.avg_margin ?? null);
 
+  // Empty openPositions = clean-slate sizing. Each viewer sees their
+  // own portfolio × policy answer, not one colored by the daemon's
+  // open margin. See the file-level docstring for rationale.
   const result = computeSuggestedContracts({
     spec,
     signal: sizedSignal,
     portfolioSize,
     policy,
     currentDalMult,
-    openPositions,
+    openPositions: [],
     marginPerContract,
   });
 
   // Color treatment:
   //   green  — sized ok
-  //   amber  — sized but margin-trimmed or hard-capped
+  //   amber  — sized but hit the policy hard cap
   //   red    — skipped
+  // The marginTrimmed flag is suppressed here — its message
+  // ("trimmed from N (margin cap)") implied a margin warning.
+  // hardCapped is account-neutral (a fixed policy ceiling) so we
+  // still highlight that case.
   const zero = result.finalContracts === 0;
-  const trimmed = !zero && (result.marginTrimmed || result.hardCapped);
-  const color = zero ? colors.accentRed : trimmed ? colors.accentAmber : colors.accentGreen;
+  const capped = !zero && result.hardCapped;
+  const color = zero ? colors.accentRed : capped ? colors.accentAmber : colors.accentGreen;
   const bg = color + "14";
   const border = color + "40";
 
   const breakdown = computeSizingBreakdown(result, sizedSignal);
-  const marginLine = formatMarginUsage(result);
+  // Filter the skip reason: account-tied ones become a bare "skip"
+  // (no trailing reason). Non-account reasons (missing config, base
+  // size = 0) still pass through for actionable feedback.
+  const skipSuffix =
+    result.reasonIfZero && !ACCOUNT_TIED_REASONS.has(result.reasonIfZero)
+      ? ` — ${result.reasonIfZero}`
+      : "";
 
   return (
     <div
@@ -105,23 +138,16 @@ export function SuggestedRow({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <span style={{ color, fontWeight: 700 }}>
           {zero
-            ? `Suggested: skip — ${result.reasonIfZero ?? "over budget"}`
+            ? `Suggested: skip${skipSuffix}`
             : `Suggested: ${result.finalContracts} cts`}
         </span>
         {!zero && (
           <span style={{ color: colors.textMuted, fontSize: 10 }}>{breakdown}</span>
         )}
       </div>
-      {!zero && (
-        <div style={{ color: colors.textMuted, fontSize: 10 }}>
-          {trimmed && (
-            <span style={{ color: colors.accentAmber, marginRight: 6 }}>
-              {result.marginTrimmed
-                ? `trimmed from ${result.goPlusContracts} (margin cap)`
-                : `capped from ${result.goPlusContracts} (hard cap)`}
-            </span>
-          )}
-          {marginLine}
+      {!zero && capped && (
+        <div style={{ color: colors.accentAmber, fontSize: 10 }}>
+          capped from {result.goPlusContracts} (hard cap)
         </div>
       )}
     </div>

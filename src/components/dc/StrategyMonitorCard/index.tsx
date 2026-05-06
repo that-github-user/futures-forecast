@@ -179,7 +179,6 @@ function StrategyMonitorCardImpl({
           policy={policy}
           portfolioSize={portfolioSize}
           currentDalMult={currentDalMult ?? 1}
-          openPositions={openPositions ?? []}
           legData={legData}
         />
       )}
