@@ -15,6 +15,15 @@ export interface TerminalHealth {
   status: "ok" | "degraded";
   ibkr_connected: boolean;
   last_tick_age_seconds: number | null;
+  // Names of streams the terminal-api's StaleStreamWatcher has
+  // flagged as stale beyond threshold for ≥5 consecutive watcher
+  // cycles (~5min) despite re-subscribe attempts. Empty list =
+  // healthy. Common cause: competing IBKR live session (Error
+  // 10197) — operator should log out of any other TWS / Gateway /
+  // mobile session sharing the account. Defaults to [] when the
+  // backend hasn't deployed the watcher field yet (graceful
+  // degradation during cross-repo deploy ordering).
+  degraded_streams?: string[];
 }
 
 export interface RegimeData {
