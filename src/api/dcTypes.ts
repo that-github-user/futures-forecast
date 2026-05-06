@@ -198,6 +198,14 @@ export interface DCRiskStatus {
   daily_limit: number;
   max_daily_trades: number;
   paused: boolean;
+  // Optional margin snapshot (vega-pilot risk_status.json sidecar).
+  // null when the daemon hasn't written the sidecar yet (cold start)
+  // or when NLV is unset. Surfaced on the Positions tab; not used
+  // by Signals or any per-strategy view.
+  net_liquidation?: number | null;
+  total_open_margin?: number | null;
+  global_margin_cap?: number | null;
+  margin_budget_global_pct?: number | null;
 }
 
 export interface DCSignalEvent {
