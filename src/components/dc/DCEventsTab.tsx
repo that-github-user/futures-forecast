@@ -206,7 +206,7 @@ function EventRow({
 }) {
   return (
     <tr>
-      <td style={tdMono}
+      <td style={{ ...tdMono, whiteSpace: "nowrap" }}
           title={`Rendered: ${formatChartTime(event.entry_time, true)} ${tzLabel} • Raw broker timestamp: ${event.entry_time}`}>
         {formatChartTime(event.entry_time, true)}{" "}
         <span style={{ color: colors.textMuted, fontSize: 10 }}>{tzLabel}</span>
