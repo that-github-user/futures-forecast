@@ -250,7 +250,3 @@ export function computeSizingBreakdown(r: SuggestedContractsResult, signal: Sugg
   return parts.join(" ");
 }
 
-export function formatMarginUsage(r: SuggestedContractsResult): string {
-  const dollars = (v: number) => `$${Math.round(v).toLocaleString()}`;
-  return `${dollars(r.stratUsed)} of ${dollars(r.stratCap)} strategy · ${dollars(r.globalUsed)} of ${dollars(r.globalCap)} global`;
-}
