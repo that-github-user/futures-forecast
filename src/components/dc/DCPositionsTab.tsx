@@ -163,6 +163,17 @@ function PositionRows({
     <>
       <tr
         onClick={onToggle}
+        onKeyDown={(e) => {
+          // Keyboard a11y: Enter / Space toggle expansion. Without
+          // this, keyboard-only users couldn't access the detail
+          // panel.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        tabIndex={0}
+        role="button"
         style={{
           cursor: "pointer",
           // Soft hover-ish background only when expanded so the
@@ -206,15 +217,19 @@ function PositionRows({
         </td>
         <td style={tdMono}
             title={
-              p.bracket_order_id == null
-                ? "No broker-side TP attached"
-                : `Bracket orderId=${p.bracket_order_id}; cancellation cascades from any non-TP exit`
+              p.bracket_order_id != null
+                ? `Bracket orderId=${p.bracket_order_id}; cancellation cascades from any non-TP exit`
+                : isHoldToExpiration(spec)
+                  ? "Strategy held to expiration — no profit target. Time/DIT exit handles wind-down."
+                  : "No broker-side TP attached. Daemon-side _check_profit_target is the fallback."
             }>
           {p.bracket_target_price != null
             ? `$${p.bracket_target_price.toFixed(2)}`
             : p.bracket_order_id != null
               ? "✓"
-              : "—"}
+              : isHoldToExpiration(spec)
+                ? <span style={{ color: colors.textMuted, fontStyle: "italic" }}>hold</span>
+                : "—"}
         </td>
         <td style={tdStyle}>{p.status}</td>
       </tr>
@@ -271,7 +286,13 @@ function PositionDetailPanel({
         <DetailRow label="Back exp" value={p.back_exp} />
       </DetailSection>
 
-      {/* Bracket section */}
+      {/* Bracket section. Three mutually-exclusive states:
+          - bracket_order_id present → IBKR holds a GTC TP. Show its price.
+          - no bracket + hold-to-expiration spec → strategy by design has
+            no PT; daemon's time/DIT path handles wind-down. NOT a fallback.
+          - no bracket + non-hold spec → bracket submission failed OR
+            legacy position. Daemon-side _check_profit_target is the
+            actual fallback. */}
       <DetailSection title="Profit-target bracket">
         {p.bracket_order_id != null ? (
           <>
@@ -288,12 +309,24 @@ function PositionDetailPanel({
               tooltip="GTC limit price. Bracket fills when spread mark trades through this level."
             />
           </>
+        ) : isHoldToExpiration(spec) ? (
+          <DetailRow
+            label="Status"
+            value="Hold to expiry"
+            valueColor={colors.accentGreen}
+            tooltip={
+              `Strategy has profit_target_pct=${spec!.profit_target_pct} (≥ 1.0), ` +
+              "the documented 'hold to expiration' sentinel. No profit " +
+              "target applies — exit happens via time/DIT path on the " +
+              "front-leg expiry day. This is NOT a fallback or failure."
+            }
+          />
         ) : (
           <DetailRow
             label="Status"
             value="Daemon-side"
             valueColor={colors.textMuted}
-            tooltip="No broker-side TP. Daemon's monitor checks profit target on each cycle and submits a close when hit. Common reasons: hold-to-expiration sentinel (pt ≥ 1.0), bracket submission failed at entry, or legacy position from before PR #126."
+            tooltip="No broker-side TP. Daemon's _check_profit_target monitors P&L each cycle and submits a close when hit. Reasons: bracket submission failed at entry, partial close cancelled it, or legacy position from before PR #126."
           />
         )}
       </DetailSection>
@@ -320,6 +353,10 @@ function PositionDetailPanel({
           // decayed too far / back didn't hold value). Inverse
           // direction from PT.
           inverse
+          // SPY credit structures (short puts, straddles) have no
+          // S/L exit — render the row as 'not applicable' instead of
+          // showing a number with no threshold context.
+          notApplicable={spec != null && spec.sl_ratio_exit == null}
           tooltip={
             spec?.sl_ratio_exit != null
               ? `S/L exit fires when live ratio < ${spec.sl_ratio_exit.toFixed(3)}`
@@ -392,8 +429,25 @@ function DetailRow({
 
 // Progress bar showing current vs threshold for an exit criterion.
 // `inverse=true` reverses the direction (S/L: lower is worse).
+//
+// Math (the part round-1 reviewers caught wrong):
+//   Forward (PT, DIT): pct = current / threshold. At threshold,
+//     bar full red. Beyond, overfills (capped 1.5).
+//   Inverse (S/L): pct = threshold / current. At threshold, bar
+//     full red. Below threshold (we're past firing), pct > 1.
+//     Far above threshold, pct → 0 (empty bar). This is monotonic
+//     and domain-correct for typical S/L values where threshold ≈
+//     0.09 and current ranges 0.10–0.80. The previous "(1 - current)
+//     / (1 - threshold)" formula assumed both were fractions of 1
+//     and inflated closeness-to-firing for typical ratios.
+//
+// `notApplicable=true` renders "Not applicable" instead of the
+// current value when the strategy doesn't have an exit threshold
+// for this criterion (e.g., S/L for SPY credit structures with
+// sl_ratio_exit=null).
 function ExitCriterionRow({
   label, current, threshold, format, inverse, tooltip,
+  notApplicable,
 }: {
   label: string;
   current: number | null | undefined;
@@ -401,15 +455,31 @@ function ExitCriterionRow({
   format: (v: number) => string;
   inverse?: boolean;
   tooltip?: string;
+  notApplicable?: boolean;
 }) {
+  if (notApplicable) {
+    return (
+      <div title={tooltip}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: colors.textMuted, fontSize: 11 }}>{label}</span>
+          <span style={{
+            fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+            fontStyle: "italic",
+          }}>
+            Not applicable
+          </span>
+        </div>
+      </div>
+    );
+  }
   const hasBoth = current != null && threshold != null;
   // Progress: 0 = not started, 1 = at threshold (would fire), >1 = past.
   let pct: number | null = null;
-  if (hasBoth && threshold !== 0) {
+  if (hasBoth && threshold > 0 && current > 0) {
     if (inverse) {
-      // S/L: 1 means at-threshold (lower=closer to firing). Map
-      // [threshold, 1] → [1, 0] so the bar EMPTIES as ratio drops.
-      pct = current >= 1 ? 0 : Math.max(0, Math.min(1, (1 - current) / Math.max(1e-6, 1 - threshold)));
+      // S/L: pct = threshold / current. Clamp [0, 1.5]. Higher
+      // current = lower pct (further from firing).
+      pct = Math.max(0, Math.min(1.5, threshold / current));
     } else {
       // PT / DIT: current/threshold, capped 0..1.5 for visual.
       pct = Math.max(0, Math.min(1.5, current / threshold));
@@ -467,6 +537,17 @@ function slCellStyle(live: number, threshold: number | null): React.CSSPropertie
 function formatDollarPnl(v: number): string {
   const sign = v >= 0 ? "+" : "-";
   return `${sign}$${Math.abs(v).toFixed(0)}`;
+}
+
+// Does the strategy intentionally hold to expiration (no profit
+// target)? `profit_target_pct >= 1.0` is the documented sentinel
+// per config/strategies.py — used by 7d 50p / 7d 30p style "ride
+// it to expiry" plays. The dashboard distinguishes this from
+// "bracket failed / missing" so the trader doesn't see a
+// misleading "Daemon-side fallback" cue on positions that have
+// no PT by design.
+function isHoldToExpiration(spec: DCStrategySpec | undefined): boolean {
+  return spec != null && spec.profit_target_pct >= 1.0;
 }
 
 
