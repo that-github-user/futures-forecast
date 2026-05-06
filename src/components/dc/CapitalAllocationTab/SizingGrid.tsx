@@ -8,7 +8,7 @@
 
 import { useMemo } from "react";
 import { colors, fonts } from "../../../styles/tokens";
-import type { DCAllocationPolicy, DCPosition, DCStrategySpec } from "../../../api/dcTypes";
+import type { DCAllocationPolicy, DCStrategySpec } from "../../../api/dcTypes";
 import { computeSuggestedContracts } from "../../../lib/dcSizing";
 import { formatCompact, Panel } from "./shared";
 
@@ -16,12 +16,10 @@ export function SizingGrid({
   specs,
   policy,
   portfolioSize,
-  positions,
 }: {
   specs: DCStrategySpec[];
   policy: DCAllocationPolicy;
   portfolioSize: number;
-  positions: DCPosition[];
 }) {
   // Only DC strategies (filter out SPY — not validated for the tab yet) that have avg_margin.
   const rows = useMemo(() => {
@@ -29,13 +27,18 @@ export function SizingGrid({
     // Sort by margin ascending — cheapest first, matches §6 table.
     dcSpecs.sort((a, b) => (a.avg_margin ?? 0) - (b.avg_margin ?? 0));
     return dcSpecs.map((spec) => {
+      // Pure what-if sizing: zero open positions so each viewer sees
+      // their own portfolio × policy answer, not one colored by the
+      // daemon's current open margin. Same rationale as
+      // SuggestedRow.tsx — this surface is shared with non-operator
+      // viewers who shouldn't see operator-state-tied numbers.
       const go = computeSuggestedContracts({
         spec,
         signal: "GO",
         portfolioSize,
         policy,
         currentDalMult: 1,
-        openPositions: positions,
+        openPositions: [],
         marginPerContract: (spec.avg_margin ?? 0),
       });
       const dalCap = computeSuggestedContracts({
@@ -44,7 +47,7 @@ export function SizingGrid({
         portfolioSize,
         policy,
         currentDalMult: policy.dal_cap,
-        openPositions: positions,
+        openPositions: [],
         marginPerContract: (spec.avg_margin ?? 0),
       });
       const goPlus = computeSuggestedContracts({
@@ -53,12 +56,12 @@ export function SizingGrid({
         portfolioSize,
         policy,
         currentDalMult: 1,
-        openPositions: positions,
+        openPositions: [],
         marginPerContract: (spec.avg_margin ?? 0),
       });
       return { spec, go, dalCap, goPlus };
     });
-  }, [specs, policy, portfolioSize, positions]);
+  }, [specs, policy, portfolioSize]);
 
   const globalCap = portfolioSize * (policy.global_pct / 100);
   const stratCap = portfolioSize * (policy.per_strat_pct / 100);

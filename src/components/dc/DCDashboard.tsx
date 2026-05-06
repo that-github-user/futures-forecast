@@ -148,9 +148,7 @@ export function DCDashboard() {
           />
         )}
         {tab === "events" && <DCEventsTab />}
-        {tab === "capital" && (
-          <CapitalAllocationTab positions={data.positions} />
-        )}
+        {tab === "capital" && <CapitalAllocationTab />}
       </div>
     </div>
   );
