@@ -69,6 +69,30 @@ export interface DCPosition {
   // degradation during cross-repo deploy ordering.
   current_net_value?: number | null;
   unrealized_pnl?: number | null;
+  // Signed P&L as a fraction of entry premium. For debit (DCs):
+  // (current − entry) / entry. For credit (SPY shorts/straddles):
+  // (entry − current) / entry. Mirrors the daemon's compute_pnl_pct
+  // so dashboard "X% of way to PT" matches what the monitor checks.
+  // Null when entry_debit is zero/missing or current_net_value
+  // can't be computed.
+  pnl_pct?: number | null;
+  // Live S/L ratio = front_premium / back_premium, computed from
+  // the same per-leg mids that produce current_net_value. The metric
+  // the daemon's _check_sl_ratio_exit watches for breach. Null when
+  // any leg's mid is missing or back_premium is zero.
+  live_sl_ratio?: number | null;
+  // Order ID of the broker-side profit-target bracket (PR #126).
+  // Non-null = IBKR is holding a GTC limit at the target price;
+  // daemon-side TP monitor is a no-op. Null on legacy rows, hold-
+  // to-expiration sentinel strategies, or rows where bracket
+  // submission failed.
+  bracket_order_id?: number | null;
+  // Lmt price of the resting bracket order, joined from broker_state's
+  // open_orders by bracket_order_id. Lets the dashboard show the
+  // actual GTC limit pending at the broker without a TWS roundtrip.
+  // Null when bracket_order_id is null or when the bracket has been
+  // cancelled/filled and is no longer in open_orders.
+  bracket_target_price?: number | null;
 }
 
 export interface DCTrade {
