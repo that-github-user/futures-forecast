@@ -384,7 +384,15 @@ const SET_REACHED_BODY_RE = / @ (\d+\.\d+)\.$/;
  *  Why client-side: Active Now reformats raw advisory IDs into
  *  trader vocabulary ("Open gap" not "gap_fill.opened"); a trader
  *  scanning the sidebar would otherwise read the same advisory
- *  with two different names across the two surfaces. */
+ *  with two different names across the two surfaces.
+ *
+ *  Deploy-window note: pre-existing entries in the rolling buffer
+ *  emitted before the companion server PR may still carry the
+ *  removed `(active at server start).` suffix. Those bodies fall
+ *  through the recognized-suffix checks and render verbatim — the
+ *  trader sees the raw server body (with the un-prettified name)
+ *  for one buffer rotation. Acceptable degradation for the
+ *  rollover; not silently dropped. */
 function renderEventBody(ev: FeedEvent): string {
   if (ev.name == null) return ev.body;
   if (ev.kind === "advisory") {
@@ -734,8 +742,18 @@ function ActiveAdvisories({
               className="active-advisory active-override"
               aria-label={`Active override: ${label}`}
             >
+              {/* `◆` (diamond) for overrides — distinct from both
+                  the advisory's `◉` AND the live event log's
+                  importance pulses (`●`/`○`/`─`). The visual grammar
+                  invariant (set by R2 on the original Active Now PR)
+                  is that no glyph in this section may collide with
+                  the live log's importance set. `●` would have
+                  collided with PULSE_MARK.high; `◉` would have
+                  collided with the advisory marker. Diamond reads
+                  as "priority state" without conflating with either
+                  scale. */}
               <span className="active-advisory-pulse" aria-hidden="true">
-                ●
+                ◆
               </span>
               <span className="active-advisory-name">{label}</span>
             </li>

@@ -1154,12 +1154,14 @@
 }
 .active-override {
   /* Overrides outrank advisories (high vs medium importance in the
-     event_log grading). Bump to ink-100 so the row reads as the
-     priority state in the active-now stack. The shared pulse rule
-     above already colors the dot --pos-cream; overriding the row
-     color here pushes the override name to full ink while leaving
-     the advisory rows at ink-80. */
+     event_log grading). Bump to ink-100 + medium weight so the row
+     reads as the priority state in the active-now stack. The
+     shared pulse rule above already colors the dot --pos-cream;
+     overriding row color + weight here pushes the override name to
+     full emphasis while leaving the advisory rows at ink-80
+     regular. */
   color: var(--ink-100);
+  font-weight: 500;
 }
 
 
