@@ -63,6 +63,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
             value={risk.paused ? "PAUSED" : "ACTIVE"}
             color={risk.paused ? colors.accentAmber : colors.accentGreen}
           />
+          <MarginCard risk={risk} />
         </div>
       )}
 
@@ -610,6 +611,38 @@ function RiskCard({ label, value, color }: { label: string; value: string; color
       </div>
     </div>
   );
+}
+
+// Open margin against the global cap. Operator-only — other dashboard
+// viewers don't care how much margin this account is using, but the
+// operator does so they can see when they're eating the global pool
+// (60% of NLV by default) and starting to block fresh entries across
+// any strategy.
+//
+// Color thresholds:
+//   < 70% utilization → text primary (no concern)
+//   70–90%            → amber       (heads-up: getting tight)
+//   ≥ 90%             → red         (next entry likely blocked)
+function MarginCard({ risk }: { risk: DCRiskStatus }) {
+  const cap = risk.global_margin_cap;
+  const used = risk.total_open_margin;
+  // Sidecar absent or NLV unset (cold start, daemon down). Render a
+  // neutral placeholder rather than a 0/0 that would imply "no
+  // margin in use" — the truth is "we don't know yet".
+  if (cap == null || cap <= 0 || used == null) {
+    return <RiskCard label="Open Margin" value="—" color={colors.textMuted} />;
+  }
+  const pct = used / cap;
+  const color =
+    pct >= 0.90 ? colors.accentRed
+    : pct >= 0.70 ? colors.accentAmber
+    : colors.textPrimary;
+  // Render compact: $4.4k / $60k (7%). Whole-dollar precision is
+  // overkill for a status-at-a-glance card; k-suffix at $1k+.
+  const fmt = (v: number) =>
+    v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
+  const value = `${fmt(used)} / ${fmt(cap)} (${(pct * 100).toFixed(0)}%)`;
+  return <RiskCard label="Open Margin" value={value} color={color} />;
 }
 
 // Drift thresholds per spread. IBKR's avg_cost folds in commissions
