@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 
 import { useDCSignalEvents } from "../../hooks/useDCSignalEvents";
+import { useTimezone } from "../../hooks/useTimezone";
 import type { DCSignalEvent } from "../../api/dcTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
@@ -20,16 +21,16 @@ import {
   tdMono,
 } from "./tableStyles";
 
-const ET_TIME = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
 function todayET(): string {
-  // Render ET date for the default date input value.
+  // Date FILTER stays ET-anchored. The backend's `entry_date` column
+  // is computed from the daemon's ET wall-clock at entry time
+  // (engine/entry.py: ctx.now.strftime('%Y-%m-%d') with ctx.now in
+  // ET), so the date filter must match that semantic. A PT trader
+  // at 8pm PT (= 11pm ET) clicking "Today" wants the ET-current
+  // date — matches the backend, matches the trader-mental-model
+  // of "today's session." Display of the Time COLUMN is separately
+  // formatted in the user's selected TZ via useTimezone (see
+  // EventRow); the filter and the display are decoupled.
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
     .format(new Date());
 }
@@ -37,6 +38,10 @@ function todayET(): string {
 export function DCEventsTab() {
   const [date, setDate] = useState<string>(todayET());
   const [strategyFilter, setStrategyFilter] = useState<string>("");
+  // Time-column display follows the user's selected timezone (set by
+  // the dropdown next to the chart on /app, persisted in localStorage
+  // as `dc.timezone`). Date filter stays ET-anchored — see todayET().
+  const { formatChartTime, tzLabel } = useTimezone();
 
   const today = todayET();
   const effectiveDate = date === "all" ? "all" : date;
@@ -181,7 +186,7 @@ export function DCEventsTab() {
               </thead>
               <tbody>
                 {events.map((e) => (
-                  <EventRow key={e.id} event={e} />
+                  <EventRow key={e.id} event={e} formatChartTime={formatChartTime} tzLabel={tzLabel} />
                 ))}
               </tbody>
             </table>
@@ -192,10 +197,20 @@ export function DCEventsTab() {
   );
 }
 
-function EventRow({ event }: { event: DCSignalEvent }) {
+function EventRow({
+  event, formatChartTime, tzLabel,
+}: {
+  event: DCSignalEvent;
+  formatChartTime: (iso: string, withSeconds?: boolean) => string;
+  tzLabel: string;
+}) {
   return (
     <tr>
-      <td style={tdMono}>{formatET(event.entry_time)}</td>
+      <td style={tdMono}
+          title={`Rendered: ${formatChartTime(event.entry_time, true)} ${tzLabel} • Raw broker timestamp: ${event.entry_time}`}>
+        {formatChartTime(event.entry_time, true)}{" "}
+        <span style={{ color: colors.textMuted, fontSize: 10 }}>{tzLabel}</span>
+      </td>
       <td style={tdStyle}>{event.strategy_name}</td>
       <td style={tdStyle}><SignalBadge signal={event.signal} /></td>
       <td style={tdStyle}>
@@ -369,14 +384,6 @@ function summarizeOutcomes(events: DCSignalEvent[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const e of events) out[e.outcome] = (out[e.outcome] ?? 0) + 1;
   return out;
-}
-
-function formatET(iso: string): string {
-  try {
-    return ET_TIME.format(new Date(iso));
-  } catch {
-    return iso;
-  }
 }
 
 const labelStyle: React.CSSProperties = {
