@@ -100,7 +100,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                   <th style={thStyle}>Strikes</th>
                   <th style={thStyle} title="Days until front-leg expiry">DTE</th>
                   <th style={thStyle}>Debit</th>
-                  <th style={thStyle} title="Live unrealized P&L (mid mark)">P&amp;L</th>
+                  <th style={thStyle} title="Live unrealized P&L per contract (mid mark). Total $ across the position is in the tooltip when you hover a row's cell.">P&amp;L /ct</th>
                   <th style={thStyle} title="P&L as fraction of entry premium / target">P&amp;L %</th>
                   <th style={thStyle} title="Live S/L ratio (front_premium / back_premium)">S/L</th>
                   <th style={thStyle}>TP</th>
@@ -160,6 +160,13 @@ function PositionRows({
   const pnl = p.unrealized_pnl ?? null;
   const pnlPct = p.pnl_pct ?? null;
   const slLive = p.live_sl_ratio ?? null;
+  // Per-contract P&L is the size-agnostic display — universally
+  // interpretable for any dashboard viewer regardless of the
+  // operator's portfolio size or position quantity. Falls back to
+  // null when total P&L or quantity are missing (data farm down,
+  // legacy row without conids, or zero-residual edge case).
+  const pnlPerContract =
+    pnl != null && p.quantity > 0 ? pnl / p.quantity : null;
   return (
     <>
       <tr
@@ -197,8 +204,13 @@ function PositionRows({
         <td style={tdMono}>{p.put_strike}P / {p.call_strike}C</td>
         <td style={tdMono}>{dte ?? "—"}</td>
         <td style={tdMono}>${p.entry_debit.toFixed(2)}</td>
-        <td style={pnl == null ? tdMono : pnlCellStyle(pnl)}>
-          {pnl == null ? "—" : formatDollarPnl(pnl)}
+        <td style={pnlPerContract == null ? tdMono : pnlCellStyle(pnlPerContract)}
+            title={
+              pnl != null && pnlPerContract != null
+                ? `Total: ${formatDollarPnl(pnl)} across ${p.quantity} contracts`
+                : undefined
+            }>
+          {pnlPerContract == null ? "—" : formatDollarPnl(pnlPerContract)}
         </td>
         <td style={pnlPct == null ? tdMono : pnlCellStyle(pnlPct)}
             title={
