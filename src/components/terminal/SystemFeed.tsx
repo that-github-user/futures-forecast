@@ -685,11 +685,12 @@ function formatRelativeTimeLabel(
   // late Sunday night PT (= early Monday ET).
   const time = formatChartTime(timestampIso, false);
   try {
+    const ianaOpt = tz !== "local" ? { timeZone: TZ_IANA_FOR_LABEL[tz] } : {};
     const dateOpts: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-      ...(tz !== "local" ? { timeZone: TZ_IANA_FOR_LABEL[tz] } : {}),
+      ...ianaOpt,
     };
     const fmt = new Intl.DateTimeFormat("en-CA", dateOpts);
     const eventDate = fmt.format(new Date(timestampIso));
@@ -699,8 +700,20 @@ function formatRelativeTimeLabel(
       (Date.parse(eventDate) - Date.parse(todayDate)) / 86_400_000,
     );
     if (offsetDays === 1) return `tom ${time}`;
-    // Within next 24h, tomorrow is the only other case (the backend
-    // filters past 24h). Defensive: fall through to time only.
+    // 2+ days out — render weekday label so a Sunday-prep trader can
+    // tell M/T/W/Th/F at a glance. Within the calendar's max 7-day
+    // forward horizon (week_ahead mode) the weekday is unambiguous;
+    // beyond that the backend wouldn't surface the event anyway.
+    if (offsetDays >= 2 && offsetDays <= 6) {
+      const weekdayFmt = new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        ...ianaOpt,
+      });
+      const weekday = weekdayFmt.format(new Date(timestampIso));
+      return `${weekday} ${time}`;
+    }
+    // 7+ days out — defensive fallback (shouldn't happen given the
+    // server's 7-day horizon cap).
     return time;
   } catch {
     return time;
