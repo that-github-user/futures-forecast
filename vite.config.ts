@@ -26,20 +26,18 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // ECharts is statically imported by both
-          // `DesktopTerminalChartCanvas` (the lazy-loaded /app
-          // chart) AND by FanChart / EquityCurve (the / root-route
-          // ES-prediction charts). Without the explicit chunk,
-          // Rollup inlines it into the entry chunk because
-          // multiple modules pull from it — exploding the entry
-          // from ~125 KB gz to ~500 KB gz. Keep it as a vendor
-          // chunk so it's a single shared download cached across
-          // routes.
-          echarts: ["echarts", "echarts-for-react"],
-          // lightweight-charts is reached ONLY via the dynamic
-          // `import("./MobileChartCanvas")` boundary, so Rollup
-          // auto-splits it. No manualChunks entry needed.
-          react: ["react", "react-dom"],
+          // ECharts CORE only. Deliberately excludes
+          // echarts-for-react: that adapter pulls React as a
+          // peer dep, and bundling it into the echarts vendor
+          // chunk caused Rollup to hoist React's exported
+          // symbols INTO the echarts chunk. The entry chunk's
+          // React import then transitively pulled in echarts
+          // (R2 flagged this — every route preloaded the 382 KB
+          // gz echarts chunk). Excluding echarts-for-react means
+          // Rollup inlines the small adapter (~3 KB raw) into
+          // each consumer's route chunk, but the heavy core stays
+          // as a single shared vendor chunk.
+          echarts: ["echarts"],
         },
       },
     },
