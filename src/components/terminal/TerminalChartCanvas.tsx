@@ -13,7 +13,7 @@
  * user's pan/zoom state survives bar-data refreshes.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { CandlestickChart, LineChart } from "echarts/charts";
@@ -27,6 +27,7 @@ import {
 import { CanvasRenderer } from "echarts/renderers";
 import { fetchTerminalIntradayBars, type TerminalIntradayBar } from "../../api/terminalClient";
 import type { TerminalSnapshot } from "../../api/terminalTypes";
+import { useIsMobileViewport } from "../../hooks/useIsMobileViewport";
 
 echarts.use([
   CandlestickChart,
@@ -38,6 +39,19 @@ echarts.use([
   MarkAreaComponent,
   CanvasRenderer,
 ]);
+
+// Lazy-imported mobile chart. The dynamic-import is the pivot that
+// keeps lightweight-charts out of the desktop bundle: vite resolves
+// it as a separate chunk, and the chunk only fetches when this
+// component renders. Mirrored on the mobile side: the desktop
+// ECharts code is statically imported above and IS in every bundle,
+// but mobile users never render it (the conditional return below
+// short-circuits before any ECharts-dependent code runs). Future
+// follow-up: also lazy-import the ECharts side so mobile bundles
+// don't ship it; deferred until the mobile chart is feature-complete.
+const MobileChartCanvas = lazy(() =>
+  import("./MobileChartCanvas").then((m) => ({ default: m.MobileChartCanvas })),
+);
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -225,7 +239,31 @@ interface Props {
   tzLabel: string;
 }
 
-export function TerminalChartCanvas({
+export function TerminalChartCanvas(props: Props) {
+  // Viewport gate: route ≤768px (mobile) viewports to the touch-
+  // native Lightweight Charts implementation; desktop continues to
+  // use the ECharts code below. The gate is a runtime decision so
+  // operator orientation flips and DevTools resize transitions
+  // remount the correct chart cleanly. No data is shared across
+  // the boundary — each chart owns its own bar-fetch polling loop
+  // (mounting/unmounting the inactive chart cancels its loop in
+  // its useEffect cleanup).
+  const isMobile = useIsMobileViewport();
+  if (isMobile) {
+    return (
+      <Suspense fallback={
+        <div className="terminal-chart-canvas">
+          <span className="empty">Loading mobile chart…</span>
+        </div>
+      }>
+        <MobileChartCanvas {...props} />
+      </Suspense>
+    );
+  }
+  return <DesktopTerminalChartCanvas {...props} />;
+}
+
+function DesktopTerminalChartCanvas({
   snapshot,
   overlays,
   timeframe,

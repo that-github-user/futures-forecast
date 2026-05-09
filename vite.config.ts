@@ -26,7 +26,14 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // Heavy chart libs split into per-library chunks so each is
+          // lazy-loaded only on the viewports that need it. ECharts is
+          // the desktop chart (1.1MB); lightweight-charts is the mobile
+          // chart (~50KB). With viewport-gated lazy imports, desktop
+          // never loads lightweight-charts and mobile never loads
+          // echarts.
           echarts: ["echarts", "echarts-for-react"],
+          "lightweight-charts": ["lightweight-charts"],
           react: ["react", "react-dom"],
         },
       },
