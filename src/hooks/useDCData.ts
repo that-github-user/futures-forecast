@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { dcApi } from "../api/dcClient";
 import type {
   DCBrokerState,
+  DCExitAlert,
   DCPosition,
   DCRiskStatus,
   DCSignalsResponse,
@@ -43,8 +44,47 @@ interface DCData {
   signals: DCSignalsResponse | null;
   risk: DCRiskStatus | null;
   brokerState: DCBrokerState | null;
+  exitAlerts: DCExitAlert[];
   apiOnline: boolean;
   loading: boolean;
+}
+
+/** Browser Notification API permission state-check + request. Returns
+ *  the user's current permission ("granted" / "denied" / "default").
+ *  Idempotent — Notification.requestPermission() is a no-op when
+ *  permission is already granted or denied. Caller should debounce so
+ *  this doesn't fire on every render. */
+async function ensureNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    return "denied";
+  }
+  if (Notification.permission !== "default") {
+    return Notification.permission;
+  }
+  try {
+    return await Notification.requestPermission();
+  } catch {
+    return "denied";
+  }
+}
+
+/** Fire a browser notification for a newly-detected exit alert. The
+ *  permission request is best-effort: if the user has dismissed it
+ *  permanently or the browser blocks the API, we silently no-op
+ *  (the in-page Positions-tab badge still surfaces the alert
+ *  visually, so this is purely an attention-amplifier for traders
+ *  with the tab in the background). */
+function fireExitAlertNotification(alert: DCExitAlert): void {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(`DC Exit: ${alert.strategy_name}`, {
+      body: alert.exit_reason,
+      tag: `dc-exit-${alert.id}`,  // dedup if user has multiple tabs
+    });
+  } catch {
+    // Some browsers throw on certain platform setups; swallow.
+  }
 }
 
 // Cadence tiers:
@@ -78,8 +118,26 @@ export function useDCData(): DCData {
   const [signals, setSignals] = useState<DCSignalsResponse | null>(null);
   const [risk, setRisk] = useState<DCRiskStatus | null>(null);
   const [brokerState, setBrokerState] = useState<DCBrokerState | null>(null);
+  const [exitAlerts, setExitAlerts] = useState<DCExitAlert[]>([]);
   const [apiOnline, setApiOnline] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Track the set of alert IDs we've already notified for so we
+  // don't re-fire the browser notification on every poll cycle.
+  // Keyed by alert.id (server-issued, monotonic). Cleared alerts
+  // stay in this set; re-exits get a fresh id from the daemon.
+  //
+  // Per-instance: resets on dashboard unmount (e.g., hash route to
+  // `#/` and back). On remount the server still surfaces alerts
+  // cleared in the last ~5min — those re-arrive as `cleared_at !=
+  // null` rows, which the fire-loop below skips, so no spurious
+  // re-notify. Active alerts at remount time WILL re-notify
+  // (treated as a refresher for an operator returning to the tab).
+  //
+  // Pruned on every fetch against the live `ea` payload so the set
+  // doesn't grow unboundedly across a long-running tab (R2 caught
+  // this — without pruning, a multi-day open dashboard accumulates
+  // every alert id ever observed).
+  const notifiedAlertIdsRef = useRef<Set<number>>(new Set());
 
   // Fast tier. Promise.allSettled so a slow or failing endpoint can't
   // block the others — today dcGet already swallows errors to null, so
@@ -91,12 +149,14 @@ export function useDCData(): DCData {
       dcApi.signals(),       // [2]
       dcApi.risk(),          // [3]
       dcApi.brokerState(),   // [4]
+      dcApi.exitAlerts(),    // [5]
     ]);
     const s = pickSettled(results[0] as PromiseSettledResult<DCSummary | null>);
     const p = pickSettled(results[1] as PromiseSettledResult<DCPosition[] | null>);
     const sig = pickSettled(results[2] as PromiseSettledResult<DCSignalsResponse | null>);
     const r = pickSettled(results[3] as PromiseSettledResult<DCRiskStatus | null>);
     const bs = pickSettled(results[4] as PromiseSettledResult<DCBrokerState | null>);
+    const ea = pickSettled(results[5] as PromiseSettledResult<DCExitAlert[] | null>);
 
     const online = s !== null;
     setApiOnline(online);
@@ -117,6 +177,31 @@ export function useDCData(): DCData {
       setBrokerState(null);
     }
     // "retain" — no-op; previous value kept.
+
+    // Exit alerts: detect newly-arrived alerts (id not in notified
+    // set) and fire a browser notification for each. ACTIVE alerts
+    // (cleared_at == null) only — a row that arrives already
+    // cleared (e.g., user reloaded after the close completed) is
+    // historical and shouldn't ping.
+    if (ea) {
+      setExitAlerts(ea);
+      const seen = notifiedAlertIdsRef.current;
+      // Prune ids that are no longer in the live payload — server
+      // drops cleared alerts past the 5min window, so accumulating
+      // their ids in `seen` is pure memory bloat. Bounded by alert
+      // churn rate × 5min on the steady-state.
+      const liveIds = new Set(ea.map((a) => a.id));
+      for (const id of seen) {
+        if (!liveIds.has(id)) seen.delete(id);
+      }
+      for (const alert of ea) {
+        if (alert.cleared_at != null) continue;
+        if (seen.has(alert.id)) continue;
+        seen.add(alert.id);
+        fireExitAlertNotification(alert);
+      }
+    }
+
     // Flip loading off as soon as fast tier returns — the slow tier
     // can arrive later without blocking the initial render.
     setLoading(false);
@@ -143,11 +228,19 @@ export function useDCData(): DCData {
     fetchSlow();
     const fastId = setInterval(fetchFast, FAST_INTERVAL_MS);
     const slowId = setInterval(fetchSlow, SLOW_INTERVAL_MS);
+    // Best-effort: prompt the operator for browser-notification
+    // permission when the dashboard mounts. If they decline, the
+    // in-page exit-alert badge still surfaces alerts visually —
+    // this is purely an attention-amplifier for backgrounded tabs.
+    void ensureNotificationPermission();
     return () => {
       clearInterval(fastId);
       clearInterval(slowId);
     };
   }, [fetchFast, fetchSlow]);
 
-  return { summary, positions, trades, strategies, signals, risk, brokerState, apiOnline, loading };
+  return {
+    summary, positions, trades, strategies, signals, risk,
+    brokerState, exitAlerts, apiOnline, loading,
+  };
 }

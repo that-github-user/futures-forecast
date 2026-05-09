@@ -309,6 +309,30 @@ html, body, #root {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* DC EXITING badge — slow persimmon pulse to draw the eye to a
+   position that is currently in its exit ladder. Tuned slow (2s
+   cycle) so it doesn't read as a "this is broken" flash; the
+   persimmon background shade carries the urgency, the pulse just
+   keeps the row from blending in for a backgrounded operator. */
+@keyframes dc-exit-pulse {
+  0%, 100% { background-color: rgba(229, 122, 90, 0.18); }
+  50%      { background-color: rgba(229, 122, 90, 0.32); }
+}
+
+/* Honor prefers-reduced-motion (WCAG 2.3.3): vestibular-sensitive
+   users get a static persimmon background instead of the pulsing
+   alternation. The fixed mid-strength tint preserves the urgency
+   semaphore — only the animation is suppressed. Same suppression
+   pattern would extend to any future attention-grabbing keyframe
+   here; the fadeIn / pulse / spin / flash above are subtle enough
+   to leave alone unless a user reports otherwise. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes dc-exit-pulse {
+    0%, 100% { background-color: rgba(229, 122, 90, 0.25); }
+    50%      { background-color: rgba(229, 122, 90, 0.25); }
+  }
+}
+
 .fade-in {
   animation: fadeIn 0.3s ease;
 }
