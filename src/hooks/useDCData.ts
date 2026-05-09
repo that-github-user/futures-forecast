@@ -125,6 +125,18 @@ export function useDCData(): DCData {
   // don't re-fire the browser notification on every poll cycle.
   // Keyed by alert.id (server-issued, monotonic). Cleared alerts
   // stay in this set; re-exits get a fresh id from the daemon.
+  //
+  // Per-instance: resets on dashboard unmount (e.g., hash route to
+  // `#/` and back). On remount the server still surfaces alerts
+  // cleared in the last ~5min — those re-arrive as `cleared_at !=
+  // null` rows, which the fire-loop below skips, so no spurious
+  // re-notify. Active alerts at remount time WILL re-notify
+  // (treated as a refresher for an operator returning to the tab).
+  //
+  // Pruned on every fetch against the live `ea` payload so the set
+  // doesn't grow unboundedly across a long-running tab (R2 caught
+  // this — without pruning, a multi-day open dashboard accumulates
+  // every alert id ever observed).
   const notifiedAlertIdsRef = useRef<Set<number>>(new Set());
 
   // Fast tier. Promise.allSettled so a slow or failing endpoint can't
@@ -174,6 +186,14 @@ export function useDCData(): DCData {
     if (ea) {
       setExitAlerts(ea);
       const seen = notifiedAlertIdsRef.current;
+      // Prune ids that are no longer in the live payload — server
+      // drops cleared alerts past the 5min window, so accumulating
+      // their ids in `seen` is pure memory bloat. Bounded by alert
+      // churn rate × 5min on the steady-state.
+      const liveIds = new Set(ea.map((a) => a.id));
+      for (const id of seen) {
+        if (!liveIds.has(id)) seen.delete(id);
+      }
       for (const alert of ea) {
         if (alert.cleared_at != null) continue;
         if (seen.has(alert.id)) continue;
