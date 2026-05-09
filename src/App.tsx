@@ -18,8 +18,14 @@
  * div.
  */
 
-import { Suspense, lazy } from "react";
+import { Component, Suspense, lazy, type ReactNode } from "react";
 import { useHash } from "./hooks/useHash";
+// RequireAuth eager: 0.3 KB chunk would cost more in HTTP round-trip
+// than it saves. The gate is on every gated-route render path;
+// lazy-splitting just adds a tiny chunk fetch with no real benefit
+// (R1+R2 both flagged this). The route-component lazies below are
+// where the bundle savings come from — they hold the heavy deps.
+import { RequireAuth } from "./components/lander/RequireAuth";
 import { colors, fonts } from "./styles/tokens";
 
 const Dashboard = lazy(() =>
@@ -30,9 +36,6 @@ const DCDashboard = lazy(() =>
 );
 const LumenLander = lazy(() =>
   import("./components/lander/LumenLander").then((m) => ({ default: m.LumenLander })),
-);
-const RequireAuth = lazy(() =>
-  import("./components/lander/RequireAuth").then((m) => ({ default: m.RequireAuth })),
 );
 const TerminalDashboard = lazy(() =>
   import("./components/terminal/TerminalDashboard").then((m) => ({
@@ -80,12 +83,88 @@ function App() {
   return (
     <div className="app-root">
       <div className="app-content">
-        <Suspense fallback={<RouteFallback />}>
-          {content}
-        </Suspense>
+        <ChunkLoadErrorBoundary>
+          <Suspense fallback={<RouteFallback />}>
+            {content}
+          </Suspense>
+        </ChunkLoadErrorBoundary>
       </div>
     </div>
   );
+}
+
+/** Catches dynamic-import failures from `React.lazy` chunks. The
+ *  failure mode this guards against: after a deploy, a user with a
+ *  cached `index.js` from the prior deploy tries to fetch a hashed
+ *  chunk that no longer exists at the expected URL. The lazy import
+ *  rejects, Suspense bubbles the error, and without a boundary above
+ *  it the user gets a white screen + console error. The boundary
+ *  catches the rejection and prompts a reload, which fetches the
+ *  fresh `index.js` referencing the current chunk hashes (R2
+ *  flagged this). */
+class ChunkLoadErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    // Surface to console for debug; the typical chunk-load failure
+    // produces "Failed to fetch dynamically imported module".
+    // eslint-disable-next-line no-console
+    console.error("Route chunk failed to load:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: colors.bgBase,
+            fontFamily: fonts.sans,
+            color: colors.textSecondary,
+            gap: 14,
+            padding: 24,
+            textAlign: "center",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 14, color: colors.textPrimary }}>
+            A new version of the dashboard is available.
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: colors.textSecondary }}>
+            Reload to apply.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 4,
+              padding: "8px 16px",
+              fontSize: 12,
+              fontFamily: fonts.sans,
+              color: colors.textPrimary,
+              background: colors.borderDim,
+              border: `1px solid ${colors.borderDim}`,
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /** Centered loading state during route-chunk fetch. Sized for full
@@ -93,10 +172,13 @@ function App() {
  *  Matches the muted ink-60 tone the rest of the app uses for
  *  pre-data states. */
 function RouteFallback() {
+  // height: 100% (NOT 100vh) — `.app-content` is already a viewport-
+  // tall flex item, so 100vh inside it would double-count and clip
+  // (R1 nit). 100% fills the parent cleanly.
   return (
     <div
       style={{
-        height: "100vh",
+        height: "100%",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
