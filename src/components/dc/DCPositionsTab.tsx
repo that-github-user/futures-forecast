@@ -3,6 +3,7 @@ import type {
   DCBrokerOrder,
   DCBrokerPosition,
   DCBrokerState,
+  DCExitAlert,
   DCPosition,
   DCRiskStatus,
   DCStrategySpec,
@@ -22,9 +23,23 @@ interface Props {
   positions: DCPosition[];
   risk: DCRiskStatus | null;
   brokerState: DCBrokerState | null;
+  exitAlerts: DCExitAlert[];
 }
 
-export function DCPositionsTab({ positions, risk, brokerState }: Props) {
+export function DCPositionsTab({ positions, risk, brokerState, exitAlerts }: Props) {
+  // Map position_id → most-recent active alert. Server returns alerts
+  // ordered DESC by detected_at and gates one ACTIVE alert per
+  // position via partial unique index, so the first active match per
+  // position_id is the canonical one. Cleared alerts (cleared_at !=
+  // null) are kept on the wire for ~5min by the server so the
+  // dashboard can fade them gracefully — we still surface those as
+  // "EXITED" badges briefly before the row drops to the History tab.
+  const alertByPositionId: Map<number, DCExitAlert> = new Map();
+  for (const a of exitAlerts) {
+    if (!alertByPositionId.has(a.position_id)) {
+      alertByPositionId.set(a.position_id, a);
+    }
+  }
   const { formatPositionDateTime, tzLabel } = useTimezone();
   // Strategy specs (cached) provide the per-strategy thresholds the
   // exit monitor checks against — profit_target_pct, sl_ratio_exit,
@@ -120,6 +135,7 @@ export function DCPositionsTab({ positions, risk, brokerState }: Props) {
                       onToggle={() => toggleExpand(p.id)}
                       formatPositionDateTime={formatPositionDateTime}
                       tzLabel={tzLabel}
+                      exitAlert={alertByPositionId.get(p.id) ?? null}
                     />
                   );
                 })}
@@ -148,6 +164,7 @@ function PositionRows({
   onToggle,
   formatPositionDateTime,
   tzLabel,
+  exitAlert,
 }: {
   position: DCPosition;
   spec: DCStrategySpec | undefined;
@@ -155,6 +172,7 @@ function PositionRows({
   onToggle: () => void;
   formatPositionDateTime: (iso: string) => string;
   tzLabel: string;
+  exitAlert: DCExitAlert | null;
 }) {
   const dte = daysUntil(p.front_exp);
   const pnl = p.unrealized_pnl ?? null;
@@ -244,7 +262,13 @@ function PositionRows({
                 ? <span style={{ color: colors.textMuted, fontStyle: "italic" }}>hold</span>
                 : "—"}
         </td>
-        <td style={tdStyle}>{p.status}</td>
+        <td style={tdStyle}>
+          {exitAlert ? (
+            <ExitAlertBadge alert={exitAlert} fallbackStatus={p.status} />
+          ) : (
+            p.status
+          )}
+        </td>
       </tr>
       {isExpanded && (
         <tr style={{ background: withAlpha(colors.accentBlue, 0.04) }}>
@@ -254,6 +278,51 @@ function PositionRows({
         </tr>
       )}
     </>
+  );
+}
+
+
+/** EXITING / EXITED badge — replaces the status string in the
+ *  Position row's Status column when an exit alert exists for the
+ *  position. Persimmon background + pulse animation while the alert
+ *  is active (cleared_at == null); muted when it's been cleared
+ *  (the server keeps cleared alerts on the wire ~5min for graceful
+ *  fade). Tooltip carries the exit reason for at-a-glance context.
+ *  Falls back to the regular status string if the alert is null. */
+function ExitAlertBadge({
+  alert,
+  fallbackStatus,
+}: {
+  alert: DCExitAlert;
+  fallbackStatus: string;
+}) {
+  const isActive = alert.cleared_at == null;
+  const label = isActive ? "EXITING" : "EXITED";
+  const baseColor = isActive ? colors.accentRed : colors.textMuted;
+  return (
+    <span
+      title={`${label}: ${alert.exit_reason}${
+        isActive ? "" : ` (cleared at ${alert.cleared_at})`
+      }`}
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        background: isActive ? withAlpha(baseColor, 0.18) : withAlpha(baseColor, 0.08),
+        color: baseColor,
+        fontFamily: fonts.mono,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        borderRadius: 2,
+        animation: isActive ? "dc-exit-pulse 2s ease-in-out infinite" : undefined,
+      }}
+      aria-label={`Position is ${label.toLowerCase()}: ${alert.exit_reason}. ${
+        isActive ? "Alert active." : `Cleared at ${alert.cleared_at}.`
+      } Underlying status: ${fallbackStatus}.`}
+    >
+      {label}
+    </span>
   );
 }
 

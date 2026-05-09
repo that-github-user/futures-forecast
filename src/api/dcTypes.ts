@@ -436,3 +436,17 @@ export interface DCCapitalSummary {
   compounding_curves: Record<PolicyKey, DCCompoundingCurve>;
   source: string;
 }
+
+// Surfaced the moment the daemon detects an exit condition for an
+// open position, BEFORE the close order submits. Lifecycle:
+//   cleared_at == null  → exit ladder still in progress (active alert)
+//   cleared_at != null  → position closed, alert resolved (server keeps
+//                         on the wire ~5min for graceful UI fade)
+export interface DCExitAlert {
+  id: number;
+  position_id: number;
+  strategy_name: string;
+  exit_reason: string;       // free-form, e.g., "time_exit (hard floor 15:55)"
+  detected_at: string;       // ISO-8601 ET wall-clock
+  cleared_at: string | null;
+}

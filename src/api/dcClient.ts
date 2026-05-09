@@ -6,6 +6,7 @@
 import type {
   DCBrokerState,
   DCCapitalSummary,
+  DCExitAlert,
   DCHealthResponse,
   DCPosition,
   DCRiskStatus,
@@ -36,6 +37,7 @@ async function dcGet<T>(path: string): Promise<T | null> {
 export const dcApi = {
   health: () => dcGet<DCHealthResponse>("/dc-api/v1/health"),
   positions: () => dcGet<DCPosition[]>("/dc-api/v1/positions"),
+  exitAlerts: () => dcGet<DCExitAlert[]>("/dc-api/v1/exit-alerts"),
   brokerState: () => dcGet<DCBrokerState>("/dc-api/v1/broker-state"),
   trades: (limit = 50, offset = 0) =>
     dcGet<DCTrade[]>(`/dc-api/v1/trades?limit=${limit}&offset=${offset}`),

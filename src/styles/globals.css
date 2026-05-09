@@ -309,6 +309,16 @@ html, body, #root {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* DC EXITING badge — slow persimmon pulse to draw the eye to a
+   position that is currently in its exit ladder. Tuned slow (2s
+   cycle) so it doesn't read as a "this is broken" flash; the
+   persimmon background shade carries the urgency, the pulse just
+   keeps the row from blending in for a backgrounded operator. */
+@keyframes dc-exit-pulse {
+  0%, 100% { background-color: rgba(229, 122, 90, 0.18); }
+  50%      { background-color: rgba(229, 122, 90, 0.32); }
+}
+
 .fade-in {
   animation: fadeIn 0.3s ease;
 }
