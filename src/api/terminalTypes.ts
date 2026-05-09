@@ -154,7 +154,14 @@ export interface MacroEvent {
 }
 
 export interface CalendarData {
-  events: MacroEvent[];    // next 24h, sorted ascending by timestamp
+  events: MacroEvent[];    // active mode's window, sorted ascending by timestamp
+  // Display mode, switched server-side based on ET wall-clock:
+  //   "next_24h"   — Mon 00:00 ET → Fri 17:00 ET, rolling 24h window, all vols.
+  //   "week_ahead" — Fri 17:00 ET → Sun 23:59 ET, forward 7-day vol≥2 docket.
+  //                  Lets a Sunday-night trader pre-flight the macro week.
+  // Older snapshot payloads (pre-PR) lack the field — treat undefined as
+  // "next_24h" for graceful degradation during deploy rollover.
+  mode?: "next_24h" | "week_ahead";
 }
 
 // Gap-fill target context. Populated when the gap_fill.* advisory is
