@@ -291,7 +291,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
             POC / VAH / VAL
           </ToggleButton>
           <ToggleButton active={overlays.priorHlc} onClick={() => toggleBool("priorHlc")}>
-            Prior Day HLC
+            PDH / PDL / PDC
           </ToggleButton>
           <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}

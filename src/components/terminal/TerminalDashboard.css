@@ -230,12 +230,15 @@
 .terminal-middle > div { background: var(--paper); }
 
 .terminal-chart {
-  /* Right pad trimmed from 32px → 20px; .terminal-feed's matching
-     left pad trimmed in tandem. Together those used to leave ~56px
-     of empty space straddling the chart/feed boundary on desktop;
-     reclaiming half buys plot width without disturbing left-edge
-     alignment with the headline strip. */
-  padding: 22px 20px 22px 32px;
+  /* Right pad trimmed from 32px → 18px; .terminal-feed's matching
+     left pad trimmed from 24px → 16px. Together those used to leave
+     ~56px of empty space straddling the chart/feed boundary on
+     desktop; tightening to 34px (≈39% reclaimed) buys plot width
+     without breaking the left-edge alignment with the headline strip.
+     The 18/16 split keeps the boundary near-symmetric across the
+     1px ink-40 hairline divider so the feed still reads as a sidebar
+     with breathing room rather than leaning into the chart. */
+  padding: 22px 18px 22px 32px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -479,11 +482,13 @@
 
 /* ── System feed ───────────────────────────────────────────── */
 .terminal-feed {
-  /* Left pad trimmed from 24px → 14px to reclaim wasted whitespace
+  /* Left pad trimmed from 24px → 16px to reclaim wasted whitespace
      straddling the chart/feed boundary on desktop. Right pad
      unchanged — it sets the rhythm against the dashboard's right
-     edge. Mobile rule below resets to symmetric padding. */
-  padding: 22px 24px 22px 14px;
+     edge. The 18/16 split (.terminal-chart right / this left) keeps
+     the boundary near-symmetric around the 1px ink-40 divider.
+     Mobile rule below resets to symmetric padding. */
+  padding: 22px 24px 22px 16px;
   overflow-y: hidden;
   display: flex;
   flex-direction: column;
