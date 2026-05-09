@@ -457,28 +457,24 @@ export function MobileChartCanvas({
     }
   }, [snapshot?.levels, snapshot?.gap_fill?.settlement_price, overlays.pocVa, overlays.priorHlc, palette]);
 
-  // ── Empty / error states ─────────────────────────────────────────
-  if (error) {
-    return (
-      <div className="terminal-chart-canvas">
-        <span className="empty">Chart unavailable: {error}</span>
-      </div>
-    );
-  }
-  if (bars == null) {
-    return (
-      <div className="terminal-chart-canvas">
-        <span className="empty">Loading ES bars…</span>
-      </div>
-    );
-  }
-  if (bars.length === 0) {
-    return (
-      <div className="terminal-chart-canvas">
-        <span className="empty">No bars available — IBKR may be reconnecting.</span>
-      </div>
-    );
-  }
+  // The chart container ALWAYS renders so that the chart-init
+  // useEffect (which has empty deps `[]` and runs once on mount)
+  // can attach to a real DOM element. Empty / error / loading
+  // states overlay the container as absolutely-positioned children
+  // so they don't displace the container or change the ref target.
+  //
+  // Critical: returning early with a different `<div>` here would
+  // mean the chart-init effect runs on a div that never receives
+  // the ref (because the ref target was the DIFFERENT div from a
+  // later render that the effect never re-runs for). The effect
+  // can't re-fire on bars-load because it has empty deps; making
+  // bars a dep would re-init the chart on every poll. Always-
+  // mount + overlay is the clean pattern.
+  const overlayMessage =
+    error ? `Chart unavailable: ${error}` :
+    bars == null ? "Loading ES bars…" :
+    bars.length === 0 ? "No bars available — IBKR may be reconnecting." :
+    null;
 
   return (
     <div
@@ -486,17 +482,45 @@ export function MobileChartCanvas({
       ref={containerRef}
       style={{
         position: "relative",
+        // Override the inherited `.terminal-chart-canvas`
+        // flex-center display, which would clip the chart's
+        // self-sized internal divs to their content height. The
+        // chart fills 100% of the container; flex centering was
+        // for the empty-state span only, which we now overlay
+        // below.
+        display: "block",
+        width: "100%",
+        height: "100%",
         // touch-action: pan-y lets vertical swipes that originate
         // inside the chart pass through to the page's normal
-        // scroll behavior. The chart itself only needs HORIZONTAL
-        // pan (timeline navigation); vertical scrolling the
-        // dashboard takes precedence. Without this, any touchmove
-        // starting on the chart would be captured by Lightweight
-        // Charts as a pan-attempt and the user couldn't scroll
-        // past the chart on mobile (R2 caught this).
+        // scroll behavior. Without this, any touchmove starting
+        // on the chart would be captured by Lightweight Charts
+        // and the user couldn't scroll past the chart on mobile.
         touchAction: "pan-y",
       }}
     >
+      {overlayMessage && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--ink-40)",
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            letterSpacing: "0.04em",
+            background: "var(--paper-deep)",
+            // Sit above the chart's canvas while the chart is
+            // empty so the message reads cleanly.
+            zIndex: 1,
+            pointerEvents: "none",
+          }}
+        >
+          <span className="empty">{overlayMessage}</span>
+        </div>
+      )}
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
       )}
