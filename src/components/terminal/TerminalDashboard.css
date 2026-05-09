@@ -230,7 +230,15 @@
 .terminal-middle > div { background: var(--paper); }
 
 .terminal-chart {
-  padding: 22px 32px;
+  /* Right pad trimmed from 32px → 18px; .terminal-feed's matching
+     left pad trimmed from 24px → 16px. Together those used to leave
+     ~56px of empty space straddling the chart/feed boundary on
+     desktop; tightening to 34px (≈39% reclaimed) buys plot width
+     without breaking the left-edge alignment with the headline strip.
+     The 18/16 split keeps the boundary near-symmetric across the
+     1px ink-40 hairline divider so the feed still reads as a sidebar
+     with breathing room rather than leaning into the chart. */
+  padding: 22px 18px 22px 32px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -474,7 +482,13 @@
 
 /* ── System feed ───────────────────────────────────────────── */
 .terminal-feed {
-  padding: 22px 24px;
+  /* Left pad trimmed from 24px → 16px to reclaim wasted whitespace
+     straddling the chart/feed boundary on desktop. Right pad
+     unchanged — it sets the rhythm against the dashboard's right
+     edge. The 18/16 split (.terminal-chart right / this left) keeps
+     the boundary near-symmetric around the 1px ink-40 divider.
+     Mobile rule below resets to symmetric padding. */
+  padding: 22px 24px 22px 16px;
   overflow-y: hidden;
   display: flex;
   flex-direction: column;
@@ -988,11 +1002,16 @@
   .terminal-chart-canvas {
     font-size: 14px;
     text-align: center;
-    padding: 0 12px;
+    /* Drop the 0 12px inner pad — it served the empty-state span
+       only, which already centers via flex (parent rule). With a
+       chart inside, the 12px on each side ate 24px of usable plot
+       width without giving anything back. */
+    padding: 0;
     min-height: 220px;
   }
 
   .terminal-feed {
+    /* Symmetric mobile padding overrides the desktop asymmetry. */
     padding: 18px 18px 22px;
     gap: 14px;
   }
@@ -1046,11 +1065,14 @@
     font-size: 12px;
   }
 
-  /* Synthesizer contribution bars — bump label column slightly so
-     "Vol"/"Gam"/etc reads with breathing room on mobile. */
+  /* Synthesizer contribution bars — tighten the fixed columns so the
+     bar gets more visual real estate AND the numeric value column
+     widens enough to render "+10.0" / "−10.0" without truncation
+     under any synthesizer score. The 3-letter label ("Vol"/"Gam"/…)
+     fits comfortably in 40px at 11px font-size. */
   .synth-contribution-row {
-    grid-template-columns: 52px 1fr 40px;
-    column-gap: 8px;
+    grid-template-columns: 40px 1fr 44px;
+    column-gap: 6px;
     font-size: 11px;
   }
   .synth-contribution-track {
