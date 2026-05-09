@@ -479,6 +479,16 @@
   font-size: 13px;
   letter-spacing: 0.04em;
 }
+/* Empty-state span used by chart fallback / loading / error
+   states (DesktopTerminalChartCanvas, MobileChartCanvas, the
+   Suspense fallback in TerminalChartCanvas). The parent
+   `.terminal-chart-canvas` already centers via flex and uses
+   ink-40 by default, but the explicit rule documents the contract
+   and lets the empty-state copy adopt a slightly lighter tone
+   when needed without disturbing the parent. */
+.terminal-chart-canvas .empty {
+  color: var(--ink-40);
+}
 
 /* ── System feed ───────────────────────────────────────────── */
 .terminal-feed {

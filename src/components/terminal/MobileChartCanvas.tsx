@@ -46,6 +46,7 @@ import {
   LineSeries,
   CrosshairMode,
   LineStyle,
+  TickMarkType,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
@@ -62,7 +63,7 @@ import type {
   TerminalIntradayBar,
   TerminalSnapshot,
 } from "../../api/terminalTypes";
-import type { OverlayState, Timeframe } from "./TerminalChartCanvas";
+import type { OverlayState, Timeframe } from "./chartTypes";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -173,13 +174,27 @@ export function MobileChartCanvas({
         secondsVisible: false,
         borderColor: palette.ink40,
         rightOffset: 5,
-        // tickMarkFormatter overrides the default time labels: bars
-        // whose day differs from the prior bar render "DD"; all
-        // others render in the user's selected TZ via formatBarTime.
-        tickMarkFormatter: (time: Time): string => {
+        // tickMarkFormatter — Lightweight Charts passes the tick's
+        // category via `tickMarkType` so we don't need to reconstruct
+        // day-changeovers ourselves. Day boundaries get the bold "DD"
+        // formatter; everything else (regular intraday ticks) gets
+        // the user's selected-TZ HH:MM formatter. This decouples the
+        // formatter from any tick-iteration order assumption (R1+R2
+        // both flagged the prior cache-based approach as
+        // order-dependent and incorrect under pan/zoom redraw).
+        tickMarkFormatter: (time: Time, tickMarkType: TickMarkType): string => {
           if (typeof time !== "number") return "";
-          const ms = (time as number) * 1000;
-          return tickFormatterClosure(ms);
+          const iso = new Date((time as number) * 1000).toISOString();
+          // DayOfMonth ticks at midnight crossings + Friday→Sunday
+          // reopen render the bold day marker.
+          if (
+            tickMarkType === TickMarkType.DayOfMonth
+            || tickMarkType === TickMarkType.Month
+            || tickMarkType === TickMarkType.Year
+          ) {
+            return formatBarDayRef.current(iso);
+          }
+          return formatBarTimeRef.current(iso, false);
         },
       },
       rightPriceScale: {
@@ -279,29 +294,23 @@ export function MobileChartCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Tick-formatter closure: ref-backed so the chart instance can
-  // call into the latest formatBarTime/formatBarDay without a chart
-  // re-init. The outer chart-init useEffect installs a stable callable
-  // that delegates here. ───────────────────────────────────────────
-  const tickFormatterRef = useRef<(ms: number) => string>(() => "");
-  tickFormatterRef.current = (ms: number) => {
-    const iso = new Date(ms).toISOString();
-    const day = formatBarDay(iso);
-    // Day-changeover detection: compare against the prior tick's day
-    // by reading from a small running cache. The chart calls this
-    // for each visible tick at render time, so we accumulate within
-    // a single render pass.
-    if (lastDayRef.current !== day) {
-      lastDayRef.current = day;
-      return day; // "DD" — TradingView-style date marker
-    }
-    return formatBarTime(iso, false);
-  };
-  const lastDayRef = useRef<string>("");
+  // Ref-backed formatter pointers so the tickMarkFormatter installed
+  // on the chart at init-time always calls the LATEST prop versions
+  // (formatBarTime / formatBarDay change when the user flips the
+  // timezone selector). Avoids a chart-rebuild on every TZ change.
+  const formatBarTimeRef = useRef(formatBarTime);
+  const formatBarDayRef = useRef(formatBarDay);
+  formatBarTimeRef.current = formatBarTime;
+  formatBarDayRef.current = formatBarDay;
 
-  function tickFormatterClosure(ms: number): string {
-    return tickFormatterRef.current(ms);
-  }
+  // First-paint anchor flag — re-trigger on timeframe change so the
+  // visible window re-anchors when the user flips 1m → 1h (otherwise
+  // a previously-pinned ~12h-of-1m-bars zoom shows only a sliver of
+  // the 1h timeframe). R2 nit.
+  const initialFitRef = useRef(true);
+  useEffect(() => {
+    initialFitRef.current = true;
+  }, [timeframe]);
 
   // ── Bar data → chart series ──────────────────────────────────────
   useEffect(() => {
@@ -319,13 +328,10 @@ export function MobileChartCanvas({
       });
     }
     candleSeriesRef.current.setData(candleData);
-    // Reset day-changeover cache so the formatter starts fresh on
-    // the next visible-range render.
-    lastDayRef.current = "";
 
-    // First paint: anchor the visible window to the most recent
-    // ~12h. Subsequent setData calls preserve user's pan/zoom by
-    // only fitting on the initial bars-load.
+    // First paint (and after a timeframe change): anchor the visible
+    // window to the most recent ~12h. Subsequent setData calls
+    // preserve user's pan/zoom.
     if (initialFitRef.current && chartRef.current && candleData.length > 1) {
       initialFitRef.current = false;
       const lastT = candleData[candleData.length - 1].time as number;
@@ -336,8 +342,6 @@ export function MobileChartCanvas({
       });
     }
   }, [aggregatedBars]);
-
-  const initialFitRef = useRef(true);
 
   // ── Session VWAP overlay ──────────────────────────────────────────
   useEffect(() => {
@@ -351,6 +355,12 @@ export function MobileChartCanvas({
     // session_vwap value across all visible bars. The backend
     // computes this server-side so the frontend doesn't need to
     // re-walk volume; we just surface the latest value.
+    //
+    // TODO(PR2): replace with a per-bar running VWAP curve. The
+    // desktop chart renders the actual VWAP trajectory by
+    // accumulating typical-price × volume per RTH bar — that
+    // computation should move to a shared helper module alongside
+    // the AVWAP machinery and be reused here.
     const lineData: LineData[] = aggregatedBars.map((bar) => ({
       time: (Math.floor(Date.parse(bar.time) / 1000) as UTCTimestamp),
       value: sessionVwap,
@@ -474,7 +484,18 @@ export function MobileChartCanvas({
     <div
       className="terminal-chart-canvas"
       ref={containerRef}
-      style={{ position: "relative" }}
+      style={{
+        position: "relative",
+        // touch-action: pan-y lets vertical swipes that originate
+        // inside the chart pass through to the page's normal
+        // scroll behavior. The chart itself only needs HORIZONTAL
+        // pan (timeline navigation); vertical scrolling the
+        // dashboard takes precedence. Without this, any touchmove
+        // starting on the chart would be captured by Lightweight
+        // Charts as a pan-attempt and the user couldn't scroll
+        // past the chart on mobile (R2 caught this).
+        touchAction: "pan-y",
+      }}
     >
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
