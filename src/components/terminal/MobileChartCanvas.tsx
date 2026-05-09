@@ -200,6 +200,15 @@ export function MobileChartCanvas({
       rightPriceScale: {
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
+        // Reserve enough horizontal pixels for the level chips to
+        // render fully. The widest chip we display is the price-line
+        // chip carrying e.g. "PDH 5912.50" (level title + price) at
+        // ~10px font — needs ~80px to render without clipping. The
+        // default auto-width can underestimate when multiple chips
+        // overlap or the chart is narrow. Pinning a floor keeps the
+        // y-axis labels (and our PDC/POC/VAH/VAL/PDH/PDL/SET chips)
+        // fully visible on a 360px-wide phone.
+        minimumWidth: 80,
       },
       crosshair: { mode: CrosshairMode.Magnet },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
