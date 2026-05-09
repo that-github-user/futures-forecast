@@ -845,8 +845,23 @@ function UpcomingEvents({
   formatChartTime: (iso: string, withSeconds?: boolean) => string;
   tzLabel: string;
 }) {
-  if (events.length === 0) return null;
   const headerLabel = mode === "week_ahead" ? "this week" : "upcoming 24h";
+  // In `next_24h` mode an empty list is normal (quiet overnight, no
+  // post-close data). Hide the section. In `week_ahead` mode an empty
+  // list IS informationally meaningful — a holiday-shortened week
+  // with no vol≥2 events is itself a regime signal worth surfacing,
+  // not silent omission. R2 caught this.
+  if (events.length === 0) {
+    if (mode !== "week_ahead") return null;
+    return (
+      <section className="upcoming-events" aria-label="Upcoming macro events">
+        <h4 className="upcoming-events-header">{headerLabel} ({tzLabel})</h4>
+        <div className="upcoming-events-empty">
+          No high-impact events this week.
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="upcoming-events" aria-label="Upcoming macro events">
       <h4 className="upcoming-events-header">{headerLabel} ({tzLabel})</h4>
