@@ -1198,14 +1198,20 @@ function arraysEqual(a: readonly number[], b: readonly number[]): boolean {
 
 /**
  * Right-gutter pixel size for the chart's plot area. 88px on desktop
- * to fit two-line level labels per spec §4.2; 56px on narrow mobile
- * viewports where 88px would eat ~30% of the plot width. Read at
- * option-build time (re-runs on each 30s poll, so a viewport resize
- * gets picked up within one poll cycle).
+ * to fit two-line level labels per spec §4.2. On narrow mobile
+ * viewports the prior 56px wasn't enough room for the two-line
+ * markLine chip ("PDC\n5800.00" — ~58-62px wide at 10px monospace)
+ * to render past the line's tip without colliding with the y-axis
+ * tick labels — the right column of PDC/POC/VAL chips appeared
+ * truncated against the viewport edge. 72px gives the chip body a
+ * comfortable 12-14px clearance while still preserving ~70% of the
+ * plot width on a 360px-wide phone. Read at option-build time
+ * (re-runs on each 30s poll, so a viewport resize gets picked up
+ * within one poll cycle).
  */
 function gutterRightPx(): number {
   if (typeof window === "undefined") return 88;
-  return window.matchMedia("(max-width: 768px)").matches ? 56 : 88;
+  return window.matchMedia("(max-width: 768px)").matches ? 72 : 88;
 }
 
 // ── Default zoom — keeps visible window ~12h regardless of buffer ───

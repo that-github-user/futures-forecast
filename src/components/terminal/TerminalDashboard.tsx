@@ -287,8 +287,6 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
         </div>
         <div className="terminal-chart-toggles">
           <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
-          {/* Gamma Flip: no data yet (third-party feed), kept disabled. */}
-          <span className="pill disabled">Gamma Flip</span>
           <ToggleButton active={overlays.pocVa} onClick={() => toggleBool("pocVa")}>
             POC / VAH / VAL
           </ToggleButton>
@@ -899,9 +897,9 @@ function LevelsCard({ data }: { data: TerminalSnapshot | null }) {
             <LevelRow label="POC" value={levels!.poc} />
             <LevelRow label="VAH" value={levels!.vah} />
             <LevelRow label="VAL" value={levels!.val} />
-            <LevelRow label="Prior H" value={levels!.pd_high} />
-            <LevelRow label="Prior L" value={levels!.pd_low} />
-            <LevelRow label="Prior C" value={levels!.pd_close} />
+            <LevelRow label="PDH" value={levels!.pd_high} />
+            <LevelRow label="PDL" value={levels!.pd_low} />
+            <LevelRow label="PDC" value={levels!.pd_close} />
             <LevelRow label="OR-1 H" value={levels!.or_1m_high} />
             <LevelRow label="OR-1 L" value={levels!.or_1m_low} />
             <LevelRow label="OR-5 H" value={levels!.or_5m_high} />
