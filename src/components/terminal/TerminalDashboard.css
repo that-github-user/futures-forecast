@@ -966,7 +966,15 @@
   .terminal-chart {
     padding: 18px 16px 16px;
     gap: 12px;
-    min-height: 280px;
+    /* Mobile chart dominates the fold — user feedback was that
+       280px was too short to read trend on a phone. Push to 70vh
+       so the chart fills most of the viewport vertically. The
+       page already scrolls (`.terminal-root` is `overflow-y:
+       auto`), so the trader scrolls past the chart to reach the
+       sidebar / scorecards. The chart-canvas itself takes ~80%
+       of this panel after the toggle row + chart-tf row, giving
+       a comfortable plot area. */
+    min-height: 70vh;
   }
   /* Toggle pills become a horizontal-scroll strip — the operator
      swipes through overlay options. Right-borders adapt: only the
@@ -1017,7 +1025,12 @@
        chart inside, the 12px on each side ate 24px of usable plot
        width without giving anything back. */
     padding: 0;
-    min-height: 220px;
+    /* Floor matches the parent's 70vh chart panel; the canvas itself
+       gets `flex: 1` of the panel after the toggle/timeframe rows,
+       which lands around 60vh on a typical phone. Pinning a min
+       prevents the canvas from collapsing on small landscape
+       viewports where 70vh × ~85% can dip under 200px. */
+    min-height: 50vh;
   }
 
   .terminal-feed {
