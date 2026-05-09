@@ -589,6 +589,7 @@ export function SystemFeed({
         <div className="terminal-feed-empty">Awaiting events.</div>
         <UpcomingEvents
           events={data?.calendar?.events ?? []}
+          mode={data?.calendar?.mode ?? "next_24h"}
           tz={tz}
           formatChartTime={formatChartTime}
           tzLabel={tzLabel}
@@ -637,6 +638,7 @@ export function SystemFeed({
       </ul>
       <UpcomingEvents
         events={data?.calendar?.events ?? []}
+        mode={data?.calendar?.mode ?? "next_24h"}
         tz={tz}
         formatChartTime={formatChartTime}
         tzLabel={tzLabel}
@@ -829,19 +831,25 @@ function ActiveAdvisories({
 
 function UpcomingEvents({
   events,
+  mode,
   tz,
   formatChartTime,
   tzLabel,
 }: {
   events: import("../../api/terminalTypes").MacroEvent[];
+  // Server-driven mode: "next_24h" = rolling 24h docket (Mon-Fri RTH);
+  // "week_ahead" = forward 7-day vol≥2 docket (Fri 17:00 ET → Sun
+  // 23:59 ET, lets a Sunday-night trader pre-flight the macro week).
+  mode: "next_24h" | "week_ahead";
   tz: TZOption;
   formatChartTime: (iso: string, withSeconds?: boolean) => string;
   tzLabel: string;
 }) {
   if (events.length === 0) return null;
+  const headerLabel = mode === "week_ahead" ? "this week" : "upcoming 24h";
   return (
     <section className="upcoming-events" aria-label="Upcoming macro events">
-      <h4 className="upcoming-events-header">upcoming 24h ({tzLabel})</h4>
+      <h4 className="upcoming-events-header">{headerLabel} ({tzLabel})</h4>
       <ul className="upcoming-events-list">
         {events.map((ev) => (
           <li
