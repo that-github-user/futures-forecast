@@ -59,22 +59,29 @@ const TICK_THRESHOLD = 1000;
  *  the TICK persistent advisory. Trader literature
  *  (Raschke / Fisher convention) treats 2-3 extreme prints as a
  *  divergence-flag candidate and 5+ as an institutional-day
- *  signature; 4 is the floor of "sustained" without firing on every
- *  echoed program. At ~30s snapshot cadence, 4 = ~2 minutes of
+ *  signature; 12 is the floor of "sustained" pressure without firing
+ *  on every echoed program. At the 10s snapshot cadence (see
+ *  `useTerminalSnapshot.intervalMs`), 12 cycles = ~2 minutes of
  *  one-sided pressure minimum.
+ *
+ *  Was 4 originally — calibrated against an incorrect assumption of
+ *  ~30s snapshot cadence. The intent has always been the ~2 min
+ *  sustained-pressure duration, so the count was bumped to 12 to
+ *  preserve that semantic at the actual 10s cadence (a 40s threshold
+ *  fires too readily on single programs).
  *
  *  Fired exactly once per streak (transition from count=N-1 → N);
  *  does not repeat-fire as the streak extends past N. Tunable here
  *  without leaking strategy parameters since TICK is a public
  *  market-wide figure. */
-const TICK_PERSISTENT_THRESHOLD = 4;
+const TICK_PERSISTENT_THRESHOLD = 12;
 
 /** Maximum acceptable age of the breadth feed before the streak
  *  counter resets. A weekend-spanning streak (Fri close +1200 →
  *  Sun reopen +1100) is not a real signal — the gap means the prior
- *  count was for a different session. 120s = two snapshot cycles
- *  of staleness, which catches genuine data gaps without resetting
- *  on a single missed poll. */
+ *  count was for a different session. 120s = ~12 snapshot cycles
+ *  at the 10s cadence — catches genuine data gaps without
+ *  resetting on a single missed poll. */
 const TICK_STALE_RESET_SECONDS = 120;
 
 /** RTH gate for the streak counter. NYSE TICK is published only
