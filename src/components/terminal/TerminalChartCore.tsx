@@ -246,6 +246,18 @@ export function TerminalChartCore({
         // progressively larger floors to compensate for an over-
         // wide container; with the structural CSS fix, no floor is
         // needed.
+        //
+        // Known trade-off: the gutter width breathes slightly when
+        // level chips (POC/VAH/PDH/etc.) pan out of / into the
+        // visible price range — auto-fit measures only currently-
+        // visible labels, so a chart panned to a region with no
+        // chips visible has a ~60px gutter, and panning back into a
+        // region with chips re-expands to ~95-100px. Acceptable in
+        // practice. If this becomes distracting, the lightest-touch
+        // fix is `minimumWidth: ~96` (sized to the widest default-
+        // overlay chip), which stabilizes the gutter at the same
+        // width auto-fit produces when chips are visible.
+        //
         // autoScale: true (default) auto-fits the visible price
         // extents on every pan/zoom.
         autoScale: true,
