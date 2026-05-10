@@ -12,8 +12,8 @@
  *
  * Features:
  *   - Candlesticks (native CandlestickSeries)
- *   - Session VWAP line (LineSeries fed from snapshot.vwap.session_vwap)
  *   - 9-line AVWAP overlay: Week / Daily / RTH × {VWAP, ±1σ, ±2σ}.
+ *     RTH anchor (9:30 ET cash open) doubles as session VWAP;
  *     RTH-anchor in-scope gating produces honest gaps during ETH bars.
  *   - Level price-lines: POC / VAH / VAL / PDH / PDL / PDC / SET
  *     plus ORH / ORL chips for each enabled OR window
@@ -50,7 +50,6 @@ import {
   type CandlestickData,
   type LineData,
   type CandlestickSeriesPartialOptions,
-  type LineSeriesPartialOptions,
 } from "lightweight-charts";
 
 import { fetchTerminalIntradayBars } from "../../api/terminalClient";
@@ -127,7 +126,6 @@ export function TerminalChartCore({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   // AVWAP series — 9 line series indexed by anchor key + variant
   // ("week.vwap" / "week.upper1" / "week.lower1" / etc.). Created
   // once at chart-init and persisted; overlay toggles flip their
@@ -287,16 +285,6 @@ export function TerminalChartCore({
     candleSeriesRef.current.attachPrimitive(overlayPrimitive);
     overlayPrimitiveRef.current = overlayPrimitive;
 
-    const vwapOpts: LineSeriesPartialOptions = {
-      color: palette.ink80,
-      lineWidth: 2,
-      lineStyle: LineStyle.Solid,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    };
-    sessionVwapSeriesRef.current = chart.addSeries(LineSeries, vwapOpts);
-
     // ── AVWAP series creation (9 lines = 3 anchors × 3 variants) ─
     // Each anchor (Week / Daily / RTH) gets a VWAP line plus four
     // ±σ band lines (which collapse to two visible bands when both
@@ -349,9 +337,6 @@ export function TerminalChartCore({
           setTooltip(null);
           return;
         }
-        const sessionVwapValue = sessionVwapSeriesRef.current
-          ? (param.seriesData.get(sessionVwapSeriesRef.current) as LineData)?.value
-          : undefined;
         setTooltip({
           x: point.x,
           y: point.y,
@@ -360,7 +345,6 @@ export function TerminalChartCore({
           high: bar.high,
           low: bar.low,
           close: bar.close,
-          sessionVwap: sessionVwapValue ?? null,
         });
       };
     chart.subscribeCrosshairMove(onCrosshairMove);
@@ -449,7 +433,6 @@ export function TerminalChartCore({
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
-      sessionVwapSeriesRef.current = null;
       priceLinesAtMount.clear();
       avwapSeriesAtMount.clear();
     };
@@ -507,31 +490,6 @@ export function TerminalChartCore({
       });
     }
   }, [aggregatedBars]);
-
-  // ── Session VWAP overlay ──────────────────────────────────────────
-  useEffect(() => {
-    if (!aggregatedBars || !sessionVwapSeriesRef.current) return;
-    const sessionVwap = snapshot?.vwap?.session_vwap;
-    if (sessionVwap == null) {
-      sessionVwapSeriesRef.current.setData([]);
-      return;
-    }
-    // Render the session VWAP as a flat line at the snapshot's
-    // session_vwap value across all visible bars. The backend
-    // computes this server-side so the frontend doesn't need to
-    // re-walk volume; we just surface the latest value.
-    //
-    // TODO(PR2): replace with a per-bar running VWAP curve. The
-    // desktop chart renders the actual VWAP trajectory by
-    // accumulating typical-price × volume per RTH bar — that
-    // computation should move to a shared helper module alongside
-    // the AVWAP machinery and be reused here.
-    const lineData: LineData[] = aggregatedBars.map((bar) => ({
-      time: (Math.floor(Date.parse(bar.time) / 1000) as UTCTimestamp),
-      value: sessionVwap,
-    }));
-    sessionVwapSeriesRef.current.setData(lineData);
-  }, [aggregatedBars, snapshot?.vwap?.session_vwap]);
 
   // ── AVWAP multi-anchor overlay (9 line series) ───────────────────
   // For each anchor (Week / Daily / RTH), find the anchor index in
@@ -906,7 +864,6 @@ interface TooltipState {
   high: number;
   low: number;
   close: number;
-  sessionVwap: number | null;
 }
 
 function ChartTooltip({
@@ -946,9 +903,6 @@ function ChartTooltip({
       <div>H {tooltip.high.toFixed(2)}</div>
       <div>L {tooltip.low.toFixed(2)}</div>
       <div>C {tooltip.close.toFixed(2)}</div>
-      {tooltip.sessionVwap != null && (
-        <div style={{ opacity: 0.7 }}>VWAP {tooltip.sessionVwap.toFixed(2)}</div>
-      )}
     </div>
   );
 }
