@@ -617,6 +617,35 @@ export function MobileChartCanvas({
         value: snapshot?.gap_fill?.settlement_price,
         label: "SET", color: palette.ink60, style: LineStyle.Dashed, width: 1,
       },
+      // ORH / ORL chips — one per active OR window (1m / 5m / 15m).
+      // Rendered via createPriceLine like the rest of the level
+      // chips so they share visual treatment (POC / VAH / VAL /
+      // PDH / PDL / PDC / SET). The OR rectangle band itself
+      // renders separately via the RectangleOverlayPrimitive.
+      {
+        key: "ORH-1m", enabled: overlays.openingRange.m1, value: levels?.or_1m_high,
+        label: "ORH 1m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
+      {
+        key: "ORL-1m", enabled: overlays.openingRange.m1, value: levels?.or_1m_low,
+        label: "ORL 1m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
+      {
+        key: "ORH-5m", enabled: overlays.openingRange.m5, value: levels?.or_5m_high,
+        label: "ORH 5m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
+      {
+        key: "ORL-5m", enabled: overlays.openingRange.m5, value: levels?.or_5m_low,
+        label: "ORL 5m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
+      {
+        key: "ORH-15m", enabled: overlays.openingRange.m15, value: levels?.or_15m_high,
+        label: "ORH 15m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
+      {
+        key: "ORL-15m", enabled: overlays.openingRange.m15, value: levels?.or_15m_low,
+        label: "ORL 15m", color: palette.ink60, style: LineStyle.Dotted, width: 1,
+      },
     ];
 
     // Reconcile: create new, update existing, remove stale.
@@ -647,7 +676,14 @@ export function MobileChartCanvas({
         priceLines.delete(key);
       }
     }
-  }, [snapshot?.levels, snapshot?.gap_fill?.settlement_price, overlays.pocVa, overlays.priorHlc, palette]);
+  }, [
+    snapshot?.levels,
+    snapshot?.gap_fill?.settlement_price,
+    overlays.pocVa,
+    overlays.priorHlc,
+    overlays.openingRange,
+    palette,
+  ]);
 
   // The chart container ALWAYS renders so that the chart-init
   // useEffect (which has empty deps `[]` and runs once on mount)
@@ -731,20 +767,9 @@ export function MobileChartCanvas({
           priceTop: band.high,
           priceBottom: band.low,
           fill: hexToRgba(palette.ink100, 0.04),
-          priceLabels: [
-            {
-              price: band.high,
-              text: `ORH ${band.label} ${band.high.toFixed(2)}`,
-              textColor: palette.ink100,
-              backColor: palette.paperDeep,
-            },
-            {
-              price: band.low,
-              text: `ORL ${band.label} ${band.low.toFixed(2)}`,
-              textColor: palette.ink100,
-              backColor: palette.paperDeep,
-            },
-          ],
+          // ORH/ORL labels are rendered separately as native
+          // priceLines in the level-price-lines effect (same code
+          // path + visual treatment as POC / VAH / etc), not here.
         });
       }
     }
