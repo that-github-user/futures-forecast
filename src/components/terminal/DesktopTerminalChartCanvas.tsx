@@ -41,6 +41,18 @@ import {
   VWAP_ANCHORS,
   OR_WINDOWS,
 } from "./chartTypes";
+import {
+  aggregateBars,
+  buildEthShadeRanges,
+  buildLatestRthRange,
+  findAnchorIdx,
+  hexToRgba,
+  isRthBar,
+  resolveLumenPalette,
+  type LumenPalette,
+  vwapWithBandsSeries,
+  VWAP_STYLES,
+} from "./chartHelpers";
 
 echarts.use([
   CandlestickChart,
@@ -83,88 +95,9 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
 // 10 bars on 1h = 10 hours of padding) — TV's default behavior.
 const FUTURE_BAR_PADDING = 10;
 
-/**
- * Bin 1-min bars into N-minute aggregated bars using UTC-clock-aligned
- * bucket boundaries (e.g. 5m → 09:30, 09:35, 09:40 …). Across-session
- * gaps don't span buckets because the session-open timestamp lands in
- * its own bucket. Each bar's bucket is the floor of `time / N` × N.
- *
- * `time` of the aggregated bar is the bucket-start ISO; OHLC follows
- * the standard convention (open = first bar's open, high/low =
- * extrema, close = last bar's close, volume = sum).
- *
- * Caveat for 4h: UTC-aligned 4h buckets (00/04/08/12/16/20 UTC) don't
- * line up with ET RTH-open at 13:30 UTC — RTH open lands mid-bucket
- * inside the 12:00-15:59 UTC bar. Acceptable for "structure read"
- * use of 4h; if RTH-open precision matters we'd need ET-anchored
- * bucketing for 4h only. Tracked as a follow-up.
- */
-function aggregateBars(
-  bars: TerminalIntradayBar[],
-  minutes: number,
-): TerminalIntradayBar[] {
-  if (minutes <= 1 || bars.length === 0) return bars;
-  const intervalMs = minutes * 60_000;
-  const buckets = new Map<number, TerminalIntradayBar[]>();
-  for (const b of bars) {
-    const t = Date.parse(b.time);
-    if (!Number.isFinite(t)) continue;
-    const key = Math.floor(t / intervalMs) * intervalMs;
-    let group = buckets.get(key);
-    if (!group) {
-      group = [];
-      buckets.set(key, group);
-    }
-    group.push(b);
-  }
-  const sortedKeys = [...buckets.keys()].sort((a, b) => a - b);
-  const out: TerminalIntradayBar[] = [];
-  for (const key of sortedKeys) {
-    const group = buckets.get(key)!;
-    if (group.length === 0) continue;
-    const time = new Date(key).toISOString().replace(/\.\d{3}Z$/, "Z");
-    let high = group[0].high;
-    let low = group[0].low;
-    let volume = 0;
-    for (const b of group) {
-      if (b.high > high) high = b.high;
-      if (b.low < low) low = b.low;
-      volume += b.volume;
-    }
-    out.push({
-      time,
-      open: group[0].open,
-      high,
-      low,
-      close: group[group.length - 1].close,
-      volume,
-    });
-  }
-  return out;
-}
-
-// ── LUMEN palette resolution ────────────────────────────────────────
-
-function resolveLumenPalette() {
-  const root = typeof document !== "undefined" ? document.documentElement : null;
-  const cs = root ? getComputedStyle(root) : null;
-  const tok = (name: string, fallback: string): string => {
-    const v = cs?.getPropertyValue(name).trim();
-    return v && v.length > 0 ? v : fallback;
-  };
-  return {
-    posCream: tok("--pos-cream", "#10b981"),
-    negPersimmon: tok("--neg-persimmon", "#ef4444"),
-    paperDeep: tok("--paper-deep", "#0f172a"),
-    ink100: tok("--ink-100", "#f8fafc"),
-    ink80: tok("--ink-80", "#e2e8f0"),
-    ink60: tok("--ink-60", "#94a3b8"),
-    ink40: tok("--ink-40", "#475569"),
-    ink20: tok("--ink-20", "#1e293b"),
-  };
-}
-
-type LumenPalette = ReturnType<typeof resolveLumenPalette>;
+// `aggregateBars`, `resolveLumenPalette`, `LumenPalette` (type) all
+// moved to `./chartHelpers` for sharing with `MobileChartCanvas.tsx`.
+// Imported at the top of this file.
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -1249,262 +1182,12 @@ function computeDefaultZoomStart(bars: TerminalIntradayBar[]): number {
  * Returns an array aligned 1:1 with `bars`. Pre-anchor and
  * out-of-scope entries are `null`.
  */
-function vwapWithBandsSeries(
-  bars: TerminalIntradayBar[],
-  anchorIdx: number,
-  inScope?: (bar: TerminalIntradayBar) => boolean,
-): ({ vwap: number; stddev: number } | null)[] {
-  const out: ({ vwap: number; stddev: number } | null)[] = new Array(bars.length).fill(null);
-  if (anchorIdx < 0 || anchorIdx >= bars.length) return out;
-  let cumTpVol = 0;
-  let cumVol = 0;
-  let cumTpSqVol = 0;
-  for (let i = anchorIdx; i < bars.length; i++) {
-    const b = bars[i];
-    if (inScope && !inScope(b)) continue;
-    const typ = (b.high + b.low + b.close) / 3;
-    const vol = b.volume > 0 ? b.volume : 1;
-    cumTpVol += typ * vol;
-    cumVol += vol;
-    cumTpSqVol += typ * typ * vol;
-    if (cumVol > 0) {
-      const vwap = cumTpVol / cumVol;
-      const variance = Math.max(0, cumTpSqVol / cumVol - vwap * vwap);
-      out[i] = { vwap, stddev: Math.sqrt(variance) };
-    }
-  }
-  return out;
-}
-
-// ET clock helpers — used to detect the most-recent Daily-Globex
-// (18:00 ET) and RTH (09:30 ET, weekdays-only) anchor moments.
-const ET_FMT = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-  weekday: "short",
-});
-
-function etPart(parts: Intl.DateTimeFormatPart[], type: string): string {
-  return parts.find((p) => p.type === type)?.value ?? "";
-}
-
-/**
- * Walk back minute-by-minute from `latestMs` until ET clock matches
- * the target hh:mm (and optionally a weekday filter). Caps at 14 days
- * lookback (≥1 trading week of safety, holiday-tolerant) — returns
- * null if no match. `allowedWeekdays` is the set of 3-letter ET names
- * that are valid; pass `null` to allow any.
- */
-function findRecentEtMomentMs(
-  latestMs: number,
-  targetHour: number,
-  targetMin: number,
-  allowedWeekdays: ReadonlySet<string> | null,
-): number | null {
-  const MAX_MIN = 14 * 24 * 60;
-  for (let offset = 0; offset < MAX_MIN; offset++) {
-    const ms = latestMs - offset * 60_000;
-    const parts = ET_FMT.formatToParts(new Date(ms));
-    const hh = parseInt(etPart(parts, "hour"), 10);
-    const mm = parseInt(etPart(parts, "minute"), 10);
-    if (hh !== targetHour || mm !== targetMin) continue;
-    if (allowedWeekdays) {
-      const wk = etPart(parts, "weekday");
-      if (!allowedWeekdays.has(wk)) continue;
-    }
-    return ms;
-  }
-  return null;
-}
-
-// Globex is closed Fri 17:00 ET → Sun 18:00 ET. Without filtering, the
-// daily anchor's "most recent 18:00 ET" can land on Sat or Fri evening
-// (closed-market times); `indexForAnchorMs` then resolves to the bar
-// just before the Friday-evening halt — i.e. Friday-close — which is
-// stale by ~50 hours over the weekend. Restricting to Sun-Thu (the
-// days that actually start a Globex daily session) keeps the anchor
-// honest. Mon's daily anchor is Sun 18:00, …, Fri's daily anchor is
-// Thu 18:00, weekend's is Thu 18:00.
-const GLOBEX_DAILY_OPEN_DAYS: ReadonlySet<string> = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
-const RTH_DAYS: ReadonlySet<string> = new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]);
-
-/**
- * Whether a bar's bucket [bar.time, bar.time + timeframeMin) overlaps
- * the RTH cash-session window (09:30 ≤ ET clock < 16:00 on Mon-Fri).
- *
- * Sub-hour timeframes (1m / 5m / 15m): buckets nest cleanly inside or
- * outside RTH, so the predicate's start- and end-of-bucket checks
- * agree. At hour-aligned timeframes (1h / 4h), buckets straddle the
- * 09:30 boundary — e.g. a 1h bucket at 09:00 ET covers 09:00-10:00 ET
- * (30 min ETH + 30 min RTH). Returning `true` when the bucket
- * overlaps RTH includes the straddling bucket so the AVWAP line
- * begins at the bucket containing 09:30. The tradeoff: that first
- * bucket's aggregated OHLCV silently includes the pre-09:30 portion,
- * mildly contaminating cumulants. This caveat already applies to the
- * `aggregateBars` UTC-bucket alignment and is acceptable for the
- * "structure read" use of coarse timeframes; precise RTH cumulants
- * require the 1m / 5m timeframe.
- *
- * Holiday early closes (1pm ET) are not encoded — those bars 13:00 ET
- * onward will still cumulate. Acceptable for now.
- */
-function isRthBar(bar: TerminalIntradayBar, timeframeMin: number): boolean {
-  const startMs = Date.parse(bar.time);
-  if (!Number.isFinite(startMs)) return false;
-  // The bucket's last-instant timestamp (1ms before the next bucket
-  // start) — formatToParts on this gives the right ET clock for the
-  // close edge, even when the bucket spans a DST transition.
-  const lastMs = startMs + timeframeMin * 60_000 - 1;
-
-  const inRth = (ms: number): boolean => {
-    const parts = ET_FMT.formatToParts(new Date(ms));
-    if (!RTH_DAYS.has(etPart(parts, "weekday"))) return false;
-    const hh = parseInt(etPart(parts, "hour"), 10);
-    const mm = parseInt(etPart(parts, "minute"), 10);
-    const minutes = hh * 60 + mm;
-    return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
-  };
-
-  return inRth(startMs) || inRth(lastMs);
-}
-
-/**
- * Walk the bar buffer and collect [startIdx, endIdx] pairs for each
- * contiguous run of EXTENDED-hours (ETH) bars — the off-hours
- * overnight + pre-market + post-market periods. Used by
- * `buildEChartsOption` to wash those bars in a subtle ink-100 tint
- * so the operator can see the ETH ↔ RTH transitions at a glance.
- *
- * The convention here is to shade ETH (the "different" / off-hours
- * period) and leave RTH (the cash session) at the default
- * paper-deep tone. RTH is the operator's reference register; ETH
- * is the period that deserves visual marking.
- *
- * Reuses `isRthBar`'s bucket-overlap predicate (negated) so the
- * shading lines up with the RTH AVWAP gating at every timeframe.
- */
-/**
- * Find the most-recent contiguous run of RTH bars in the buffer.
- * Returns [startIdx, endIdx] of the latest run, or null if no RTH
- * bars exist. Used to bound the Opening Range markArea — the OR
- * levels are only meaningful within today's RTH session.
- */
-function buildLatestRthRange(
-  bars: TerminalIntradayBar[],
-  timeframeMin: number,
-): [number, number] | null {
-  let last: [number, number] | null = null;
-  let runStart = -1;
-  for (let i = 0; i < bars.length; i++) {
-    const inRth = isRthBar(bars[i], timeframeMin);
-    if (inRth && runStart === -1) runStart = i;
-    else if (!inRth && runStart !== -1) {
-      last = [runStart, i - 1];
-      runStart = -1;
-    }
-  }
-  if (runStart !== -1) last = [runStart, bars.length - 1];
-  return last;
-}
-
-function buildEthShadeRanges(
-  bars: TerminalIntradayBar[],
-  timeframeMin: number,
-): [number, number][] {
-  const ranges: [number, number][] = [];
-  let runStart = -1;
-  for (let i = 0; i < bars.length; i++) {
-    const inEth = !isRthBar(bars[i], timeframeMin);
-    if (inEth && runStart === -1) runStart = i;
-    else if (!inEth && runStart !== -1) {
-      ranges.push([runStart, i - 1]);
-      runStart = -1;
-    }
-  }
-  if (runStart !== -1) ranges.push([runStart, bars.length - 1]);
-  return ranges;
-}
-
-/**
- * Map an anchor-moment (UTC ms) to the largest aggregated-bar index
- * whose timestamp is ≤ anchorMs. The bucket spanning the anchor
- * moment is the correct starting point for cumulating from that
- * moment onward.
- */
-function indexForAnchorMs(bars: TerminalIntradayBar[], anchorMs: number): number {
-  let idx = -1;
-  for (let i = 0; i < bars.length; i++) {
-    const t = Date.parse(bars[i].time);
-    if (Number.isFinite(t) && t <= anchorMs) idx = i;
-    else break;
-  }
-  return idx;
-}
-
-/**
- * Week anchor: most-recent ≥36h gap between consecutive bars (= the
- * weekend halt: Friday 17:00 ET → Sunday 18:00 ET). Falls back to the
- * first bar in the buffer if no such gap exists yet.
- */
-function findWeekAnchorIdx(bars: TerminalIntradayBar[]): number {
-  if (bars.length === 0) return -1;
-  const ANCHOR_GAP_MS = 36 * 60 * 60 * 1000;
-  for (let i = bars.length - 1; i > 0; i--) {
-    const t = Date.parse(bars[i].time);
-    const tPrev = Date.parse(bars[i - 1].time);
-    if (Number.isFinite(t) && Number.isFinite(tPrev) && t - tPrev >= ANCHOR_GAP_MS) {
-      return i;
-    }
-  }
-  return 0;
-}
-
-function findDailyGlobexAnchorIdx(bars: TerminalIntradayBar[]): number {
-  if (bars.length === 0) return -1;
-  const latestMs = Date.parse(bars[bars.length - 1].time);
-  if (!Number.isFinite(latestMs)) return -1;
-  const ms = findRecentEtMomentMs(latestMs, 18, 0, GLOBEX_DAILY_OPEN_DAYS);
-  if (ms == null) return -1;
-  return indexForAnchorMs(bars, ms);
-}
-
-function findRthAnchorIdx(bars: TerminalIntradayBar[]): number {
-  if (bars.length === 0) return -1;
-  const latestMs = Date.parse(bars[bars.length - 1].time);
-  if (!Number.isFinite(latestMs)) return -1;
-  const ms = findRecentEtMomentMs(latestMs, 9, 30, RTH_DAYS);
-  if (ms == null) return -1;
-  return indexForAnchorMs(bars, ms);
-}
-
-// Per-anchor visual treatment. Spec §4.2 reserves ink-100 for the
-// flagship line (Week is the long-running structural reference);
-// supporting anchors step down to ink-80 (Daily) and ink-60 (RTH).
-// Bands match each anchor's tone but at thinner weight.
-const VWAP_STYLES: Record<
-  VwapAnchorKey,
-  { label: string; color: keyof LumenPalette; lineWidth: number; bandWidth: number; dashBand: boolean }
-> = {
-  week: { label: "Week", color: "ink100", lineWidth: 1.5, bandWidth: 1, dashBand: false },
-  daily: { label: "Daily", color: "ink80", lineWidth: 1.25, bandWidth: 1, dashBand: true },
-  rth: { label: "RTH", color: "ink60", lineWidth: 1.25, bandWidth: 0.75, dashBand: true },
-};
-
-function findAnchorIdx(key: VwapAnchorKey, bars: TerminalIntradayBar[]): number {
-  switch (key) {
-    case "week":
-      return findWeekAnchorIdx(bars);
-    case "daily":
-      return findDailyGlobexAnchorIdx(bars);
-    case "rth":
-      return findRthAnchorIdx(bars);
-  }
-}
+// `vwapWithBandsSeries`, `findRecentEtMomentMs`, ET clock helpers,
+// `findWeekAnchorIdx` / `findDailyGlobexAnchorIdx` / `findRthAnchorIdx`
+// / `findAnchorIdx`, `isRthBar`, `buildEthShadeRanges`,
+// `buildLatestRthRange`, `indexForAnchorMs`, `VWAP_STYLES` —
+// all moved to `./chartHelpers` for sharing with the mobile chart.
+// Imports at the top of this file.
 
 // Per-anchor in-scope predicate. RTH only counts bars during the
 // cash session (Mon-Fri 09:30-16:00 ET) — without this, the running
@@ -1644,22 +1327,7 @@ function buildAvwapSeries(
   return out;
 }
 
-// Convert "#rrggbb" or "#rgb" → "rgba(r,g,b,a)" so we can apply the
-// spec's 5% opacity tone for the OR band without losing the LUMEN
-// token. Falls back to returning the raw input on a parse miss.
-function hexToRgba(hex: string, alpha: number): string {
-  let s = hex.replace("#", "");
-  // Expand shorthand "#rgb" → "#rrggbb" before parsing.
-  if (s.length === 3) {
-    s = s.split("").map((c) => c + c).join("");
-  }
-  const m = s.match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (!m) return hex;
-  const r = parseInt(m[1], 16);
-  const g = parseInt(m[2], 16);
-  const b = parseInt(m[3], 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+// `hexToRgba` moved to `./chartHelpers` for sharing.
 
 // (Bar-time formatting moved to `useTimezone.formatChartTime` and
 // threaded through `TerminalChartCanvas` props so the user's
