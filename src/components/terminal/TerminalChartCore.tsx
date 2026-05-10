@@ -367,19 +367,22 @@ export function TerminalChartCore({
 
     // ── Right-anchored wheel zoom ────────────────────────────────
     // Replaces Lightweight Charts' default (cursor-anchored) wheel
-    // zoom with the right-anchored convention TradingView's pro
-    // chart uses — and which the prior desktop ECharts predecessor
-    // implemented. Logic: shrink/grow the visible logical range so
-    // its RIGHT edge stays pinned at the latest bar; only the LEFT
-    // edge moves outward (zoom out) or inward (zoom in). Operators
-    // get a consistent "the most recent bar is always visible at
-    // the same place" mental model regardless of how far they zoom.
+    // zoom with the right-anchored convention the prior desktop
+    // ECharts predecessor implemented. Logic: shrink/grow the
+    // visible logical range so its RIGHT edge stays pinned;
+    // only the LEFT edge moves outward (zoom out) or inward (zoom
+    // in). The "right edge" is the right edge of the CURRENT
+    // viewport — not necessarily the latest bar — so a user who
+    // panned into history and then zooms keeps their right-edge
+    // bar fixed in place. Operators get a consistent "the bar I'm
+    // looking at on the right stays put" mental model.
     //
     // Touch users: preserved as Lightweight Charts' default pinch
     // behavior (cursor / pinch-center anchored), which is what
     // touch operators actually expect.
     const onWheel = (ev: WheelEvent) => {
       if (ev.ctrlKey || ev.metaKey) return; // browser zoom
+      if (ev.deltaY === 0) return; // pure horizontal wheel — let it pass
       ev.preventDefault();
       const ts = chart.timeScale();
       const range = ts.getVisibleLogicalRange();
@@ -421,6 +424,16 @@ export function TerminalChartCore({
     const avwapSeriesAtMount = avwapSeriesRef.current;
     return () => {
       ro.disconnect();
+      // Symmetry with addEventListener above. `chart.remove()`
+      // tears down the canvas but the wheel listener is on the
+      // outer container div (React-managed), so it survives
+      // chart teardown. Without this removal, StrictMode's
+      // double-invoke of the effect in dev (and HMR refreshes)
+      // stacks listeners — both fire on every wheel event and the
+      // zoom factor compounds (0.90 × 0.90 = 0.81 per notch
+      // instead of 0.90). Benign in prod (no double-invoke), but
+      // the symmetry is correctness.
+      container.removeEventListener("wheel", onWheel);
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       // Detach the overlay primitive before chart.remove() — chart
       // teardown should release it, but explicit detach is the
@@ -641,8 +654,8 @@ export function TerminalChartCore({
         label: "PDC", color: palette.ink60, style: LineStyle.Dotted, width: 1,
       },
       // SET — settlement; rendered when distinguishable from PDC
-      // (≥0.25 pt apart, mirroring the desktop suppression at
-      // TerminalChartCanvas.tsx:1037-1051).
+      // (≥0.25 pt apart, mirroring the suppression rule from the
+      // since-deleted desktop ECharts implementation).
       {
         key: "SET",
         enabled:
