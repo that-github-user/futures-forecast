@@ -23,7 +23,6 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
-  ISeriesPrimitiveAxisView,
   SeriesAttachedParameter,
   SeriesType,
   Time,
@@ -51,22 +50,7 @@ export interface RectangleSpec {
   priceBottom: number | null;
   /** Fill color (rgba string). */
   fill: string;
-  /** Optional ORH/ORL axis labels — "ORH 5912.50" etc. */
-  priceLabels?: PriceAxisLabelSpec[];
 }
-
-export interface PriceAxisLabelSpec {
-  /** Price coordinate where the label anchors. */
-  price: number;
-  text: string;
-  textColor: string;
-  backColor: string;
-}
-
-/** Time-axis band height — Lightweight Charts reserves ~28px at the
- *  bottom of the pane for time labels. ETH shading should NOT bleed
- *  into this band (R1 nit on the prior HTML implementation). */
-const TIME_AXIS_HEIGHT_PX = 28;
 
 class RectangleRenderer implements IPrimitivePaneRenderer {
   private readonly rects: readonly RectangleSpec[];
@@ -82,11 +66,34 @@ class RectangleRenderer implements IPrimitivePaneRenderer {
     this.series = series;
   }
 
-  draw(target: CanvasRenderingTarget2D): void {
+  /** drawBackground is called BEFORE the chart's gridlines + series
+   *  are drawn — exactly what we want for "time-area highlighting"
+   *  (per the API docs). Putting ETH/OR washes on the background
+   *  layer lets gridlines and candles render on top, so the
+   *  gridlines remain visible inside the shaded regions (user
+   *  reported they were obscured when ETH was drawn via `draw`). */
+  drawBackground(target: CanvasRenderingTarget2D): void {
+    this.paint(target);
+  }
+
+  /** Required by the interface. Empty — all painting happens in
+   *  `drawBackground` so washes sit underneath the chart's
+   *  gridlines/candles. */
+  draw(_target: CanvasRenderingTarget2D): void {
+    // intentionally empty
+  }
+
+  private paint(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace((scope) => {
       const ctx = scope.context;
       const { width: paneW, height: paneH } = scope.mediaSize;
-      const plotBottom = Math.max(0, paneH - TIME_AXIS_HEIGHT_PX);
+      // Lightweight Charts renders the primitive within the SERIES
+      // PANE only — the pane's `mediaSize.height` already excludes
+      // the time-axis band. So drawing to y = paneH extends to the
+      // top of the time-axis labels (matches TradingView's ETH
+      // shading convention). No manual time-axis-height subtraction
+      // needed here (the prior 28px subtraction was a misunderstanding
+      // of the coord space and left a visible gap at the bottom).
 
       for (const r of this.rects) {
         const xLeft = this.chart.timeScale().timeToCoordinate(r.timeFrom);
@@ -109,11 +116,11 @@ class RectangleRenderer implements IPrimitivePaneRenderer {
         const yBottomRaw =
           r.priceBottom != null
             ? this.series.priceToCoordinate(r.priceBottom)
-            : plotBottom;
+            : paneH;
         if (yTopRaw == null || yBottomRaw == null) continue;
-        // Clip top/bottom to plot area (NOT into the time-axis band).
+        // Clip top/bottom to pane.
         const top = Math.max(0, Math.min(yTopRaw, yBottomRaw));
-        const bottom = Math.min(plotBottom, Math.max(yTopRaw, yBottomRaw));
+        const bottom = Math.min(paneH, Math.max(yTopRaw, yBottomRaw));
         const height = bottom - top;
         if (height <= 0) continue;
 
@@ -149,35 +156,6 @@ class RectanglePaneView implements IPrimitivePaneView {
   }
 }
 
-class PriceAxisLabel implements ISeriesPrimitiveAxisView {
-  private readonly spec: PriceAxisLabelSpec;
-  private readonly series: ISeriesApi<SeriesType>;
-  constructor(
-    spec: PriceAxisLabelSpec,
-    series: ISeriesApi<SeriesType>,
-  ) {
-    this.spec = spec;
-    this.series = series;
-  }
-
-  coordinate(): number {
-    const c = this.series.priceToCoordinate(this.spec.price);
-    return c ?? -1;
-  }
-
-  text(): string {
-    return this.spec.text;
-  }
-
-  textColor(): string {
-    return this.spec.textColor;
-  }
-
-  backColor(): string {
-    return this.spec.backColor;
-  }
-}
-
 export class RectangleOverlayPrimitive
   implements ISeriesPrimitive<Time>
 {
@@ -185,11 +163,10 @@ export class RectangleOverlayPrimitive
   private chart: IChartApi | null = null;
   private series: ISeriesApi<SeriesType> | null = null;
   private requestUpdate: (() => void) | null = null;
-  // Cached pane-view + axis-view arrays. Lightweight Charts caches
-  // by reference identity — return the same array reference when
-  // nothing has changed to avoid forcing redraws.
+  // Cached pane-view array. Lightweight Charts caches by reference
+  // identity — return the same array reference when nothing has
+  // changed to avoid forcing redraws.
   private cachedPaneViews: IPrimitivePaneView[] | null = null;
-  private cachedAxisViews: ISeriesPrimitiveAxisView[] | null = null;
 
   attached(param: SeriesAttachedParameter<Time, SeriesType>): void {
     this.chart = param.chart as IChartApi;
@@ -202,7 +179,6 @@ export class RectangleOverlayPrimitive
     this.series = null;
     this.requestUpdate = null;
     this.cachedPaneViews = null;
-    this.cachedAxisViews = null;
   }
 
   /** Replace the rectangle set. Triggers a chart redraw via
@@ -211,7 +187,6 @@ export class RectangleOverlayPrimitive
   setRectangles(rects: readonly RectangleSpec[]): void {
     this.rects = rects;
     this.cachedPaneViews = null;
-    this.cachedAxisViews = null;
     this.requestUpdate?.();
   }
 
@@ -224,19 +199,15 @@ export class RectangleOverlayPrimitive
     return this.cachedPaneViews;
   }
 
-  priceAxisViews(): readonly ISeriesPrimitiveAxisView[] {
-    if (!this.series) return [];
-    if (this.cachedAxisViews) return this.cachedAxisViews;
-    const out: ISeriesPrimitiveAxisView[] = [];
-    for (const r of this.rects) {
-      if (!r.priceLabels) continue;
-      for (const label of r.priceLabels) {
-        out.push(new PriceAxisLabel(label, this.series));
-      }
-    }
-    this.cachedAxisViews = out;
-    return this.cachedAxisViews;
-  }
+  // ORH / ORL labels intentionally NOT rendered via priceAxisViews:
+  // those use `ISeriesPrimitiveAxisView` which renders with a
+  // different visual style than `series.createPriceLine`'s native
+  // chips, so OR labels looked inconsistent next to POC / VAH /
+  // PDH / etc and got cut off on the right edge. Mobile-side
+  // ORH/ORL labels are now rendered as native priceLines from
+  // MobileChartCanvas alongside the level chips — same code path,
+  // same visual treatment. The primitive only does the rectangle
+  // background.
 
   /** Lightweight Charts calls this on viewport change. We don't need
    *  to recompute anything here — the renderer reads live coords on
