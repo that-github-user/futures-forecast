@@ -97,7 +97,13 @@ export function OverlaysSheet({
         aria-expanded={open}
         aria-controls="overlays-sheet"
       >
-        Overlays{activeCount > 0 ? ` · ${activeCount}` : ""}
+        {/* Always show the count (including 0) so the trigger
+            reads consistently as "Overlays · n ▾" — a label-with-
+            counter has worse menu-affordance than a label-with-
+            counter-and-chevron, and dropping the count when zero
+            made the trigger look like a disabled/inactive label
+            exactly when the user most needs to find it. */}
+        Overlays · {activeCount} ▾
       </button>
       {open && (
         <div
@@ -178,9 +184,12 @@ export function OverlaysSheet({
                 </div>
               </section>
 
-              {/* Levels — POC/VA + PDH/PDL/PDC as composite pills */}
+              {/* Volume Profile — intraday auction references derived
+                  from today's volume profile. POC, VAH, VAL move
+                  during the session as price transacts. Mental
+                  category: "where is value being built right now." */}
               <section className="overlays-section">
-                <h3 className="overlays-section-title">Levels</h3>
+                <h3 className="overlays-section-title">Volume Profile</h3>
                 <div className="overlays-pill-row">
                   <button
                     type="button"
@@ -190,6 +199,19 @@ export function OverlaysSheet({
                   >
                     POC / VAH / VAL
                   </button>
+                </div>
+              </section>
+
+              {/* Prior Session — fixed, static reference points from
+                  yesterday's session. PDH, PDL, PDC don't move
+                  during today's tape. Mental category: "did we take
+                  out yesterday's high/low yet." Separated from
+                  Volume Profile because traders reach for these at
+                  different moments — bias / breakout pivots vs
+                  intraday auction context. */}
+              <section className="overlays-section">
+                <h3 className="overlays-section-title">Prior Session</h3>
+                <div className="overlays-pill-row">
                   <button
                     type="button"
                     className={`pill${overlays.priorHlc ? " on" : ""}`}
