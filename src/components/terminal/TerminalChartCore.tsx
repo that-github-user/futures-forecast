@@ -183,19 +183,22 @@ export function TerminalChartCore({
     const container = containerRef.current;
     if (!container) return;
 
-    // Pass explicit width/height to createChart. Without these,
-    // Lightweight Charts falls back to inferring from the
-    // container — and on mobile, that inference happens before
-    // the flex/grid layout has fully settled, producing a
-    // wider-than-viewport chart whose east edge (and the y-axis
-    // labels rendered on it) sits off-screen, clipped by the
-    // ancestor `overflow-x: hidden`. Reading clientWidth/Height
-    // at chart-init guarantees the canvas matches the actual
-    // post-layout container size on first paint. The
-    // ResizeObserver below still handles subsequent resizes
-    // (orientation change, sidebar collapse, browser-zoom).
-    const initialWidth = container.clientWidth;
-    const initialHeight = container.clientHeight;
+    // Pass explicit width/height to createChart instead of letting
+    // Lightweight Charts infer them from the container. Reading
+    // clientWidth/Height in the effect (post-DOM-commit) and
+    // passing them through makes the timing explicit. We rely on
+    // React running effects post-layout — clientWidth will be
+    // populated by the time we reach this line. If a parent is
+    // temporarily zero-sized (e.g., a hidden tab), the chart
+    // initializes at 0×0 and the ResizeObserver below corrects
+    // on the first non-zero resize. We could mirror the
+    // ResizeObserver's `> 0` guard here and bail out, but that
+    // would also skip the ResizeObserver registration and leave
+    // the chart permanently un-initialized; passing 0×0 to
+    // createChart and letting the observer recover is the
+    // self-healing path.
+    const initialWidth = Math.max(0, container.clientWidth);
+    const initialHeight = Math.max(0, container.clientHeight);
 
     const chart = createChart(container, {
       width: initialWidth,
@@ -242,8 +245,9 @@ export function TerminalChartCore({
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
         // Small minimumWidth sized to the widest chip
-        // ("ORH 15m 7395.50" ≈ 95px) plus padding headroom. This
-        // floor is doing two jobs:
+        // ("ORH 15m 7395.50" ≈ 110-120px depending on glyph
+        // metrics) plus padding headroom. This floor is doing two
+        // jobs:
         //   1. Mobile defensive: empirically Lightweight Charts'
         //      auto-size measured too narrow on phones and the
         //      y-axis labels rendered as fully clipped. Trusting
@@ -252,16 +256,17 @@ export function TerminalChartCore({
         //   2. Stability: price-line chips are only measured by
         //      the auto-sizer while their price is in the visible
         //      range. Without a floor, panning all level chips
-        //      off-screen would shrink the gutter ~50px and
-        //      panning back would re-expand it — visible plot
-        //      "breathing." The 110 floor matches the natural
-        //      width of the widest chip so the gutter stays stable
+        //      off-screen would shrink the gutter and panning
+        //      back would re-expand it — visible plot
+        //      "breathing." The floor matches the natural width
+        //      of the widest chip so the gutter stays stable
         //      across pan.
-        // 110 is a deliberate reduction from the prior 160 floor
-        // (which over-allocated ~65px of empty space on desktop).
-        // autoScale: true (the default) auto-fits the visible
-        // time-range's price extents on every pan/zoom.
-        minimumWidth: 110,
+        // 120 sits at the conservative-safe end of the chip's
+        // plausible width range — enough that "ORH 15m 7395.50"
+        // never rubs the gutter edge while still reclaiming 40px
+        // versus the prior over-allocated 160. autoScale: true
+        // (default) auto-fits the visible price extents on pan.
+        minimumWidth: 120,
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
