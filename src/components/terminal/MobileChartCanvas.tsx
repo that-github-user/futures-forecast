@@ -738,7 +738,15 @@ export function MobileChartCanvas({
         timeTo: t2,
         priceTop: null,
         priceBottom: null,
-        fill: hexToRgba(palette.ink100, 0.08),
+        // TradingView's ETH-shading convention: #2962FF (blue) at 8%
+        // opacity. The previous white wash (palette.ink100 @ 0.08)
+        // was too close in tone to the chart's ink-20 gridlines —
+        // the user (colorblind) could not visually distinguish the
+        // two even after a sighted check confirmed they were
+        // technically different. Blue at 8% sits in a chromatically
+        // different region from the achromatic gridline gray and
+        // reads cleanly for both color-vision profiles.
+        fill: hexToRgba("#2962FF", 0.08),
       });
     }
 
