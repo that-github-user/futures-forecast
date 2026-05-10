@@ -966,15 +966,17 @@
   .terminal-chart {
     padding: 18px 16px 16px;
     gap: 12px;
-    /* Mobile chart dominates the fold — user feedback was that
-       280px was too short to read trend on a phone. Push to 70vh
-       so the chart fills most of the viewport vertically. The
-       page already scrolls (`.terminal-root` is `overflow-y:
-       auto`), so the trader scrolls past the chart to reach the
-       sidebar / scorecards. The chart-canvas itself takes ~80%
-       of this panel after the toggle row + chart-tf row, giving
-       a comfortable plot area. */
-    min-height: 70vh;
+    /* Mobile chart is INTENTIONALLY taller than the viewport. The
+       user's workflow on mobile is "scroll vertically through the
+       page" — leveraging that, the chart fills ~2× viewport height
+       so the operator can read price action with desktop-class
+       vertical resolution. The toggle row and timeframe row sit
+       above; the chart canvas takes the bulk of the panel.
+       `.terminal-root` is `overflow-y: auto` so the rest of the
+       dashboard (System Feed, scorecards) is reached by scrolling
+       past the chart. 140vh gives ~1180px of chart on a 844px-tall
+       phone — comparable to a desktop chart's vertical footprint. */
+    min-height: 140vh;
   }
   /* Toggle pills become a horizontal-scroll strip — the operator
      swipes through overlay options. Right-borders adapt: only the
@@ -1025,12 +1027,10 @@
        chart inside, the 12px on each side ate 24px of usable plot
        width without giving anything back. */
     padding: 0;
-    /* Floor matches the parent's 70vh chart panel; the canvas itself
-       gets `flex: 1` of the panel after the toggle/timeframe rows,
-       which lands around 60vh on a typical phone. Pinning a min
-       prevents the canvas from collapsing on small landscape
-       viewports where 70vh × ~85% can dip under 200px. */
-    min-height: 50vh;
+    /* Canvas is ~85% of the parent panel after the toggle/tf
+       rows, which at 140vh gives ~120vh of canvas. Pin a min for
+       small landscape viewports. */
+    min-height: 120vh;
   }
 
   .terminal-feed {

@@ -198,17 +198,24 @@ export function MobileChartCanvas({
         },
       },
       rightPriceScale: {
+        visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // Reserve enough horizontal pixels for the level chips to
-        // render fully. The widest chip we display is the price-line
-        // chip carrying e.g. "PDH 5912.50" (level title + price) at
-        // ~10px font — needs ~80px to render without clipping. The
-        // default auto-width can underestimate when multiple chips
-        // overlap or the chart is narrow. Pinning a floor keeps the
-        // y-axis labels (and our PDC/POC/VAH/VAL/PDH/PDL/SET chips)
-        // fully visible on a 360px-wide phone.
-        minimumWidth: 80,
+        // Reserve generous horizontal width for the level chips
+        // to render fully. The widest chip is e.g.
+        // "PDH 5912.50" — at the chart's default ~12px font that's
+        // ~95px including chip padding. A previous floor of 80
+        // wasn't enough and the user reported labels still being
+        // cut off on a 360px-wide phone. 110 gives comfortable
+        // headroom for any of POC/VAH/VAL/PDH/PDL/PDC/SET plus
+        // their 2-decimal price values, plus the price-axis tick
+        // labels (e.g. "5910.0") that share the same scale.
+        minimumWidth: 110,
+        // autoScale: true (the default) — price scale auto-fits
+        // the visible time-range's price extents on every pan/zoom.
+        // Pinned explicitly here so a future maintainer reading
+        // the option block sees the contract documented.
+        autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
