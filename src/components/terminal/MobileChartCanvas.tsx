@@ -211,9 +211,10 @@ export function MobileChartCanvas({
         // their 2-decimal price values, plus the price-axis tick
         // labels (e.g. "5910.0") that share the same scale.
         minimumWidth: 110,
-        // Don't auto-shift the price scale; keep prices visible
-        // even when no series-data is in view (rare but possible
-        // during a fresh-mount race window).
+        // autoScale: true (the default) — price scale auto-fits
+        // the visible time-range's price extents on every pan/zoom.
+        // Pinned explicitly here so a future maintainer reading
+        // the option block sees the contract documented.
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
