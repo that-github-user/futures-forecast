@@ -38,6 +38,7 @@ const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h"];
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
 import { RouteNav } from "../nav/RouteNav";
 import { SystemFeed } from "./SystemFeed";
+import { OverlaysSheet } from "./OverlaysSheet";
 import "./TerminalDashboard.css";
 
 const SYSTEM_LABELS = {
@@ -288,7 +289,9 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           <ChartTzSelector tz={tz} setTz={setTz} tzLabel={tzLabel} />
           <DensitySelector density={density} setDensity={setDensity} />
         </div>
-        <div className="terminal-chart-toggles">
+        {/* Desktop toolbar: inline pills + popovers. Hidden on
+            mobile via CSS — the OverlaysSheet below replaces it. */}
+        <div className="terminal-chart-toggles terminal-chart-toggles-desktop">
           <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
           <ToggleButton active={overlays.pocVa} onClick={() => toggleBool("pocVa")}>
             POC / VAH / VAL
@@ -299,6 +302,18 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
+        </div>
+        {/* Mobile-only overlays trigger — opens the bottom sheet
+            with all overlay controls in one tap-friendly stack.
+            Hidden on desktop via CSS. */}
+        <div className="terminal-chart-overlays-mobile">
+          <OverlaysSheet
+            overlays={overlays}
+            setVwap={setVwap}
+            setOpeningRange={setOpeningRange}
+            togglePocVa={() => toggleBool("pocVa")}
+            togglePriorHlc={() => toggleBool("priorHlc")}
+          />
         </div>
         <TerminalChartCanvas
           snapshot={data}
