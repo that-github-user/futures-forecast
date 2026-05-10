@@ -183,22 +183,22 @@ export function TerminalChartCore({
     const container = containerRef.current;
     if (!container) return;
 
-    // Pass explicit width/height to createChart instead of letting
-    // Lightweight Charts infer them from the container. Reading
-    // clientWidth/Height in the effect (post-DOM-commit) and
-    // passing them through makes the timing explicit. We rely on
-    // React running effects post-layout — clientWidth will be
-    // populated by the time we reach this line. If a parent is
-    // temporarily zero-sized (e.g., a hidden tab), the chart
-    // initializes at 0×0 and the ResizeObserver below corrects
-    // on the first non-zero resize. We could mirror the
-    // ResizeObserver's `> 0` guard here and bail out, but that
-    // would also skip the ResizeObserver registration and leave
-    // the chart permanently un-initialized; passing 0×0 to
-    // createChart and letting the observer recover is the
-    // self-healing path.
-    const initialWidth = Math.max(0, container.clientWidth);
-    const initialHeight = Math.max(0, container.clientHeight);
+    // Compute chart dimensions defensively. Empirically on mobile
+    // the container's clientWidth (or lightweight-charts' own
+    // measurement of it) was reporting a value larger than what
+    // actually fits inside the visible viewport — the chart's
+    // east edge rendered off-screen, clipping the y-axis labels.
+    // Cap at the viewport width to guarantee the chart never
+    // renders wider than what the user can see, regardless of
+    // upstream layout misreports. On desktop where the container
+    // is well under viewport width, the cap is a no-op.
+    const measure = (): { w: number; h: number } => {
+      const cw = Math.max(0, container.clientWidth);
+      const ch = Math.max(0, container.clientHeight);
+      const vw = typeof window !== "undefined" ? window.innerWidth : cw;
+      return { w: Math.min(cw, vw), h: ch };
+    };
+    const { w: initialWidth, h: initialHeight } = measure();
 
     const chart = createChart(container, {
       width: initialWidth,
@@ -414,10 +414,11 @@ export function TerminalChartCore({
     // React entirely for the per-frame redraw.
 
     // Auto-resize on container size change (orientation flip,
-    // browser-zoom, sidebar collapse).
+    // browser-zoom, sidebar collapse). Uses the same viewport
+    // clamp as init so the chart never renders wider than the
+    // visible viewport on mobile.
     const ro = new ResizeObserver(() => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const { w, h } = measure();
       if (w > 0 && h > 0) chart.applyOptions({ width: w, height: h });
     });
     ro.observe(container);
