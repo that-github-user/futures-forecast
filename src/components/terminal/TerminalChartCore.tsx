@@ -183,7 +183,26 @@ export function TerminalChartCore({
     const container = containerRef.current;
     if (!container) return;
 
+    // Pass explicit width/height to createChart instead of letting
+    // Lightweight Charts infer them from the container. Reading
+    // clientWidth/Height in the effect (post-DOM-commit) and
+    // passing them through makes the timing explicit. We rely on
+    // React running effects post-layout — clientWidth will be
+    // populated by the time we reach this line. If a parent is
+    // temporarily zero-sized (e.g., a hidden tab), the chart
+    // initializes at 0×0 and the ResizeObserver below corrects
+    // on the first non-zero resize. We could mirror the
+    // ResizeObserver's `> 0` guard here and bail out, but that
+    // would also skip the ResizeObserver registration and leave
+    // the chart permanently un-initialized; passing 0×0 to
+    // createChart and letting the observer recover is the
+    // self-healing path.
+    const initialWidth = Math.max(0, container.clientWidth);
+    const initialHeight = Math.max(0, container.clientHeight);
+
     const chart = createChart(container, {
+      width: initialWidth,
+      height: initialHeight,
       layout: {
         background: { color: palette.paperDeep },
         textColor: palette.ink60,
@@ -225,18 +244,29 @@ export function TerminalChartCore({
         visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // No `minimumWidth` — let the price scale auto-size to fit
-        // the widest visible label, including price-line chip
-        // titles ("POC 7383.91", "VAH 7383.91", etc.) made visible
-        // via `axisLabelVisible: true`. Lightweight Charts v5
-        // measures these correctly. A prior `minimumWidth: 160`
-        // (iterated up from 80) over-allocated the gutter on
-        // desktop (~65px of empty space between the plot's east
-        // edge and where labels rendered) without helping mobile,
-        // where the natural fit is also wider than what the
-        // initial too-narrow guesses produced.
-        // autoScale: true (the default) auto-fits the visible
-        // time-range's price extents on every pan/zoom.
+        // Small minimumWidth sized to the widest chip
+        // ("ORH 15m 7395.50" ≈ 110-120px depending on glyph
+        // metrics) plus padding headroom. This floor is doing two
+        // jobs:
+        //   1. Mobile defensive: empirically Lightweight Charts'
+        //      auto-size measured too narrow on phones and the
+        //      y-axis labels rendered as fully clipped. Trusting
+        //      pure auto-fit (no floor) regressed mobile despite
+        //      the v5 source suggesting it should work.
+        //   2. Stability: price-line chips are only measured by
+        //      the auto-sizer while their price is in the visible
+        //      range. Without a floor, panning all level chips
+        //      off-screen would shrink the gutter and panning
+        //      back would re-expand it — visible plot
+        //      "breathing." The floor matches the natural width
+        //      of the widest chip so the gutter stays stable
+        //      across pan.
+        // 120 sits at the conservative-safe end of the chip's
+        // plausible width range — enough that "ORH 15m 7395.50"
+        // never rubs the gutter edge while still reclaiming 40px
+        // versus the prior over-allocated 160. autoScale: true
+        // (default) auto-fits the visible price extents on pan.
+        minimumWidth: 120,
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
