@@ -39,7 +39,7 @@
  *     refactor to shared helpers in PR 2 alongside ETH plugin work)
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -149,7 +149,18 @@ export function MobileChartCanvas({
   // ETH/OR HTML overlay re-renders with fresh pixel coordinates.
   // Lightweight Charts emits the event but we react via React state
   // so the rectangles re-mount in DOM (no manual style mutation).
+  // rAF-coalesced (see `scheduleOverlayUpdate`) so a 60Hz pan event
+  // burst doesn't trigger 60 React renders per second; the rAF
+  // sentinel collapses bursts into a single per-frame update.
   const [overlayTick, setOverlayTick] = useState(0);
+  const overlayRafRef = useRef<number | null>(null);
+  const scheduleOverlayUpdate = useCallback(() => {
+    if (overlayRafRef.current != null) return;
+    overlayRafRef.current = requestAnimationFrame(() => {
+      overlayRafRef.current = null;
+      setOverlayTick((t) => t + 1);
+    });
+  }, []);
   // Bar buffer.
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -356,8 +367,10 @@ export function MobileChartCanvas({
     // Pan/zoom subscription — bumps `overlayTick` so the ETH/OR
     // HTML overlay re-renders its rectangles with fresh pixel
     // coordinates (timeToCoordinate / priceToCoordinate change as
-    // the visible range scrolls).
-    const onTimeRangeChange = () => setOverlayTick((t) => t + 1);
+    // the visible range scrolls). rAF-coalesced via
+    // scheduleOverlayUpdate so a 60Hz inertial-pan burst doesn't
+    // trigger 60 React renders per second (R2 perf concern).
+    const onTimeRangeChange = () => scheduleOverlayUpdate();
     chart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChange);
 
     // Auto-resize on container size change (orientation flip,
@@ -368,8 +381,8 @@ export function MobileChartCanvas({
       if (w > 0 && h > 0) {
         chart.applyOptions({ width: w, height: h });
         // Resize also invalidates overlay coords (priceScale width
-        // shifts when the canvas width changes).
-        setOverlayTick((t) => t + 1);
+        // shifts when the canvas width changes). Same rAF coalesce.
+        scheduleOverlayUpdate();
       }
     });
     ro.observe(container);
@@ -383,6 +396,12 @@ export function MobileChartCanvas({
       ro.disconnect();
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onTimeRangeChange);
+      // Cancel any pending rAF so it doesn't fire after unmount and
+      // call setOverlayTick on a dead component.
+      if (overlayRafRef.current != null) {
+        cancelAnimationFrame(overlayRafRef.current);
+        overlayRafRef.current = null;
+      }
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -670,10 +689,18 @@ export function MobileChartCanvas({
     if (!chart || !candleSeries || !container) return [];
     const timeframeMin = TIMEFRAME_MINUTES[timeframe];
     const containerH = container.clientHeight;
+    // Lightweight Charts reserves ~28px at the bottom of the
+    // container for the time-axis labels (default `timeScale.height`
+    // ≈ 26-30px). Don't extend ETH or OR rects into that band — the
+    // 8% wash would tint the axis labels and read as a render bug
+    // (R1 nit). This matches desktop ECharts which renders markArea
+    // INSIDE the grid, not over the axis.
+    const TIME_AXIS_HEIGHT = 28;
+    const plotH = Math.max(0, containerH - TIME_AXIS_HEIGHT);
     const out: OverlayRect[] = [];
 
     // ETH shading: one rect per contiguous ETH run, full plot
-    // height, ink-100 @ 8% alpha (mirrors desktop's tint).
+    // height (excluding time-axis), ink-100 @ 8% alpha.
     const ethRanges = buildEthShadeRanges(aggregatedBars, timeframeMin);
     for (const [s, e] of ethRanges) {
       const t1 = (Math.floor(Date.parse(aggregatedBars[s].time) / 1000) as UTCTimestamp);
@@ -692,7 +719,7 @@ export function MobileChartCanvas({
         left,
         top: 0,
         width,
-        height: containerH,
+        height: plotH,
         fill: hexToRgba(palette.ink100, 0.08),
         label: null,
       });
@@ -711,12 +738,16 @@ export function MobileChartCanvas({
       ];
       const t1 = (Math.floor(Date.parse(aggregatedBars[latestRth[0]].time) / 1000) as UTCTimestamp);
       const x1 = chart.timeScale().timeToCoordinate(t1);
-      // Right edge: use the last visible bar's coordinate, or the
-      // container width if that's null.
-      const lastBarT = (Math.floor(
-        Date.parse(aggregatedBars[aggregatedBars.length - 1].time) / 1000,
-      ) as UTCTimestamp);
-      const xRight = chart.timeScale().timeToCoordinate(lastBarT) ?? container.clientWidth;
+      // Right edge of the OR rect: extend to the chart's plot-area
+      // right edge (just left of the price scale), NOT just to the
+      // last bar. This matches desktop intent ("OR band runs to
+      // plot edge") and avoids the visible white strip between the
+      // last-bar coord and the price scale that R2 flagged when
+      // the user pans into the rightOffset future-bar gap.
+      // priceScale().width() returns the price-axis pixel width;
+      // plot extends from container left to (containerWidth - that).
+      const priceScaleWidth = chart.priceScale("right").width();
+      const xRight = container.clientWidth - priceScaleWidth;
       for (const band of orBands) {
         const enabled = overlays.openingRange[band.key as "m1" | "m5" | "m15"];
         if (!enabled || band.low == null || band.high == null) continue;
