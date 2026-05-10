@@ -1,22 +1,12 @@
 /**
- * TerminalChartCanvas — viewport-routed chart wrapper.
+ * TerminalChartCanvas — slim wrapper that lazy-loads the chart core.
  *
- * Picks between the desktop (ECharts) and mobile (TradingView
- * Lightweight Charts) implementations based on the current
- * viewport width. Both implementations are lazy-loaded so each
- * device only fetches the chart library it actually uses:
- *
- *   Desktop: TerminalChartCanvas → DesktopTerminalChartCanvas (ECharts)
- *   Mobile:  TerminalChartCanvas → MobileChartCanvas (Lightweight Charts)
- *
- * Bundle effect: the dynamic-import boundary is what keeps each
- * chart library out of the other's bundle. Static imports inside
- * the lazy-loaded module become part of that module's chunk;
- * the bundler doesn't pull them into the entry chunk. So
- * `import("./DesktopTerminalChartCanvas")` (static `import * from
- * "echarts/core"` inside) yields a separate chunk for desktop
- * users only, and `import("./MobileChartCanvas")` likewise for
- * lightweight-charts.
+ * Originally routed between a desktop (ECharts) and mobile
+ * (Lightweight Charts) implementation based on viewport width. The
+ * desktop ECharts code was deleted after the Lightweight Charts
+ * mobile chart reached feature parity AND the user confirmed it was
+ * the smoother, more intuitive experience even on desktop. The
+ * single chart implementation now lives at `./TerminalChartCore`.
  *
  * Re-exports chart-type symbols from `./chartTypes` for back-compat
  * with consumers (TerminalDashboard) that already import them from
@@ -24,7 +14,6 @@
  */
 
 import { Suspense, lazy } from "react";
-import { useIsMobileViewport } from "../../hooks/useIsMobileViewport";
 import type { TerminalSnapshot } from "../../api/terminalTypes";
 import type { OverlayState, Timeframe } from "./chartTypes";
 
@@ -44,18 +33,14 @@ export {
   DEFAULT_TIMEFRAME,
 } from "./chartTypes";
 
-// Both charts are lazy-loaded. The dynamic-import boundary is what
-// keeps echarts (desktop) and lightweight-charts (mobile) in
-// separate chunks; static imports inside each lazy module become
-// part of that module's chunk and don't pull into the entry.
-const DesktopTerminalChartCanvas = lazy(() =>
-  import("./DesktopTerminalChartCanvas").then((m) => ({
-    default: m.DesktopTerminalChartCanvas,
-  })),
-);
-const MobileChartCanvas = lazy(() =>
-  import("./MobileChartCanvas").then((m) => ({
-    default: m.MobileChartCanvas,
+// Lazy-loaded chart core. The dynamic-import boundary keeps
+// lightweight-charts in its own chunk (~57 KB gz) that's only
+// fetched when this component renders — i.e., when the operator
+// navigates to the `/app` terminal route. Other routes
+// (`/forecast`, `/dc`, `/`) never pay the chart-library cost.
+const TerminalChartCore = lazy(() =>
+  import("./TerminalChartCore").then((m) => ({
+    default: m.TerminalChartCore,
   })),
 );
 
@@ -69,25 +54,15 @@ interface Props {
 }
 
 export function TerminalChartCanvas(props: Props) {
-  const isMobile = useIsMobileViewport();
-  // Suspense fallback while the chunk loads. On a slow mobile
-  // connection this can be ~1-2s on first paint; matches the
-  // existing empty-state styling at `.terminal-chart-canvas .empty`.
-  const fallback = (
-    <div className="terminal-chart-canvas">
-      <span className="empty">Loading chart…</span>
-    </div>
-  );
-  if (isMobile) {
-    return (
-      <Suspense fallback={fallback}>
-        <MobileChartCanvas {...props} />
-      </Suspense>
-    );
-  }
   return (
-    <Suspense fallback={fallback}>
-      <DesktopTerminalChartCanvas {...props} />
+    <Suspense
+      fallback={
+        <div className="terminal-chart-canvas">
+          <span className="empty">Loading chart…</span>
+        </div>
+      }
+    >
+      <TerminalChartCore {...props} />
     </Suspense>
   );
 }

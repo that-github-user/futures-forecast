@@ -1,42 +1,37 @@
 /**
- * MobileChartCanvas — touch-native price chart for ≤768px viewports.
+ * TerminalChartCore — universal price chart used on both desktop and
+ * mobile via the `TerminalChartCanvas` wrapper.
  *
- * Replaces the desktop's ECharts implementation
- * (`TerminalChartCanvas.tsx`) on mobile only. The desktop chart's
- * ECharts default touch behavior (cursor-anchored pinch-zoom,
- * momentum-less drag-pan, scroll/pan gesture conflicts with the
- * page) made the chart "impossible to work with" on mobile per
- * user report. TradingView Lightweight Charts is touch-native:
- * inertial drag-pan, two-finger pinch-zoom, gesture isolation
- * from page scroll.
+ * Built on TradingView Lightweight Charts. Originally introduced as
+ * a mobile-only implementation (PRs #151 / #158 / #159 / #160) to
+ * fix touch-interaction issues with the prior ECharts desktop
+ * chart. After the mobile chart reached feature parity AND received
+ * user feedback that its smoothness was preferable to the desktop's
+ * ECharts incumbent, the desktop ECharts implementation was deleted
+ * and this component became the single chart for both surfaces.
  *
- * PR 1 scope (this file):
+ * Features:
  *   - Candlesticks (native CandlestickSeries)
- *   - Session VWAP line (native LineSeries)
- *   - Level lines: POC, VAH, VAL, PDH/PDL/PDC, SET (createPriceLine)
- *   - Day-changeover x-axis tick markers (DD on midnight crossings
- *     + Friday→Sunday reopen)
- *   - Tooltip on touch via subscribeCrosshairMove (custom HTML
- *     overlay positioned via the chart's coordinate API)
- *   - 12h-visible default zoom (mirrors desktop intent)
+ *   - Session VWAP line (LineSeries fed from snapshot.vwap.session_vwap)
+ *   - 9-line AVWAP overlay: Week / Daily / RTH × {VWAP, ±1σ, ±2σ}.
+ *     RTH-anchor in-scope gating produces honest gaps during ETH bars.
+ *   - Level price-lines: POC / VAH / VAL / PDH / PDL / PDC / SET
+ *     plus ORH / ORL chips for each enabled OR window
+ *   - ETH session shading + Opening Range bands rendered via a
+ *     custom seriesPrimitive (`RectangleOverlayPrimitive`) so they
+ *     paint on the chart canvas synchronously with pan/zoom
+ *   - Day-changeover x-axis tick markers (DD on midnight + Fri→Sun
+ *     reopen, HH:MM otherwise) via `tickMarkType`
+ *   - Tooltip on hover (mouse) AND on touch (tap-and-drag), via
+ *     `subscribeCrosshairMove` → custom HTML overlay
+ *   - Right-anchored wheel zoom (desktop convention preserved from
+ *     the ECharts predecessor): zooming with the mouse wheel keeps
+ *     the latest bar pinned at the right edge
+ *   - touch-action: pan-y for vertical-scroll passthrough on mobile
  *
- * PR 2 scope (deferred):
- *   - ETH session shading (custom canvas primitive)
- *   - 9-line AVWAP overlay (Week/Daily/RTH × VWAP/±1σ/±2σ)
- *   - Opening Range bands (1m/5m/15m windows)
- *
- * PR 3 scope (deferred):
- *   - Collision-aware right-gutter chip labels (when 5+ levels
- *     cluster within a 5-pt range, native price-line labels overlap;
- *     replicate the desktop's pixel-space cluster-merge from
- *     `TerminalChartCanvas.tsx:1110-1151`).
- *
- * Reused from desktop:
- *   - `fetchTerminalIntradayBars()` polling (30s cadence)
- *   - `OverlayState` type (drives which level lines render)
- *   - `aggregateBars`, `isRthBar` helpers (re-implemented here to
- *     avoid risking the desktop file with cross-component refactor;
- *     refactor to shared helpers in PR 2 alongside ETH plugin work)
+ * Reuses chartHelpers (aggregateBars, isRthBar, vwapWithBandsSeries,
+ * etc.) — pure functions formerly shared with the now-deleted
+ * desktop ECharts implementation.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -83,7 +78,7 @@ import {
 import {
   RectangleOverlayPrimitive,
   type RectangleSpec,
-} from "./mobileChartOverlayPrimitive";
+} from "./terminalChartOverlayPrimitive";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -121,7 +116,7 @@ interface Props {
   tzLabel: string;
 }
 
-export function MobileChartCanvas({
+export function TerminalChartCore({
   snapshot,
   overlays,
   timeframe,
@@ -249,7 +244,15 @@ export function MobileChartCanvas({
       crosshair: { mode: CrosshairMode.Magnet },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
       handleScale: {
-        mouseWheel: true,
+        // Disable Lightweight Charts' built-in mouse-wheel zoom —
+        // it's cursor-anchored, but the desktop ECharts predecessor
+        // had a right-anchored wheel zoom (latest bar pinned at the
+        // right edge) that operators are accustomed to. We
+        // implement that ourselves below via a custom wheel
+        // listener. Pinch-zoom on touch stays default
+        // (cursor/pinch-center anchored, which is what touch
+        // operators expect).
+        mouseWheel: false,
         pinch: true,
         axisPressedMouseMove: { time: true, price: true },
       },
@@ -362,6 +365,42 @@ export function MobileChartCanvas({
       };
     chart.subscribeCrosshairMove(onCrosshairMove);
 
+    // ── Right-anchored wheel zoom ────────────────────────────────
+    // Replaces Lightweight Charts' default (cursor-anchored) wheel
+    // zoom with the right-anchored convention the prior desktop
+    // ECharts predecessor implemented. Logic: shrink/grow the
+    // visible logical range so its RIGHT edge stays pinned;
+    // only the LEFT edge moves outward (zoom out) or inward (zoom
+    // in). The "right edge" is the right edge of the CURRENT
+    // viewport — not necessarily the latest bar — so a user who
+    // panned into history and then zooms keeps their right-edge
+    // bar fixed in place. Operators get a consistent "the bar I'm
+    // looking at on the right stays put" mental model.
+    //
+    // Touch users: preserved as Lightweight Charts' default pinch
+    // behavior (cursor / pinch-center anchored), which is what
+    // touch operators actually expect.
+    const onWheel = (ev: WheelEvent) => {
+      if (ev.ctrlKey || ev.metaKey) return; // browser zoom
+      if (ev.deltaY === 0) return; // pure horizontal wheel — let it pass
+      ev.preventDefault();
+      const ts = chart.timeScale();
+      const range = ts.getVisibleLogicalRange();
+      if (range == null) return;
+      // ev.deltaY > 0 → wheel scrolled down → zoom out (more bars
+      // visible). ev.deltaY < 0 → zoom in. Step size 10% per wheel
+      // notch, capped to keep at least ~10 bars visible at max
+      // zoom-in.
+      const span = range.to - range.from;
+      const factor = ev.deltaY > 0 ? 1.10 : 0.90;
+      const newSpan = Math.max(10, span * factor);
+      ts.setVisibleLogicalRange({
+        from: range.to - newSpan,
+        to: range.to,
+      });
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+
     // No subscribeVisibleTimeRangeChange / overlayTick state needed:
     // the primitive's renderer reads live coords inside its draw()
     // method, which the chart calls on every pan/zoom/resize frame
@@ -385,6 +424,16 @@ export function MobileChartCanvas({
     const avwapSeriesAtMount = avwapSeriesRef.current;
     return () => {
       ro.disconnect();
+      // Symmetry with addEventListener above. `chart.remove()`
+      // tears down the canvas but the wheel listener is on the
+      // outer container div (React-managed), so it survives
+      // chart teardown. Without this removal, StrictMode's
+      // double-invoke of the effect in dev (and HMR refreshes)
+      // stacks listeners — both fire on every wheel event and the
+      // zoom factor compounds (0.90 × 0.90 = 0.81 per notch
+      // instead of 0.90). Benign in prod (no double-invoke), but
+      // the symmetry is correctness.
+      container.removeEventListener("wheel", onWheel);
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       // Detach the overlay primitive before chart.remove() — chart
       // teardown should release it, but explicit detach is the
@@ -605,8 +654,8 @@ export function MobileChartCanvas({
         label: "PDC", color: palette.ink60, style: LineStyle.Dotted, width: 1,
       },
       // SET — settlement; rendered when distinguishable from PDC
-      // (≥0.25 pt apart, mirroring the desktop suppression at
-      // TerminalChartCanvas.tsx:1037-1051).
+      // (≥0.25 pt apart, mirroring the suppression rule from the
+      // since-deleted desktop ECharts implementation).
       {
         key: "SET",
         enabled:
@@ -907,4 +956,4 @@ function ChartTooltip({
 // `aggregateBars` and `resolveLumenPalette` moved to `./chartHelpers`
 // for sharing with the desktop chart. Imported above.
 
-export default MobileChartCanvas;
+export default TerminalChartCore;
