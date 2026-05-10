@@ -183,7 +183,23 @@ export function TerminalChartCore({
     const container = containerRef.current;
     if (!container) return;
 
+    // Pass explicit width/height to createChart. Without these,
+    // Lightweight Charts falls back to inferring from the
+    // container — and on mobile, that inference happens before
+    // the flex/grid layout has fully settled, producing a
+    // wider-than-viewport chart whose east edge (and the y-axis
+    // labels rendered on it) sits off-screen, clipped by the
+    // ancestor `overflow-x: hidden`. Reading clientWidth/Height
+    // at chart-init guarantees the canvas matches the actual
+    // post-layout container size on first paint. The
+    // ResizeObserver below still handles subsequent resizes
+    // (orientation change, sidebar collapse, browser-zoom).
+    const initialWidth = container.clientWidth;
+    const initialHeight = container.clientHeight;
+
     const chart = createChart(container, {
+      width: initialWidth,
+      height: initialHeight,
       layout: {
         background: { color: palette.paperDeep },
         textColor: palette.ink60,
