@@ -1050,8 +1050,19 @@
     transition: background 120ms, color 120ms, border-color 120ms;
   }
   .terminal-chart-overlays-mobile .pill.on {
-    background: var(--ink-100);
-    color: var(--paper);
+    /* Outlined-active rather than filled-inverted. The loud
+       black-on-white fill is reserved for in-sheet pills
+       (.overlays-pill-row .pill.on) where it's actually needed
+       to surface state at thumb distance inside a modal sheet.
+       On the chart toolbar, the trigger sits right next to the
+       timeframe row whose active state is a subtle ink-100
+       color + 1px underline — a chunky fill-inversion next to
+       that creates a visual hierarchy mismatch. The outlined-
+       active treatment (ink-100 border + ink-100 text,
+       transparent fill) reads clearly as "on" without
+       overwhelming the toolbar. */
+    background: transparent;
+    color: var(--ink-100);
     border-color: var(--ink-100);
   }
   /* Toggle pills become a horizontal-scroll strip — the operator
@@ -1655,9 +1666,17 @@
   color: var(--paper);
   border-color: var(--ink-100);
 }
-.overlays-pill-row .pill:hover:not(.disabled):not(.on) {
-  color: var(--ink-100);
-  border-color: var(--ink-60);
+/* Gate the hover rule on `(hover: hover)` so it only applies to
+   pointer devices that actually have hover. On touch, :hover
+   latches on a tapped element until the next touch elsewhere —
+   without this gate, toggling a pill off would leave it in a
+   sticky elevated state that reads as "almost active" until the
+   user taps somewhere else. */
+@media (hover: hover) {
+  .overlays-pill-row .pill:hover:not(.disabled):not(.on) {
+    color: var(--ink-100);
+    border-color: var(--ink-60);
+  }
 }
 .overlays-pill-row .pill.disabled {
   cursor: default;
