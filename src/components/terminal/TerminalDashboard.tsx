@@ -17,7 +17,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTerminalSnapshot } from "../../hooks/useTerminalSnapshot";
 import { useTimezone, type TZOption } from "../../hooks/useTimezone";
 import { useDensity, type DensityOption } from "../../hooks/useDensity";
-import { useIsMobileViewport } from "../../hooks/useIsMobileViewport";
 import {
   TerminalChartCanvas,
   VWAP_ANCHORS,
@@ -261,13 +260,9 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
   const { tz, setTz, formatChartTime, formatChartDay, tzLabel } = useTimezone();
   const { density, setDensity } = useDensity();
-  // Mobile chart (PR mobile-chart-pr1) doesn't yet render AVWAP
-  // multi-anchor or Opening Range overlays — those land in PR 2.
-  // Hide their popover triggers on mobile to avoid the confusing UX
-  // of pills that mutate state but produce no visible chart change.
-  // Once PR 2 lands and the mobile chart consumes those overlay
-  // states, remove the gate.
-  const isMobile = useIsMobileViewport();
+  // PR 2 of the mobile-chart series (AVWAP multi-anchor, Opening
+  // Range bands, ETH session shading) is now live, so the AVWAP
+  // and OR popovers render on mobile too — no isMobile gate needed.
   const toggleBool = (key: "pocVa" | "priorHlc") =>
     setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
   const setVwap = (next: VwapOverlayState) =>
@@ -294,16 +289,14 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           <DensitySelector density={density} setDensity={setDensity} />
         </div>
         <div className="terminal-chart-toggles">
-          {!isMobile && <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />}
+          <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
           <ToggleButton active={overlays.pocVa} onClick={() => toggleBool("pocVa")}>
             POC / VAH / VAL
           </ToggleButton>
           <ToggleButton active={overlays.priorHlc} onClick={() => toggleBool("priorHlc")}>
             PDH / PDL / PDC
           </ToggleButton>
-          {!isMobile && (
-            <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
-          )}
+          <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
         </div>

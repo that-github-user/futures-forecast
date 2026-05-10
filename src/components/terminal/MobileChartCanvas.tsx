@@ -39,7 +39,7 @@
  *     refactor to shared helpers in PR 2 alongside ETH plugin work)
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -63,7 +63,23 @@ import type {
   TerminalIntradayBar,
   TerminalSnapshot,
 } from "../../api/terminalTypes";
-import type { OverlayState, Timeframe } from "./chartTypes";
+import {
+  type OverlayState,
+  type Timeframe,
+  type VwapAnchorKey,
+  VWAP_ANCHORS,
+} from "./chartTypes";
+import {
+  aggregateBars,
+  buildEthShadeRanges,
+  buildLatestRthRange,
+  findAnchorIdx,
+  hexToRgba,
+  isRthBar,
+  resolveLumenPalette,
+  vwapWithBandsSeries,
+  VWAP_STYLES,
+} from "./chartHelpers";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -113,12 +129,38 @@ export function MobileChartCanvas({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // AVWAP series — 9 line series indexed by anchor key + variant
+  // ("week.vwap" / "week.upper1" / "week.lower1" / etc.). Created
+  // once at chart-init and persisted; overlay toggles flip their
+  // data between [filled] and [] without create/remove churn.
+  const avwapSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  // ETH shading + OR band overlay div. HTML overlay layer is
+  // simpler than Lightweight Charts' custom-primitive plugin API
+  // for these rectangle shapes; sync via subscribe-on-time-range
+  // change.
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   // Active price-lines indexed by stable key — allows incremental
   // create/remove on overlay-toggle changes without rebuilding the
   // whole chart.
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   // Tooltip state.
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  // Pan/zoom tick — bumps on every visible-time-range change so the
+  // ETH/OR HTML overlay re-renders with fresh pixel coordinates.
+  // Lightweight Charts emits the event but we react via React state
+  // so the rectangles re-mount in DOM (no manual style mutation).
+  // rAF-coalesced (see `scheduleOverlayUpdate`) so a 60Hz pan event
+  // burst doesn't trigger 60 React renders per second; the rAF
+  // sentinel collapses bursts into a single per-frame update.
+  const [overlayTick, setOverlayTick] = useState(0);
+  const overlayRafRef = useRef<number | null>(null);
+  const scheduleOverlayUpdate = useCallback(() => {
+    if (overlayRafRef.current != null) return;
+    overlayRafRef.current = requestAnimationFrame(() => {
+      overlayRafRef.current = null;
+      setOverlayTick((t) => t + 1);
+    });
+  }, []);
   // Bar buffer.
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -254,6 +296,39 @@ export function MobileChartCanvas({
     };
     sessionVwapSeriesRef.current = chart.addSeries(LineSeries, vwapOpts);
 
+    // ── AVWAP series creation (9 lines = 3 anchors × 3 variants) ─
+    // Each anchor (Week / Daily / RTH) gets a VWAP line plus four
+    // ±σ band lines (which collapse to two visible bands when both
+    // upper and lower are toggled on). We always create all 9
+    // series at chart-init so overlay toggles only flip
+    // setData([fill]) / setData([]) — no create/remove churn during
+    // user interaction. Chart-init is the only place that knows
+    // about Lightweight Charts' addSeries lifecycle.
+    for (const { key } of VWAP_ANCHORS) {
+      const style = VWAP_STYLES[key];
+      const color = palette[style.color];
+      const vwapLine = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      avwapSeriesRef.current.set(`${key}.vwap`, vwapLine);
+      for (const variant of ["upper1", "lower1", "upper2", "lower2"] as const) {
+        const bandLine = chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 1,
+          lineStyle: style.dashBand ? LineStyle.Dashed : LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        avwapSeriesRef.current.set(`${key}.${variant}`, bandLine);
+      }
+    }
+
     // ── Tooltip — driven by crosshair-move events ────────────────
     const onCrosshairMove: Parameters<IChartApi["subscribeCrosshairMove"]>[0] =
       (param) => {
@@ -289,27 +364,50 @@ export function MobileChartCanvas({
       };
     chart.subscribeCrosshairMove(onCrosshairMove);
 
+    // Pan/zoom subscription — bumps `overlayTick` so the ETH/OR
+    // HTML overlay re-renders its rectangles with fresh pixel
+    // coordinates (timeToCoordinate / priceToCoordinate change as
+    // the visible range scrolls). rAF-coalesced via
+    // scheduleOverlayUpdate so a 60Hz inertial-pan burst doesn't
+    // trigger 60 React renders per second (R2 perf concern).
+    const onTimeRangeChange = () => scheduleOverlayUpdate();
+    chart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChange);
+
     // Auto-resize on container size change (orientation flip,
     // browser-zoom, sidebar collapse).
     const ro = new ResizeObserver(() => {
       const w = container.clientWidth;
       const h = container.clientHeight;
-      if (w > 0 && h > 0) chart.applyOptions({ width: w, height: h });
+      if (w > 0 && h > 0) {
+        chart.applyOptions({ width: w, height: h });
+        // Resize also invalidates overlay coords (priceScale width
+        // shifts when the canvas width changes). Same rAF coalesce.
+        scheduleOverlayUpdate();
+      }
     });
     ro.observe(container);
 
-    // Capture priceLinesRef in a local so the cleanup doesn't read
-    // a stale ref that may have changed by unmount time (lint:
-    // react-hooks/exhaustive-deps).
+    // Capture priceLinesRef + avwapSeriesRef in locals so the cleanup
+    // doesn't read stale refs that may have changed by unmount time
+    // (lint: react-hooks/exhaustive-deps).
     const priceLinesAtMount = priceLinesRef.current;
+    const avwapSeriesAtMount = avwapSeriesRef.current;
     return () => {
       ro.disconnect();
       chart.unsubscribeCrosshairMove(onCrosshairMove);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onTimeRangeChange);
+      // Cancel any pending rAF so it doesn't fire after unmount and
+      // call setOverlayTick on a dead component.
+      if (overlayRafRef.current != null) {
+        cancelAnimationFrame(overlayRafRef.current);
+        overlayRafRef.current = null;
+      }
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
       sessionVwapSeriesRef.current = null;
       priceLinesAtMount.clear();
+      avwapSeriesAtMount.clear();
     };
     // Palette is stable across the chart's lifetime; tickFormatterClosure
     // closes over the latest formatBarTime/formatBarDay via the
@@ -390,6 +488,82 @@ export function MobileChartCanvas({
     }));
     sessionVwapSeriesRef.current.setData(lineData);
   }, [aggregatedBars, snapshot?.vwap?.session_vwap]);
+
+  // ── AVWAP multi-anchor overlay (9 line series) ───────────────────
+  // For each anchor (Week / Daily / RTH), find the anchor index in
+  // the bar buffer, compute cumulative VWAP + stddev from that
+  // anchor onward (with RTH-only gating for the RTH anchor), then
+  // populate or clear the 5 series (vwap + ±1σ + ±2σ) per anchor
+  // based on the user's overlay toggles. Reuses
+  // `findAnchorIdx` / `vwapWithBandsSeries` / `isRthBar` from
+  // chartHelpers — same code path as the desktop chart.
+  useEffect(() => {
+    if (!aggregatedBars) return;
+    const timeframeMin = TIMEFRAME_MINUTES[timeframe];
+    for (const { key } of VWAP_ANCHORS) {
+      const state = overlays.vwap[key];
+      const anyOn = state.vwap || state.band1 || state.band2;
+      const vwapLine = avwapSeriesRef.current.get(`${key}.vwap`);
+      const upper1 = avwapSeriesRef.current.get(`${key}.upper1`);
+      const lower1 = avwapSeriesRef.current.get(`${key}.lower1`);
+      const upper2 = avwapSeriesRef.current.get(`${key}.upper2`);
+      const lower2 = avwapSeriesRef.current.get(`${key}.lower2`);
+      if (!vwapLine || !upper1 || !lower1 || !upper2 || !lower2) continue;
+
+      if (!anyOn) {
+        vwapLine.setData([]);
+        upper1.setData([]);
+        lower1.setData([]);
+        upper2.setData([]);
+        lower2.setData([]);
+        continue;
+      }
+
+      const anchorIdx = findAnchorIdx(key as VwapAnchorKey, aggregatedBars);
+      if (anchorIdx < 0) {
+        vwapLine.setData([]);
+        upper1.setData([]);
+        lower1.setData([]);
+        upper2.setData([]);
+        lower2.setData([]);
+        continue;
+      }
+      const inScope =
+        key === "rth"
+          ? (b: TerminalIntradayBar) => isRthBar(b, timeframeMin)
+          : undefined;
+      const series = vwapWithBandsSeries(aggregatedBars, anchorIdx, inScope);
+
+      // Build per-bar LineData arrays. Lightweight Charts treats
+      // missing time entries as gaps (we just don't push them).
+      // RTH-anchor's null-gating during ETH bars produces honest
+      // gaps in the line.
+      const vwapData: LineData[] = [];
+      const upper1Data: LineData[] = [];
+      const lower1Data: LineData[] = [];
+      const upper2Data: LineData[] = [];
+      const lower2Data: LineData[] = [];
+      for (let i = 0; i < aggregatedBars.length; i++) {
+        const s = series[i];
+        if (s == null) continue;
+        const t = (Math.floor(Date.parse(aggregatedBars[i].time) / 1000) as UTCTimestamp);
+        if (state.vwap) vwapData.push({ time: t, value: s.vwap });
+        if (state.band1) {
+          upper1Data.push({ time: t, value: s.vwap + s.stddev });
+          lower1Data.push({ time: t, value: s.vwap - s.stddev });
+        }
+        if (state.band2) {
+          upper2Data.push({ time: t, value: s.vwap + 2 * s.stddev });
+          lower2Data.push({ time: t, value: s.vwap - 2 * s.stddev });
+        }
+      }
+      vwapLine.setData(vwapData);
+      upper1.setData(upper1Data);
+      lower1.setData(lower1Data);
+      upper2.setData(upper2Data);
+      lower2.setData(lower2Data);
+    }
+  }, [aggregatedBars, overlays.vwap, timeframe]);
 
   // ── Level price-lines (POC/VAH/VAL/PDH/PDL/PDC/SET) ──────────────
   useEffect(() => {
@@ -499,6 +673,114 @@ export function MobileChartCanvas({
     bars.length === 0 ? "No bars available — IBKR may be reconnecting." :
     null;
 
+  // ── ETH shading + OR-band rectangle overlays ─────────────────────
+  // Recompute on every overlayTick (pan/zoom/resize), bars change,
+  // or overlay-state change. Returns a list of {top, left, width,
+  // height, fill} rectangles to render via absolutely-positioned
+  // divs. The chart's canvas-internal coordinate API
+  // (timeToCoordinate / priceToCoordinate) gives pixel positions
+  // relative to the chart container, so the divs sit cleanly atop
+  // the chart canvas.
+  const overlayRectangles = useMemo<OverlayRect[]>(() => {
+    if (!aggregatedBars || aggregatedBars.length === 0) return [];
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    const container = containerRef.current;
+    if (!chart || !candleSeries || !container) return [];
+    const timeframeMin = TIMEFRAME_MINUTES[timeframe];
+    const containerH = container.clientHeight;
+    // Lightweight Charts reserves ~28px at the bottom of the
+    // container for the time-axis labels (default `timeScale.height`
+    // ≈ 26-30px). Don't extend ETH or OR rects into that band — the
+    // 8% wash would tint the axis labels and read as a render bug
+    // (R1 nit). This matches desktop ECharts which renders markArea
+    // INSIDE the grid, not over the axis.
+    const TIME_AXIS_HEIGHT = 28;
+    const plotH = Math.max(0, containerH - TIME_AXIS_HEIGHT);
+    const out: OverlayRect[] = [];
+
+    // ETH shading: one rect per contiguous ETH run, full plot
+    // height (excluding time-axis), ink-100 @ 8% alpha.
+    const ethRanges = buildEthShadeRanges(aggregatedBars, timeframeMin);
+    for (const [s, e] of ethRanges) {
+      const t1 = (Math.floor(Date.parse(aggregatedBars[s].time) / 1000) as UTCTimestamp);
+      const t2 = (Math.floor(Date.parse(aggregatedBars[e].time) / 1000) as UTCTimestamp);
+      const x1 = chart.timeScale().timeToCoordinate(t1);
+      const x2 = chart.timeScale().timeToCoordinate(t2);
+      if (x1 == null || x2 == null) continue;
+      // Clip rectangle to visible plot area: x1 may be negative
+      // (off-left), x2 may exceed plot width (off-right).
+      const left = Math.max(0, Math.min(x1, x2));
+      const right = Math.max(x1, x2);
+      const width = right - left;
+      if (width <= 0) continue;
+      out.push({
+        kind: "eth",
+        left,
+        top: 0,
+        width,
+        height: plotH,
+        fill: hexToRgba(palette.ink100, 0.08),
+        label: null,
+      });
+    }
+
+    // OR bands: one rect per active window, bounded LEFT to today's
+    // RTH-open bar, RIGHT to chart's right edge (pinned at the
+    // visible-range tail). vol=4% per band, additive when stacked.
+    const latestRth = buildLatestRthRange(aggregatedBars, timeframeMin);
+    if (latestRth && snapshot?.levels) {
+      const lv = snapshot.levels;
+      const orBands: { key: string; label: string; low: number | null; high: number | null }[] = [
+        { key: "m1", label: "1m", low: lv.or_1m_low, high: lv.or_1m_high },
+        { key: "m5", label: "5m", low: lv.or_5m_low, high: lv.or_5m_high },
+        { key: "m15", label: "15m", low: lv.or_15m_low, high: lv.or_15m_high },
+      ];
+      const t1 = (Math.floor(Date.parse(aggregatedBars[latestRth[0]].time) / 1000) as UTCTimestamp);
+      const x1 = chart.timeScale().timeToCoordinate(t1);
+      // Right edge of the OR rect: extend to the chart's plot-area
+      // right edge (just left of the price scale), NOT just to the
+      // last bar. This matches desktop intent ("OR band runs to
+      // plot edge") and avoids the visible white strip between the
+      // last-bar coord and the price scale that R2 flagged when
+      // the user pans into the rightOffset future-bar gap.
+      // priceScale().width() returns the price-axis pixel width;
+      // plot extends from container left to (containerWidth - that).
+      const priceScaleWidth = chart.priceScale("right").width();
+      const xRight = container.clientWidth - priceScaleWidth;
+      for (const band of orBands) {
+        const enabled = overlays.openingRange[band.key as "m1" | "m5" | "m15"];
+        if (!enabled || band.low == null || band.high == null) continue;
+        const yHigh = candleSeries.priceToCoordinate(band.high);
+        const yLow = candleSeries.priceToCoordinate(band.low);
+        if (x1 == null || yHigh == null || yLow == null) continue;
+        const top = Math.min(yHigh, yLow);
+        const height = Math.abs(yLow - yHigh);
+        const left = Math.max(0, x1);
+        const width = xRight - left;
+        if (width <= 0 || height <= 0) continue;
+        out.push({
+          kind: "or",
+          left,
+          top,
+          width,
+          height,
+          fill: hexToRgba(palette.ink100, 0.04),
+          label: `OR ${band.label}`,
+        });
+      }
+    }
+
+    return out;
+  }, [
+    aggregatedBars,
+    overlays.openingRange,
+    snapshot?.levels,
+    timeframe,
+    overlayTick,
+    palette,
+  ]);
+
   return (
     <div
       className="terminal-chart-canvas"
@@ -544,11 +826,56 @@ export function MobileChartCanvas({
           <span className="empty">{overlayMessage}</span>
         </div>
       )}
+      {/* ETH-shading + OR-band overlay layer. Sits between the
+          chart canvas and the tooltip. pointer-events: none so it
+          doesn't block chart-touch interactions. */}
+      <div
+        ref={overlayRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 2,
+        }}
+      >
+        {overlayRectangles.map((rect, i) => (
+          <div
+            key={`${rect.kind}-${i}`}
+            style={{
+              position: "absolute",
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+              background: rect.fill,
+              fontFamily: "var(--font-mono)",
+              fontSize: 9,
+              color: "var(--ink-60)",
+              padding: rect.label ? "1px 4px" : 0,
+              boxSizing: "border-box",
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {rect.label}
+          </div>
+        ))}
+      </div>
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
       )}
     </div>
   );
+}
+
+interface OverlayRect {
+  kind: "eth" | "or";
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fill: string;
+  label: string | null;
 }
 
 // ── Tooltip ─────────────────────────────────────────────────────────
@@ -608,71 +935,7 @@ function ChartTooltip({
   );
 }
 
-// ── Helpers (replicated from TerminalChartCanvas to avoid risking
-// the desktop file with a cross-component refactor; consolidate to a
-// shared module in PR 2) ────────────────────────────────────────────
-
-function aggregateBars(
-  bars: TerminalIntradayBar[],
-  minutes: number,
-): TerminalIntradayBar[] {
-  if (minutes <= 1 || bars.length === 0) return bars;
-  const intervalMs = minutes * 60_000;
-  const buckets = new Map<number, TerminalIntradayBar[]>();
-  for (const b of bars) {
-    const t = Date.parse(b.time);
-    if (!Number.isFinite(t)) continue;
-    const key = Math.floor(t / intervalMs) * intervalMs;
-    let group = buckets.get(key);
-    if (!group) {
-      group = [];
-      buckets.set(key, group);
-    }
-    group.push(b);
-  }
-  const sortedKeys = [...buckets.keys()].sort((a, b) => a - b);
-  const out: TerminalIntradayBar[] = [];
-  for (const key of sortedKeys) {
-    const group = buckets.get(key)!;
-    if (group.length === 0) continue;
-    const time = new Date(key).toISOString().replace(/\.\d{3}Z$/, "Z");
-    let high = group[0].high;
-    let low = group[0].low;
-    let volume = 0;
-    for (const b of group) {
-      if (b.high > high) high = b.high;
-      if (b.low < low) low = b.low;
-      volume += b.volume;
-    }
-    out.push({
-      time,
-      open: group[0].open,
-      high,
-      low,
-      close: group[group.length - 1].close,
-      volume,
-    });
-  }
-  return out;
-}
-
-function resolveLumenPalette() {
-  const root = typeof document !== "undefined" ? document.documentElement : null;
-  const cs = root ? getComputedStyle(root) : null;
-  const tok = (name: string, fallback: string): string => {
-    const v = cs?.getPropertyValue(name).trim();
-    return v && v.length > 0 ? v : fallback;
-  };
-  return {
-    posCream: tok("--pos-cream", "#10b981"),
-    negPersimmon: tok("--neg-persimmon", "#ef4444"),
-    paperDeep: tok("--paper-deep", "#0f172a"),
-    ink100: tok("--ink-100", "#f8fafc"),
-    ink80: tok("--ink-80", "#e2e8f0"),
-    ink60: tok("--ink-60", "#94a3b8"),
-    ink40: tok("--ink-40", "#475569"),
-    ink20: tok("--ink-20", "#1e293b"),
-  };
-}
+// `aggregateBars` and `resolveLumenPalette` moved to `./chartHelpers`
+// for sharing with the desktop chart. Imported above.
 
 export default MobileChartCanvas;
