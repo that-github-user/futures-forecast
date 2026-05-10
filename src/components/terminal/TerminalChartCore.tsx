@@ -225,18 +225,27 @@ export function TerminalChartCore({
         visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // No `minimumWidth` — let the price scale auto-size to fit
-        // the widest visible label, including price-line chip
-        // titles ("POC 7383.91", "VAH 7383.91", etc.) made visible
-        // via `axisLabelVisible: true`. Lightweight Charts v5
-        // measures these correctly. A prior `minimumWidth: 160`
-        // (iterated up from 80) over-allocated the gutter on
-        // desktop (~65px of empty space between the plot's east
-        // edge and where labels rendered) without helping mobile,
-        // where the natural fit is also wider than what the
-        // initial too-narrow guesses produced.
+        // Small minimumWidth sized to the widest chip
+        // ("ORH 15m 7395.50" ≈ 95px) plus padding headroom. This
+        // floor is doing two jobs:
+        //   1. Mobile defensive: empirically Lightweight Charts'
+        //      auto-size measured too narrow on phones and the
+        //      y-axis labels rendered as fully clipped. Trusting
+        //      pure auto-fit (no floor) regressed mobile despite
+        //      the v5 source suggesting it should work.
+        //   2. Stability: price-line chips are only measured by
+        //      the auto-sizer while their price is in the visible
+        //      range. Without a floor, panning all level chips
+        //      off-screen would shrink the gutter ~50px and
+        //      panning back would re-expand it — visible plot
+        //      "breathing." The 110 floor matches the natural
+        //      width of the widest chip so the gutter stays stable
+        //      across pan.
+        // 110 is a deliberate reduction from the prior 160 floor
+        // (which over-allocated ~65px of empty space on desktop).
         // autoScale: true (the default) auto-fits the visible
         // time-range's price extents on every pan/zoom.
+        minimumWidth: 110,
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
