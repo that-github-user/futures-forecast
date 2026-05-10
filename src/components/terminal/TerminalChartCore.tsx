@@ -237,29 +237,29 @@ export function TerminalChartCore({
         visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // Small minimumWidth sized to the widest chip
-        // ("ORH 15m 7395.50" ≈ 110-120px depending on glyph
-        // metrics) plus padding headroom. This floor is doing two
-        // jobs:
-        //   1. Mobile defensive: empirically Lightweight Charts'
-        //      auto-size measured too narrow on phones and the
-        //      y-axis labels rendered as fully clipped. Trusting
-        //      pure auto-fit (no floor) regressed mobile despite
-        //      the v5 source suggesting it should work.
-        //   2. Stability: price-line chips are only measured by
-        //      the auto-sizer while their price is in the visible
-        //      range. Without a floor, panning all level chips
-        //      off-screen would shrink the gutter and panning
-        //      back would re-expand it — visible plot
-        //      "breathing." The floor matches the natural width
-        //      of the widest chip so the gutter stays stable
-        //      across pan.
-        // 120 sits at the conservative-safe end of the chip's
-        // plausible width range — enough that "ORH 15m 7395.50"
-        // never rubs the gutter edge while still reclaiming 40px
-        // versus the prior over-allocated 160. autoScale: true
-        // (default) auto-fits the visible price extents on pan.
-        minimumWidth: 120,
+        // No `minimumWidth` floor — Lightweight Charts auto-fits
+        // the gutter to the widest visible label. This works
+        // correctly now that .terminal-chart and its flex children
+        // have `min-width: 0` at the mobile breakpoint, preventing
+        // the chart container from being stretched past viewport
+        // by sibling rows. Earlier PRs (#155, #157, #166) added
+        // progressively larger floors to compensate for an over-
+        // wide container; with the structural CSS fix, no floor is
+        // needed.
+        //
+        // Known trade-off: the gutter width breathes slightly when
+        // level chips (POC/VAH/PDH/etc.) pan out of / into the
+        // visible price range — auto-fit measures only currently-
+        // visible labels, so a chart panned to a region with no
+        // chips visible has a ~60px gutter, and panning back into a
+        // region with chips re-expands to ~95-100px. Acceptable in
+        // practice. If this becomes distracting, the lightest-touch
+        // fix is `minimumWidth: ~96` (sized to the widest default-
+        // overlay chip), which stabilizes the gutter at the same
+        // width auto-fit produces when chips are visible.
+        //
+        // autoScale: true (default) auto-fits the visible price
+        // extents on every pan/zoom.
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
