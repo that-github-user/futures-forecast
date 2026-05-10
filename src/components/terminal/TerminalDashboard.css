@@ -357,7 +357,18 @@
   cursor: pointer;
   transition: color 120ms ease;
 }
-.terminal-chart-toggles .pill:last-child {
+/* Strip the right-divider only on the LAST DIRECT child of the
+   toolbar. The previous unscoped descendant selector
+   (`.terminal-chart-toggles .pill:last-child`) also matched the
+   AVWAP and Opening Range buttons whenever they were the sole
+   child of their `.avwap-pop-wrap` wrapper (i.e., popover
+   closed) — so their dividers vanished when the popover wasn't
+   open and re-appeared when it was, creating a "the | flickers
+   on/off" symptom that read as messy. The `>` combinator
+   constrains the rule to direct children of the toolbar; the
+   wrapped buttons inside `.avwap-pop-wrap` are no longer
+   eligible matches. */
+.terminal-chart-toggles > .pill:last-child {
   border-right: none;
   margin-right: 0;
 }
@@ -779,7 +790,15 @@
 }
 .synth-contribution-row {
   display: grid;
-  grid-template-columns: 60px 1fr auto;
+  /* Label column tightened from 60px → 36px. The 3-char labels
+     (VOL/STR/LVL/BRD) only need ~30px at the row's 10.5px
+     uppercase font; the prior 60px left ~30px of dead whitespace
+     between each label and its bar, eating bar real estate. At
+     narrow desktop widths (window resized small or split-screen)
+     the bar track was getting compressed to ~40px and becoming
+     illegible. 36px gives a small breathing buffer past the text
+     while reclaiming ~24px for the bar at every width. */
+  grid-template-columns: 36px 1fr auto;
   align-items: center;
   column-gap: 10px;
   font-size: 10.5px;
