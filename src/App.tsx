@@ -7,11 +7,11 @@
  *
  * Every route component is lazy-loaded so the bundle a user fetches
  * is scoped to the routes they actually visit. Pre-PR (eager
- * imports), a mobile user going straight to `/app` still pulled in
+ * imports), a user going straight to `/app` still pulled in
  * Dashboard's static dependency on echarts (~382 KB gz) because
  * App.tsx imported all four route components statically. With
  * lazy-loading, that user's bundle is `entry + LumenLander +
- * TerminalDashboard + MobileChartCanvas` — echarts-free.
+ * TerminalDashboard + TerminalChartCore` — echarts-free.
  *
  * Suspense fallback is a centered loader matching the dashboard
  * surface tones so the route swap doesn't flash an unstyled empty

@@ -203,11 +203,10 @@ export class RectangleOverlayPrimitive
   // those use `ISeriesPrimitiveAxisView` which renders with a
   // different visual style than `series.createPriceLine`'s native
   // chips, so OR labels looked inconsistent next to POC / VAH /
-  // PDH / etc and got cut off on the right edge. Mobile-side
-  // ORH/ORL labels are now rendered as native priceLines from
-  // MobileChartCanvas alongside the level chips — same code path,
-  // same visual treatment. The primitive only does the rectangle
-  // background.
+  // PDH / etc and got cut off on the right edge. ORH/ORL labels
+  // are now rendered as native priceLines from TerminalChartCore
+  // alongside the level chips — same code path, same visual
+  // treatment. The primitive only does the rectangle background.
 
   /** Lightweight Charts calls this on viewport change. We don't need
    *  to recompute anything here — the renderer reads live coords on
