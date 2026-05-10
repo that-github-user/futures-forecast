@@ -201,20 +201,17 @@ export function MobileChartCanvas({
         visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // Reserve generous horizontal width for the level chips
-        // to render fully. The widest chip is e.g.
-        // "PDH 5912.50" — at the chart's default ~12px font that's
-        // ~95px including chip padding. A previous floor of 80
-        // wasn't enough and the user reported labels still being
-        // cut off on a 360px-wide phone. 110 gives comfortable
-        // headroom for any of POC/VAH/VAL/PDH/PDL/PDC/SET plus
-        // their 2-decimal price values, plus the price-axis tick
-        // labels (e.g. "5910.0") that share the same scale.
-        minimumWidth: 110,
+        // Generous horizontal width for the level chips and the
+        // price-axis tick labels. Iterated through 80 → 110 → 130
+        // based on user feedback ("only see first digit of 7xxx").
+        // 130 is well over the worst-case chip width
+        // ("PDH 5912.50" ≈ 95px at 12px font); the extra headroom
+        // protects against rendering surprises in lightweight-
+        // charts' label-placement under various font / DPR
+        // combinations.
+        minimumWidth: 130,
         // autoScale: true (the default) — price scale auto-fits
         // the visible time-range's price extents on every pan/zoom.
-        // Pinned explicitly here so a future maintainer reading
-        // the option block sees the contract documented.
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
@@ -227,6 +224,15 @@ export function MobileChartCanvas({
     });
 
     chartRef.current = chart;
+
+    // Belt-and-suspenders: re-apply the price-scale `minimumWidth`
+    // after chart creation. A user report that the price-axis
+    // labels still showed only "7xxx" first digit despite the
+    // minimumWidth being set in createChart options suggests
+    // lightweight-charts may not always honor the initial-options
+    // value during the initial layout pass; calling
+    // applyOptions explicitly forces a re-layout.
+    chart.priceScale("right").applyOptions({ minimumWidth: 130 });
 
     const candleOpts: CandlestickSeriesPartialOptions = {
       upColor: palette.posCream,
