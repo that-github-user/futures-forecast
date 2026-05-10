@@ -243,6 +243,16 @@
   flex-direction: column;
   gap: 14px;
   background: var(--bg-panel);
+  /* Allow this grid item to shrink below its content's intrinsic
+     size. CSS grid (and flex) items default to `min-width: auto`
+     which forwards content min-width up to the track. After a
+     window resize from full-screen to docked half, the chart
+     canvas's stale wider intrinsic size would refuse to shrink
+     the 1fr track of `.terminal-middle`, the page would overflow
+     horizontally, and the y-axis + system feed would clip behind
+     `.terminal-root { overflow-x: hidden }`. Same root cause as
+     the mobile fix in PR #167 — applied to desktop too. */
+  min-width: 0;
 }
 /* Timeframe row — sits above the indicator-toggle row. Single-select
    pills (1m / 5m / 15m / 1h / 4h). Same hairline-grammar as the
@@ -522,6 +532,11 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
+  /* Same `min-width: 0` rationale as `.terminal-chart` — the feed
+     is the second column of `.terminal-middle`'s grid, and any
+     long event row inside the feed could otherwise propagate
+     intrinsic width up to the track. */
+  min-width: 0;
 }
 .terminal-feed-title {
   font-size: 11px;
@@ -665,6 +680,15 @@
   grid-template-rows: auto auto 1fr;
   gap: 14px;
   position: relative;
+  /* Allow each card to shrink below its content's intrinsic
+     size — without this, a wide score number or a long body
+     line in any one card would refuse to compress and propagate
+     up to the `repeat(5, 1fr) 1.5fr` grid track, pushing later
+     cards (Levels, Breadth, Synthesis) past the right edge of
+     the viewport. After a docked-window resize, the rightmost
+     cards would render off-screen, clipped by
+     `.terminal-root { overflow-x: hidden }`. */
+  min-width: 0;
 }
 .terminal-card-title-row {
   display: flex;
