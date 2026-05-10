@@ -187,16 +187,9 @@ export function TerminalChartCore({
     // Lightweight Charts infer them from the container. Reading
     // clientWidth/Height in the effect (post-DOM-commit) and
     // passing them through makes the timing explicit. We rely on
-    // React running effects post-layout — clientWidth will be
-    // populated by the time we reach this line. If a parent is
-    // temporarily zero-sized (e.g., a hidden tab), the chart
-    // initializes at 0×0 and the ResizeObserver below corrects
-    // on the first non-zero resize. We could mirror the
-    // ResizeObserver's `> 0` guard here and bail out, but that
-    // would also skip the ResizeObserver registration and leave
-    // the chart permanently un-initialized; passing 0×0 to
-    // createChart and letting the observer recover is the
-    // self-healing path.
+    // the CSS layout (`.terminal-chart-canvas { max-width: 100% }`
+    // at mobile breakpoints) to constrain the container so we
+    // don't need a JS-side viewport clamp.
     const initialWidth = Math.max(0, container.clientWidth);
     const initialHeight = Math.max(0, container.clientHeight);
 
@@ -416,8 +409,8 @@ export function TerminalChartCore({
     // Auto-resize on container size change (orientation flip,
     // browser-zoom, sidebar collapse).
     const ro = new ResizeObserver(() => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = Math.max(0, container.clientWidth);
+      const h = Math.max(0, container.clientHeight);
       if (w > 0 && h > 0) chart.applyOptions({ width: w, height: h });
     });
     ro.observe(container);

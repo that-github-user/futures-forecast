@@ -975,6 +975,32 @@
        page is `overflow-y: auto` so the rest of the dashboard is
        still scroll-reachable below. */
     min-height: 70vh;
+    /* `min-width: 0` overrides the default `min-width: auto` on
+       flex/grid items, which would otherwise let the timeframe
+       row + indicator-toggle row's intrinsic content widths
+       stretch this pane wider than its grid track. Without this,
+       on narrow phones the pane (and the chart inside it) extends
+       past the viewport east edge and the y-axis labels render
+       off-screen, clipped by the ancestor `overflow-x: hidden`
+       on .terminal-root. The fix that three prior PRs danced
+       around — they were patching the chart's measurement of a
+       container that was itself already too wide. */
+    min-width: 0;
+  }
+  /* Same flex-item override on the children that would otherwise
+     stretch their parent (.terminal-chart) horizontally. The tf
+     row has 5 nowrap pills + a tz selector; the toggles row is
+     overflow-x:auto so its OWN scroll container needs to know it
+     can shrink below content min-size. */
+  .terminal-chart-tf,
+  .terminal-chart-toggles {
+    min-width: 0;
+  }
+  .terminal-chart-canvas {
+    /* Defense in depth: even if some other path stretches the
+       parent, the canvas will not exceed the visible viewport. */
+    max-width: 100%;
+    min-width: 0;
   }
   /* Toggle pills become a horizontal-scroll strip — the operator
      swipes through overlay options. Right-borders adapt: only the
