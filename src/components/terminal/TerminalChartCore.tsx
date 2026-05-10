@@ -225,18 +225,18 @@ export function TerminalChartCore({
         visible: true,
         borderColor: palette.ink40,
         scaleMargins: { top: 0.05, bottom: 0.08 },
-        // Generous horizontal width for the level chips and the
-        // price-axis tick labels. Iterated through 80 → 110 → 130
-        // → 160 based on user feedback ("only see first 3 digits
-        // of 5xxx"). 160 should be ample for 4-digit prices with
-        // 2 decimals (~95px) plus chip-padding overhead. If 160
-        // STILL clips, the issue is internal to lightweight-charts'
-        // label rendering, not container sizing — and the right
-        // fix is the custom HTML chip overlay (PR 3 of the planned
-        // mobile-chart series, brought forward as needed).
-        minimumWidth: 160,
-        // autoScale: true (the default) — price scale auto-fits
-        // the visible time-range's price extents on every pan/zoom.
+        // No `minimumWidth` — let the price scale auto-size to fit
+        // the widest visible label, including price-line chip
+        // titles ("POC 7383.91", "VAH 7383.91", etc.) made visible
+        // via `axisLabelVisible: true`. Lightweight Charts v5
+        // measures these correctly. A prior `minimumWidth: 160`
+        // (iterated up from 80) over-allocated the gutter on
+        // desktop (~65px of empty space between the plot's east
+        // edge and where labels rendered) without helping mobile,
+        // where the natural fit is also wider than what the
+        // initial too-narrow guesses produced.
+        // autoScale: true (the default) auto-fits the visible
+        // time-range's price extents on every pan/zoom.
         autoScale: true,
       },
       crosshair: { mode: CrosshairMode.Magnet },
@@ -257,15 +257,6 @@ export function TerminalChartCore({
     });
 
     chartRef.current = chart;
-
-    // Belt-and-suspenders: re-apply the price-scale `minimumWidth`
-    // after chart creation. A user report that the price-axis
-    // labels still showed only "7xxx" first digit despite the
-    // minimumWidth being set in createChart options suggests
-    // lightweight-charts may not always honor the initial-options
-    // value during the initial layout pass; calling
-    // applyOptions explicitly forces a re-layout.
-    chart.priceScale("right").applyOptions({ minimumWidth: 160 });
 
     const candleOpts: CandlestickSeriesPartialOptions = {
       upColor: palette.posCream,
