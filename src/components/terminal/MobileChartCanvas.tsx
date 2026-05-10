@@ -39,7 +39,7 @@
  *     refactor to shared helpers in PR 2 alongside ETH plugin work)
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -80,6 +80,10 @@ import {
   vwapWithBandsSeries,
   VWAP_STYLES,
 } from "./chartHelpers";
+import {
+  RectangleOverlayPrimitive,
+  type RectangleSpec,
+} from "./mobileChartOverlayPrimitive";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -134,33 +138,18 @@ export function MobileChartCanvas({
   // once at chart-init and persisted; overlay toggles flip their
   // data between [filled] and [] without create/remove churn.
   const avwapSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
-  // ETH shading + OR band overlay div. HTML overlay layer is
-  // simpler than Lightweight Charts' custom-primitive plugin API
-  // for these rectangle shapes; sync via subscribe-on-time-range
-  // change.
-  const overlayRef = useRef<HTMLDivElement | null>(null);
+  // ETH shading + OR band overlay drawn via Lightweight Charts'
+  // ISeriesPrimitive API — rectangles render on the chart's canvas
+  // synchronously with pan/zoom (no React render cycle, no float-
+  // around lag). The prior HTML-overlay approach (PR #158) produced
+  // visible lag; primitive draws on the same frame as the candles.
+  const overlayPrimitiveRef = useRef<RectangleOverlayPrimitive | null>(null);
   // Active price-lines indexed by stable key — allows incremental
   // create/remove on overlay-toggle changes without rebuilding the
   // whole chart.
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   // Tooltip state.
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  // Pan/zoom tick — bumps on every visible-time-range change so the
-  // ETH/OR HTML overlay re-renders with fresh pixel coordinates.
-  // Lightweight Charts emits the event but we react via React state
-  // so the rectangles re-mount in DOM (no manual style mutation).
-  // rAF-coalesced (see `scheduleOverlayUpdate`) so a 60Hz pan event
-  // burst doesn't trigger 60 React renders per second; the rAF
-  // sentinel collapses bursts into a single per-frame update.
-  const [overlayTick, setOverlayTick] = useState(0);
-  const overlayRafRef = useRef<number | null>(null);
-  const scheduleOverlayUpdate = useCallback(() => {
-    if (overlayRafRef.current != null) return;
-    overlayRafRef.current = requestAnimationFrame(() => {
-      overlayRafRef.current = null;
-      setOverlayTick((t) => t + 1);
-    });
-  }, []);
   // Bar buffer.
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +275,15 @@ export function MobileChartCanvas({
     };
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, candleOpts);
 
+    // Attach the ETH/OR rectangle primitive to the candle series.
+    // The primitive's renderer reads live coords on every chart
+    // frame, so rectangles snap exactly to candles during pan/zoom
+    // without React state churn. setRectangles() below in the
+    // overlay-recompute effect supplies the actual rect specs.
+    const overlayPrimitive = new RectangleOverlayPrimitive();
+    candleSeriesRef.current.attachPrimitive(overlayPrimitive);
+    overlayPrimitiveRef.current = overlayPrimitive;
+
     const vwapOpts: LineSeriesPartialOptions = {
       color: palette.ink80,
       lineWidth: 2,
@@ -364,26 +362,19 @@ export function MobileChartCanvas({
       };
     chart.subscribeCrosshairMove(onCrosshairMove);
 
-    // Pan/zoom subscription — bumps `overlayTick` so the ETH/OR
-    // HTML overlay re-renders its rectangles with fresh pixel
-    // coordinates (timeToCoordinate / priceToCoordinate change as
-    // the visible range scrolls). rAF-coalesced via
-    // scheduleOverlayUpdate so a 60Hz inertial-pan burst doesn't
-    // trigger 60 React renders per second (R2 perf concern).
-    const onTimeRangeChange = () => scheduleOverlayUpdate();
-    chart.timeScale().subscribeVisibleTimeRangeChange(onTimeRangeChange);
+    // No subscribeVisibleTimeRangeChange / overlayTick state needed:
+    // the primitive's renderer reads live coords inside its draw()
+    // method, which the chart calls on every pan/zoom/resize frame
+    // automatically. The HTML-overlay approach (PR #158) needed
+    // React state to trigger DOM re-render; the primitive sidesteps
+    // React entirely for the per-frame redraw.
 
     // Auto-resize on container size change (orientation flip,
     // browser-zoom, sidebar collapse).
     const ro = new ResizeObserver(() => {
       const w = container.clientWidth;
       const h = container.clientHeight;
-      if (w > 0 && h > 0) {
-        chart.applyOptions({ width: w, height: h });
-        // Resize also invalidates overlay coords (priceScale width
-        // shifts when the canvas width changes). Same rAF coalesce.
-        scheduleOverlayUpdate();
-      }
+      if (w > 0 && h > 0) chart.applyOptions({ width: w, height: h });
     });
     ro.observe(container);
 
@@ -395,13 +386,17 @@ export function MobileChartCanvas({
     return () => {
       ro.disconnect();
       chart.unsubscribeCrosshairMove(onCrosshairMove);
-      chart.timeScale().unsubscribeVisibleTimeRangeChange(onTimeRangeChange);
-      // Cancel any pending rAF so it doesn't fire after unmount and
-      // call setOverlayTick on a dead component.
-      if (overlayRafRef.current != null) {
-        cancelAnimationFrame(overlayRafRef.current);
-        overlayRafRef.current = null;
+      // Detach the overlay primitive before chart.remove() — chart
+      // teardown should release it, but explicit detach is the
+      // documented pattern and matches the createPriceLine /
+      // removePriceLine symmetry.
+      if (
+        overlayPrimitiveRef.current
+        && candleSeriesRef.current
+      ) {
+        candleSeriesRef.current.detachPrimitive(overlayPrimitiveRef.current);
       }
+      overlayPrimitiveRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -674,110 +669,92 @@ export function MobileChartCanvas({
     null;
 
   // ── ETH shading + OR-band rectangle overlays ─────────────────────
-  // Recompute on every overlayTick (pan/zoom/resize), bars change,
-  // or overlay-state change. Returns a list of {top, left, width,
-  // height, fill} rectangles to render via absolutely-positioned
-  // divs. The chart's canvas-internal coordinate API
-  // (timeToCoordinate / priceToCoordinate) gives pixel positions
-  // relative to the chart container, so the divs sit cleanly atop
-  // the chart canvas.
-  const overlayRectangles = useMemo<OverlayRect[]>(() => {
-    if (!aggregatedBars || aggregatedBars.length === 0) return [];
-    const chart = chartRef.current;
-    const candleSeries = candleSeriesRef.current;
-    const container = containerRef.current;
-    if (!chart || !candleSeries || !container) return [];
+  // Build domain-coordinate (time + price) rect specs and hand them
+  // to the RectangleOverlayPrimitive. The primitive's renderer
+  // re-projects to pixels on every chart-internal frame, so
+  // rectangles snap to candles during pan/zoom without any React
+  // state churn or "float-around" lag (the symptom the user
+  // reported with the prior HTML-overlay approach).
+  // ORH/ORL price labels travel with the rect specs and render as
+  // native price-axis chips via the primitive's priceAxisViews().
+  useEffect(() => {
+    const primitive = overlayPrimitiveRef.current;
+    if (!primitive) return;
+    if (!aggregatedBars || aggregatedBars.length === 0) {
+      primitive.setRectangles([]);
+      return;
+    }
     const timeframeMin = TIMEFRAME_MINUTES[timeframe];
-    const containerH = container.clientHeight;
-    // Lightweight Charts reserves ~28px at the bottom of the
-    // container for the time-axis labels (default `timeScale.height`
-    // ≈ 26-30px). Don't extend ETH or OR rects into that band — the
-    // 8% wash would tint the axis labels and read as a render bug
-    // (R1 nit). This matches desktop ECharts which renders markArea
-    // INSIDE the grid, not over the axis.
-    const TIME_AXIS_HEIGHT = 28;
-    const plotH = Math.max(0, containerH - TIME_AXIS_HEIGHT);
-    const out: OverlayRect[] = [];
+    const specs: RectangleSpec[] = [];
 
-    // ETH shading: one rect per contiguous ETH run, full plot
-    // height (excluding time-axis), ink-100 @ 8% alpha.
+    // ETH shading: one rect per contiguous ETH run. timeFrom/timeTo
+    // are the bucket-start times of the run's first / last bar.
+    // priceTop / priceBottom = null → primitive renders full plot
+    // height (excluding the time-axis band).
     const ethRanges = buildEthShadeRanges(aggregatedBars, timeframeMin);
-    for (const [s, e] of ethRanges) {
+    for (let i = 0; i < ethRanges.length; i++) {
+      const [s, e] = ethRanges[i];
       const t1 = (Math.floor(Date.parse(aggregatedBars[s].time) / 1000) as UTCTimestamp);
       const t2 = (Math.floor(Date.parse(aggregatedBars[e].time) / 1000) as UTCTimestamp);
-      const x1 = chart.timeScale().timeToCoordinate(t1);
-      const x2 = chart.timeScale().timeToCoordinate(t2);
-      if (x1 == null || x2 == null) continue;
-      // Clip rectangle to visible plot area: x1 may be negative
-      // (off-left), x2 may exceed plot width (off-right).
-      const left = Math.max(0, Math.min(x1, x2));
-      const right = Math.max(x1, x2);
-      const width = right - left;
-      if (width <= 0) continue;
-      out.push({
-        kind: "eth",
-        left,
-        top: 0,
-        width,
-        height: plotH,
+      specs.push({
+        id: `eth-${i}`,
+        timeFrom: t1,
+        timeTo: t2,
+        priceTop: null,
+        priceBottom: null,
         fill: hexToRgba(palette.ink100, 0.08),
-        label: null,
       });
     }
 
     // OR bands: one rect per active window, bounded LEFT to today's
-    // RTH-open bar, RIGHT to chart's right edge (pinned at the
-    // visible-range tail). vol=4% per band, additive when stacked.
+    // RTH-open bar, RIGHT to plot edge (timeTo = null → primitive
+    // extends to canvas right edge minus price-scale width).
+    // ORH / ORL price-axis labels via priceLabels — these surface
+    // as native chips on the right axis (the labels the user said
+    // were missing in PR #158's HTML approach).
     const latestRth = buildLatestRthRange(aggregatedBars, timeframeMin);
     if (latestRth && snapshot?.levels) {
       const lv = snapshot.levels;
-      const orBands: { key: string; label: string; low: number | null; high: number | null }[] = [
+      const orBands: { key: "m1" | "m5" | "m15"; label: string; low: number | null; high: number | null }[] = [
         { key: "m1", label: "1m", low: lv.or_1m_low, high: lv.or_1m_high },
         { key: "m5", label: "5m", low: lv.or_5m_low, high: lv.or_5m_high },
         { key: "m15", label: "15m", low: lv.or_15m_low, high: lv.or_15m_high },
       ];
       const t1 = (Math.floor(Date.parse(aggregatedBars[latestRth[0]].time) / 1000) as UTCTimestamp);
-      const x1 = chart.timeScale().timeToCoordinate(t1);
-      // Right edge of the OR rect: extend to the chart's plot-area
-      // right edge (just left of the price scale), NOT just to the
-      // last bar. This matches desktop intent ("OR band runs to
-      // plot edge") and avoids the visible white strip between the
-      // last-bar coord and the price scale that R2 flagged when
-      // the user pans into the rightOffset future-bar gap.
-      // priceScale().width() returns the price-axis pixel width;
-      // plot extends from container left to (containerWidth - that).
-      const priceScaleWidth = chart.priceScale("right").width();
-      const xRight = container.clientWidth - priceScaleWidth;
       for (const band of orBands) {
-        const enabled = overlays.openingRange[band.key as "m1" | "m5" | "m15"];
+        const enabled = overlays.openingRange[band.key];
         if (!enabled || band.low == null || band.high == null) continue;
-        const yHigh = candleSeries.priceToCoordinate(band.high);
-        const yLow = candleSeries.priceToCoordinate(band.low);
-        if (x1 == null || yHigh == null || yLow == null) continue;
-        const top = Math.min(yHigh, yLow);
-        const height = Math.abs(yLow - yHigh);
-        const left = Math.max(0, x1);
-        const width = xRight - left;
-        if (width <= 0 || height <= 0) continue;
-        out.push({
-          kind: "or",
-          left,
-          top,
-          width,
-          height,
+        specs.push({
+          id: `or-${band.key}`,
+          timeFrom: t1,
+          timeTo: null,
+          priceTop: band.high,
+          priceBottom: band.low,
           fill: hexToRgba(palette.ink100, 0.04),
-          label: `OR ${band.label}`,
+          priceLabels: [
+            {
+              price: band.high,
+              text: `ORH ${band.label} ${band.high.toFixed(2)}`,
+              textColor: palette.ink100,
+              backColor: palette.paperDeep,
+            },
+            {
+              price: band.low,
+              text: `ORL ${band.label} ${band.low.toFixed(2)}`,
+              textColor: palette.ink100,
+              backColor: palette.paperDeep,
+            },
+          ],
         });
       }
     }
 
-    return out;
+    primitive.setRectangles(specs);
   }, [
     aggregatedBars,
     overlays.openingRange,
     snapshot?.levels,
     timeframe,
-    overlayTick,
     palette,
   ]);
 
@@ -826,56 +803,15 @@ export function MobileChartCanvas({
           <span className="empty">{overlayMessage}</span>
         </div>
       )}
-      {/* ETH-shading + OR-band overlay layer. Sits between the
-          chart canvas and the tooltip. pointer-events: none so it
-          doesn't block chart-touch interactions. */}
-      <div
-        ref={overlayRef}
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 2,
-        }}
-      >
-        {overlayRectangles.map((rect, i) => (
-          <div
-            key={`${rect.kind}-${i}`}
-            style={{
-              position: "absolute",
-              left: rect.left,
-              top: rect.top,
-              width: rect.width,
-              height: rect.height,
-              background: rect.fill,
-              fontFamily: "var(--font-mono)",
-              fontSize: 9,
-              color: "var(--ink-60)",
-              padding: rect.label ? "1px 4px" : 0,
-              boxSizing: "border-box",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {rect.label}
-          </div>
-        ))}
-      </div>
+      {/* ETH shading + OR bands now render via the chart's
+          ISeriesPrimitive — see overlayPrimitiveRef. The rectangles
+          are drawn on the chart's canvas synchronously with every
+          pan/zoom frame, so no HTML overlay div is needed here. */}
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
       )}
     </div>
   );
-}
-
-interface OverlayRect {
-  kind: "eth" | "or";
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  fill: string;
-  label: string | null;
 }
 
 // ── Tooltip ─────────────────────────────────────────────────────────
