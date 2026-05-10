@@ -966,17 +966,15 @@
   .terminal-chart {
     padding: 18px 16px 16px;
     gap: 12px;
-    /* Mobile chart is INTENTIONALLY taller than the viewport. The
-       user's workflow on mobile is "scroll vertically through the
-       page" — leveraging that, the chart fills ~2× viewport height
-       so the operator can read price action with desktop-class
-       vertical resolution. The toggle row and timeframe row sit
-       above; the chart canvas takes the bulk of the panel.
-       `.terminal-root` is `overflow-y: auto` so the rest of the
-       dashboard (System Feed, scorecards) is reached by scrolling
-       past the chart. 140vh gives ~1180px of chart on a 844px-tall
-       phone — comparable to a desktop chart's vertical footprint. */
-    min-height: 140vh;
+    /* Mobile chart fills most of the viewport — taller than the
+       ~280px the original implementation gave but not as tall as
+       the previous 140vh, which proved to be too much (4-5× the
+       desktop-tier height in user's words). 70vh strikes the
+       balance: ~590px on a typical phone, comfortable for trend
+       reading without dominating the entire scroll position. The
+       page is `overflow-y: auto` so the rest of the dashboard is
+       still scroll-reachable below. */
+    min-height: 70vh;
   }
   /* Toggle pills become a horizontal-scroll strip — the operator
      swipes through overlay options. Right-borders adapt: only the
@@ -1028,9 +1026,8 @@
        width without giving anything back. */
     padding: 0;
     /* Canvas is ~85% of the parent panel after the toggle/tf
-       rows, which at 140vh gives ~120vh of canvas. Pin a min for
-       small landscape viewports. */
-    min-height: 120vh;
+       rows. At 70vh panel that lands around 60vh of plot. */
+    min-height: 60vh;
   }
 
   .terminal-feed {

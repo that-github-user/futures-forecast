@@ -203,13 +203,14 @@ export function MobileChartCanvas({
         scaleMargins: { top: 0.05, bottom: 0.08 },
         // Generous horizontal width for the level chips and the
         // price-axis tick labels. Iterated through 80 → 110 → 130
-        // based on user feedback ("only see first digit of 7xxx").
-        // 130 is well over the worst-case chip width
-        // ("PDH 5912.50" ≈ 95px at 12px font); the extra headroom
-        // protects against rendering surprises in lightweight-
-        // charts' label-placement under various font / DPR
-        // combinations.
-        minimumWidth: 130,
+        // → 160 based on user feedback ("only see first 3 digits
+        // of 5xxx"). 160 should be ample for 4-digit prices with
+        // 2 decimals (~95px) plus chip-padding overhead. If 160
+        // STILL clips, the issue is internal to lightweight-charts'
+        // label rendering, not container sizing — and the right
+        // fix is the custom HTML chip overlay (PR 3 of the planned
+        // mobile-chart series, brought forward as needed).
+        minimumWidth: 160,
         // autoScale: true (the default) — price scale auto-fits
         // the visible time-range's price extents on every pan/zoom.
         autoScale: true,
@@ -232,7 +233,7 @@ export function MobileChartCanvas({
     // lightweight-charts may not always honor the initial-options
     // value during the initial layout pass; calling
     // applyOptions explicitly forces a re-layout.
-    chart.priceScale("right").applyOptions({ minimumWidth: 130 });
+    chart.priceScale("right").applyOptions({ minimumWidth: 160 });
 
     const candleOpts: CandlestickSeriesPartialOptions = {
       upColor: palette.posCream,
