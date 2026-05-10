@@ -1117,14 +1117,17 @@
   .terminal-card {
     padding: 16px 14px 18px;
   }
-  /* Chart canvas is the floor of how short this can go before the
-     ML-fan / VWAP overlay loses meaning. Below 200px height, the
-     chart should hide rather than stub. */
-  .terminal-chart {
-    min-height: 240px;
-  }
+  /* Chart sizing inherits from the 768px-breakpoint mobile rule
+     (140vh panel, 120vh canvas). The phone-tier 480px override
+     used to set short pixel floors (240px / 180px) which silently
+     clobbered the 140vh rule on the user's phone — exactly the
+     case the rule was meant to optimize for. Removed those
+     overrides; the vh-based sizing scales naturally with viewport
+     and works across all mobile widths.
+
+     Phone-tier still overrides the chart-canvas font-size since
+     the smaller viewport benefits from compacted axis labels. */
   .terminal-chart-canvas {
-    min-height: 180px;
     font-size: 13px;
   }
   .terminal-regime em {
