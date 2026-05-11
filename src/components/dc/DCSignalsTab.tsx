@@ -601,10 +601,10 @@ function PortfolioInput({ value, onChange }: { value: number; onChange: (v: numb
 }
 
 const POLICY_LABEL: Record<PolicyKey, string> = {
-  take_all: "Take-all",
-  rec_60_10: "Recommended 60/10",
-  cons_40_8: "Stricter 40/8",
-  cop_cons_60_10: "Cop-Con 60/10",
+  live: "Live (recommended)",
+  conservative: "Conservative 3%/40-8",
+  go_only: "GO-only (no GO+ boost)",
+  aggressive: "Aggressive 7%/70-12",
   static_1ct: "Static 1 ct (baseline)",
 };
 
@@ -640,11 +640,7 @@ function PolicySelector({
         cursor: "pointer",
       }}
     >
-      {(Object.keys(POLICY_LABEL) as PolicyKey[])
-        // Hide reference-only policies (take_all) — they render on the
-        // Capital tab chart as overlays, not as selectable live policies.
-        .filter((k) => !policies(k)?.reference_only)
-        .map((k) => (
+      {(Object.keys(POLICY_LABEL) as PolicyKey[]).map((k) => (
         <option key={k} value={k}>
           {POLICY_LABEL[k]}
         </option>

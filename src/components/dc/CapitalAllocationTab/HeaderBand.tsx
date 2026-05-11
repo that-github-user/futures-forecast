@@ -12,10 +12,10 @@ import { colors, fonts } from "../../../styles/tokens";
 import type { PolicyKey } from "../../../api/dcTypes";
 
 const POLICY_SHORT: Record<PolicyKey, string> = {
-  take_all: "Take-all",
-  rec_60_10: "Recommended 60/10",
-  cons_40_8: "Stricter 40/8",
-  cop_cons_60_10: "Cop-Con 60/10",
+  live: "Live (recommended)",
+  conservative: "Conservative 3%/40-8",
+  go_only: "GO-only (no GO+ boost)",
+  aggressive: "Aggressive 7%/70-12",
   static_1ct: "Static 1 ct (baseline)",
 };
 

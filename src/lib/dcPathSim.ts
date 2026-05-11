@@ -3,7 +3,7 @@
  * Capital tab's compounding projection.
  *
  * The `/capital/summary` endpoint only carries a single median curve (plus
- * a p5/p95 band for rec_60_10). Rendering a smooth exponential median
+ * a p5/p95 band for the `live` policy). Rendering a smooth exponential median
  * makes the chart look like a deterministic projection — not the noisy
  * equity curve a trader actually experiences. This module synthesizes
  * illustrative sample paths using the policy's documented MaxDD% as the
@@ -34,7 +34,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/** Stable string-hash → 32-bit seed so policy keys like "rec_60_10:3" map to deterministic PRNGs. */
+/** Stable string-hash → 32-bit seed so policy keys like "live:3" map to deterministic PRNGs. */
 export function hashSeed(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -61,9 +61,9 @@ function standardNormal(rng: () => number): number {
 export interface SamplePathInput {
   /** Number of months (steps) in the path. Result length = months + 1. */
   horizonMonths: number;
-  /** Expected terminal multiplier at month = horizonMonths (e.g. 102 for rec_60_10). */
+  /** Expected terminal multiplier at month = horizonMonths (e.g. 36.3 for `live` at 2.91y). */
   terminalMultiplier: number;
-  /** Policy's documented historical MaxDD percentage (e.g. 9.0 for rec_60_10). */
+  /** Policy's documented historical MaxDD percentage (e.g. 23.22 for `live`). */
   maxDdPct: number;
   /** Deterministic seed — typically `hashSeed(`${policyKey}:${pathIndex}`)`. */
   seed: number;

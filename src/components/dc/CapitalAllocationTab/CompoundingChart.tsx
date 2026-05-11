@@ -78,8 +78,8 @@ export function CompoundingChart({
     }
 
     // p5/p95 arrays are empty for policies without documented Monte Carlo
-    // (see CAPITAL_ALLOCATION.md §10 — only rec_60_10 has MC) or for linear
-    // policies. Hide the band in that case rather than showing fabricated data.
+    // (only the `live` policy has MC) or for linear policies. Hide the band
+    // in that case rather than showing fabricated data.
     const hasBand =
       !isLinear &&
       curve.p5_multiplier.length === months.length &&
@@ -247,8 +247,8 @@ export function CompoundingChart({
   const subtitle = isLinear
     ? `${policy.name}: linear growth at ~$${Math.round((policy.linear_growth?.monthly_pl ?? 0) * 12 / 1000)}K/yr from 1-contract EV (capital-invariant — the dollar P/L doesn't depend on your portfolio size) + ${N_SAMPLE_PATHS} sample paths with ±$${Math.round((policy.linear_growth?.monthly_sigma ?? 0) / 1000)}K/mo jitter.${overlayNote}`
     : hasBand
-    ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM).${overlayNote}`
-    : `${policy.name}: deterministic median curve from §5 backtest + ${N_SAMPLE_PATHS} illustrative paths (no documented Monte Carlo).${overlayNote}`;
+    ? `${policy.name}: solid median + p5/p95 Monte Carlo band + ${N_SAMPLE_PATHS} illustrative sample paths (client-side MaxDD-scaled GBM). Deterministic terminal sits near MC p95 — read the MC median as the honest planning number.${overlayNote}`
+    : `${policy.name}: deterministic median curve from the ensemble-gate backtest + ${N_SAMPLE_PATHS} illustrative paths (Monte Carlo not run for this variant).${overlayNote}`;
 
   return (
     <Panel title="Compounding Growth Projection" subtitle={subtitle}>
@@ -271,17 +271,17 @@ export function CompoundingChart({
             policy.backtest
               ? `Historical ${policy.backtest.years}y`
               : isLinear
-              ? "3.8y linear"
+              ? "2.91y linear"
               : "Baseline"
           }
           value={
             policy.backtest
               ? policy.backtest.terminal_equity * (portfolioSize / policy.backtest.start_equity)
               : isLinear && policy.linear_growth
-              ? // 1ct terminal = portfolioSize + monthly_pl × 46. The monthly
-                // P/L is unscaled — 1 contract produces the same dollar gain
-                // regardless of account size.
-                portfolioSize + policy.linear_growth.monthly_pl * 46
+              ? // 1ct terminal across the validated backtest window (35 months).
+                // The monthly P/L is unscaled — 1 contract produces the same
+                // dollar gain regardless of account size.
+                portfolioSize + policy.linear_growth.monthly_pl * 35
               : portfolioSize
           }
           color={colors.accentBlue}
@@ -289,8 +289,8 @@ export function CompoundingChart({
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: colors.textMuted, fontStyle: "italic" }}>
         {isLinear
-          ? `Static 1-contract sizing. Growth numbers are back-of-envelope from CAPITAL_ALLOCATION.md §4 EV × §8 schedule × §3 fire rate — replace with a vega-prime static-sizing backtest when available. Past performance ≠ future results.`
-          : `Based on ${policy.copeland_mode} Copeland gating + ${policy.global_pct}/${policy.per_strat_pct} margin budget. Hard contract cap: ${policy.hard_cap}. SPX multiplier: ${SPX_MULTIPLIER}. Past performance ≠ future results.`}
+          ? `Static 1-contract sizing. Growth numbers are back-of-envelope from §4 EV × §8 schedule × §3 fire rate — replace with a vega-prime static-sizing backtest when available. Past performance ≠ future results.`
+          : `Based on the ensemble-gate signal stream (GO+ at ${policy.go_plus_mult}× sizing) + ${policy.global_pct}/${policy.per_strat_pct}% margin budget. Hard contract cap: ${policy.hard_cap}. SPX multiplier: ${SPX_MULTIPLIER}. Backtest window: ${policy.backtest?.years ?? 2.91}y. Past performance ≠ future results.`}
       </div>
     </Panel>
   );

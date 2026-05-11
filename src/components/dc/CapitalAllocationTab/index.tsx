@@ -1,10 +1,10 @@
 /**
- * CapitalAllocationTab — dashboards the vega-prime research (CAPITAL_ALLOCATION.md).
+ * CapitalAllocationTab — dashboards the ensemble-gate capital allocation research.
  *
  * Four panels (order matters — reactive panels up top, static reference at bottom):
- *   A. PolicyPicker      — 4 validated policies + static_1ct baseline
+ *   A. PolicyPicker      — live + 3 ensemble-gate variants + static_1ct baseline
  *   B. SizingGrid        — per-strategy contract counts at the user's capital
- *   C. CompoundingChart  — §10 Monte Carlo growth projection + jittered sample paths
+ *   C. CompoundingChart  — Monte Carlo growth projection + jittered sample paths
  *   D. EVRankingPanel    — §4 EV/margin-day capital efficiency (reference, static)
  *
  * The allocation math is the same `lib/dcSizing.ts` used by StrategyMonitorCard's
@@ -110,21 +110,18 @@ function CapitalAllocationTabInner(_props: Props) {
   const { summary, loading } = useCapitalSummary();
   const { specs } = useStrategySpecs();
 
-  // Migrate a pre-PR selection of take_all (now reference_only) back to the
-  // default. MUST stay ABOVE the early `if (loading)` / `if (!summary)`
-  // returns — React requires the same hook order on every render, and
-  // `loading` flips false on the second render which would otherwise
-  // introduce a hook where there wasn't one before (React error #310).
-  //
-  // Deps are narrow (only what actually changes the decision) to avoid
-  // re-firing on every render — `capital` itself is a fresh object literal
-  // each render, so depending on it would run this effect unnecessarily.
-  // The `summary?.policies` optional-chain handles the still-loading state.
+  // Migrate a pre-PR selection of a retired policy (Copeland-era keys like
+  // take_all / rec_60_10 / cons_40_8 / cop_cons_60_10) back to the default.
+  // useCapitalAllocation's coercePolicy already handles the localStorage-read
+  // path, but if the persisted key happens to equal a current key with stale
+  // policy semantics this effect normalizes it. MUST stay ABOVE the early
+  // `if (loading)` / `if (!summary)` returns — React requires the same hook
+  // order on every render.
   useEffect(() => {
     if (!summary) return;
     const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
-    if (stillPicked?.reference_only) {
-      const fallback = summary.policies.find((p) => !p.reference_only);
+    if (!stillPicked) {
+      const fallback = summary.policies[0];
       if (fallback) capital.setPolicy(fallback.key);
     }
   }, [summary, capital.policyKey, capital.setPolicy]);
@@ -144,12 +141,13 @@ function CapitalAllocationTabInner(_props: Props) {
     );
   }
 
-  // Policies the user can actually pick. `reference_only` policies (take_all)
-  // are rendered as overlays on the compounding chart rather than as selectable
-  // options — the picker excludes them and any localStorage that still points
-  // at one gets coerced back to the default by the useEffect above.
-  const selectablePolicies = summary.policies.filter((p) => !p.reference_only);
-  const referencePolicies = summary.policies.filter((p) => p.reference_only);
+  // All ensemble-gate policies are user-selectable now. The old
+  // `reference_only` mechanism (take_all overlay) was retired with the
+  // Copeland-era policies. Reference overlays could be reintroduced later
+  // by adding a flag to DCAllocationPolicy if a no-margin-cap ceiling is
+  // wanted again.
+  const selectablePolicies = summary.policies;
+  const referencePolicies: typeof summary.policies = [];
 
   const selectedPolicy =
     selectablePolicies.find((p) => p.key === capital.policyKey) ??
@@ -178,8 +176,7 @@ function CapitalAllocationTabInner(_props: Props) {
         source={summary.source}
       />
 
-      {/* Panel A — pick a policy (reactive). reference_only policies
-          (take_all) are excluded — they appear as overlays on the chart. */}
+      {/* Panel A — pick a policy (reactive). */}
       <PolicyPicker
         policies={selectablePolicies}
         selectedKey={capital.policyKey}
@@ -195,7 +192,7 @@ function CapitalAllocationTabInner(_props: Props) {
       />
 
       {/* Panel C — compounding projection (reactive to policy + portfolio size +
-          jittered paths). reference-only policies render as dashed overlays. */}
+          jittered paths). */}
       <CompoundingChart
         curve={selectedCurve}
         policy={selectedPolicy}
