@@ -270,7 +270,7 @@ export function driftCellTitle(count: number | null): string {
     return "Event predates drift tracking, OR didn't reach the entry gate (blocked_signal, blocked_strike, etc.).";
   }
   if (count === 0) {
-    return "No mid-window re-resolves. SPX stayed within the 0.03 delta-drift threshold for the full 60s pre-entry window — the gate decided against the original strikes.";
+    return "No mid-window re-resolves. SPX stayed within the 0.03 delta-drift threshold for the full 60s pre-entry window — the gate used the original strikes.";
   }
   return `${count} mid-window re-resolve${count === 1 ? "" : "s"}. SPX moved enough during the pre-entry window that the drift watcher fetched fresh strikes at least once. Common on FOMC/CPI/NFP days.`;
 }
