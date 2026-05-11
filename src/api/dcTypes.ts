@@ -257,6 +257,18 @@ export interface DCSignalEvent {
   // and on pre-fetch event paths (blocked_signal, blocked_features,
   // blocked_vix, blocked_canTrade) where no resolve happened.
   iv_source: "chain" | "vix" | "default" | null;
+  // Gate-fidelity audit (live-tick-pre-entry PR #148): which data
+  // source the S/L gate decision was made against, and how stale.
+  gate_data_source?: "live_stream" | "snapshot" | null;
+  gate_data_age_ms?: number | null;
+  // Drift-mid-window count (post-Phase-3 PR #151): number of times
+  // the drift watcher re-resolved this strategy's strikes during
+  // its T-60s → T-0 window. Surfaces on the History tab so
+  // operators can see "did this entry's strikes drift mid-window?"
+  // without grepping daemon logs. 0 on quiet days; 1-2 on macro
+  // events (FOMC/CPI/NFP). Null on pre-observability rows or
+  // upstream-blocked outcomes that never reached the gate.
+  pre_entry_reresolve_count?: number | null;
   created_at: string | null;
 }
 

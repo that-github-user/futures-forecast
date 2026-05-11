@@ -182,6 +182,14 @@ export function DCEventsTab() {
                   >
                     IV
                   </th>
+                  <th
+                    scope="col"
+                    aria-label="Pre-entry re-resolve count"
+                    style={thStyle}
+                    title="Number of times the drift watcher re-resolved this strategy's strikes during the T-60s pre-entry window. 0 on quiet days, 1-2 on macro-event days. NULL on rows that didn't reach the gate (blocked_signal, blocked_strike, etc)."
+                  >
+                    Drift
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -236,8 +244,35 @@ function EventRow({
       <td style={ivSourceCellStyle(event.iv_source)} title={ivSourceTitle(event.iv_source)}>
         {event.iv_source ?? "—"}
       </td>
+      <td style={driftCellStyle(event.pre_entry_reresolve_count ?? null)}
+          title={driftCellTitle(event.pre_entry_reresolve_count ?? null)}>
+        {event.pre_entry_reresolve_count ?? "—"}
+      </td>
     </tr>
   );
+}
+
+/** Style the Drift cell. 0 reads as the quiet baseline (textMuted);
+ *  any positive count is amber to draw the operator's eye — SPX
+ *  moved enough during the pre-entry window to re-resolve strikes,
+ *  which is operationally noteworthy on macro days. NULL is the
+ *  generic "—" mono cell (rows that didn't reach the gate). */
+export function driftCellStyle(
+  count: number | null,
+): React.CSSProperties {
+  if (count == null) return tdMono;
+  if (count === 0) return { ...tdMono, color: colors.textMuted };
+  return { ...tdMono, color: colors.accentAmber, fontWeight: 600 };
+}
+
+export function driftCellTitle(count: number | null): string {
+  if (count == null) {
+    return "Event predates drift tracking, OR didn't reach the entry gate (blocked_signal, blocked_strike, etc.).";
+  }
+  if (count === 0) {
+    return "No mid-window re-resolves. SPX stayed within the 0.03 delta-drift threshold for the full 60s pre-entry window — the gate decided against the original strikes.";
+  }
+  return `${count} mid-window re-resolve${count === 1 ? "" : "s"}. SPX moved enough during the pre-entry window that the drift watcher fetched fresh strikes at least once. Common on FOMC/CPI/NFP days.`;
 }
 
 /** "P7050 / C7280" when both strikes resolved, "P7050 / —" if only put,
