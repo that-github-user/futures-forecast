@@ -110,13 +110,19 @@ function CapitalAllocationTabInner(_props: Props) {
   const { summary, loading } = useCapitalSummary();
   const { specs } = useStrategySpecs();
 
-  // Migrate a pre-PR selection of a retired policy (Copeland-era keys like
-  // take_all / rec_60_10 / cons_40_8 / cop_cons_60_10) back to the default.
-  // useCapitalAllocation's coercePolicy already handles the localStorage-read
-  // path, but if the persisted key happens to equal a current key with stale
-  // policy semantics this effect normalizes it. MUST stay ABOVE the early
-  // `if (loading)` / `if (!summary)` returns — React requires the same hook
-  // order on every render.
+  // Defensive policy-removal guard. The localStorage-read path in
+  // useCapitalAllocation already coerces unknown keys via coercePolicy, so
+  // retired Copeland-era keys (take_all / rec_60_10 / cons_40_8 /
+  // cop_cons_60_10) are rewritten to static_1ct before this component
+  // mounts. This effect catches the *remaining* edge case: a key that
+  // passes the static VALID_POLICIES check on load but is missing from
+  // the runtime summary fetched from the backend (e.g., a future deploy
+  // that retires a policy without bumping VALID_POLICIES, or a server
+  // running a downgraded build during a rolling deploy). Rare in
+  // practice — kept as a cheap belt-and-suspenders fallback.
+  //
+  // MUST stay ABOVE the early `if (loading)` / `if (!summary)` returns —
+  // React requires the same hook order on every render.
   useEffect(() => {
     if (!summary) return;
     const stillPicked = summary.policies.find((p) => p.key === capital.policyKey);
