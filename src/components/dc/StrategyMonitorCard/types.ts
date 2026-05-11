@@ -35,6 +35,14 @@ export interface LegData {
   slRatioSource: "live_stream" | "snapshot" | null;
   lastTickAgeMs: number | null;
   preEntryWindowActive: boolean;
+  // Phase 4 follow-up: ISO timestamp of when the API computed the
+  // response carrying `lastTickAgeMs`. The LIVE badge uses
+  // `(Date.now() - Date.parse(responseComputedAt)) + lastTickAgeMs`
+  // to age naturally between 30s (or 5s) dashboard polls, instead
+  // of showing a static server-computed value. Null when the
+  // daemon is older than the computed_at envelope (PR #152) — the
+  // badge falls back to displaying lastTickAgeMs as-is.
+  responseComputedAt: string | null;
   // 'debit' (DCs — we pay premium, profit when mark rises) or 'credit'
   // (SPY short puts/straddles — we collect premium, profit when mark
   // decays). Flips post-entry net-mark coloring and the TP math.

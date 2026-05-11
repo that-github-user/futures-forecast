@@ -201,6 +201,15 @@ export interface DCSignalsResponse {
   features: DCFeatures | null;
   features_stale: boolean;
   signals: DCSignalStatus[];
+  // Server-side ISO timestamp of when THIS response was computed.
+  // Used by the LIVE badge in the Signals tab: the badge displays
+  // "Live tick {N}ms ago", computed client-side as
+  // `(Date.now() - Date.parse(computed_at)) + last_tick_age_ms`
+  // so the value ages between dashboard polls instead of staying
+  // static at the server-computed instant. Null on older daemons
+  // (pre-Phase-4 follow-up) → frontend falls back to the static
+  // server-side `last_tick_age_ms`.
+  computed_at?: string | null;
 }
 
 export interface DCRiskStatus {

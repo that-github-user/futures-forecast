@@ -135,6 +135,41 @@ export function DCEventsTab() {
             </div>
           );
         })}
+        {/* Drift rollup chip (R2 follow-up to PR #174 — task #261).
+            Appears only when ≥1 entry in the visible session had its
+            strikes re-resolved mid-window. Amber to match the per-row
+            Drift column color encoding; tooltip explains the meaning.
+            Hidden when total drift events == 0 (the common quiet day)
+            so the chip row stays uncluttered. */}
+        {(() => {
+          const driftEvents = events.filter(
+            (e) => (e.pre_entry_reresolve_count ?? 0) > 0,
+          );
+          if (driftEvents.length === 0) return null;
+          const totalReresolves = driftEvents.reduce(
+            (sum, e) => sum + (e.pre_entry_reresolve_count ?? 0), 0,
+          );
+          return (
+            <div
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 10px", borderRadius: 14, fontSize: 11,
+                fontFamily: fonts.sans, background: colors.accentAmber + "18",
+                border: `1px solid ${colors.accentAmber}40`,
+                color: colors.accentAmber,
+              }}
+              title={
+                `${driftEvents.length} ${driftEvents.length === 1 ? "entry" : "entries"} `
+                + `had ${totalReresolves} mid-window strike re-resolve${totalReresolves === 1 ? "" : "s"} total. `
+                + `Common on FOMC/CPI/NFP days when SPX moves enough during the T-60s pre-entry `
+                + `window that the original 20Δ strikes drift past the 0.03 threshold.`
+              }
+            >
+              <span style={{ fontWeight: 700 }}>{driftEvents.length}</span>
+              <span style={{ opacity: 0.85 }}>w/ drift</span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Error/empty */}
