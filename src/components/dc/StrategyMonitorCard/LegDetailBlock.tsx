@@ -45,7 +45,13 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
   // No leg data yet (worker hasn't polled or this strategy isn't eligible).
   // Fall back to just the S/L line for strategies that use it; otherwise render nothing.
   if (!legs) {
-    return usesSlRatio ? <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} /> : null;
+    return usesSlRatio ? (
+      <SLRatioLine
+        slRatio={slRatio} meetsMin={slRatioMeetsMin}
+        source={legData.slRatioSource}
+        lastTickAgeMs={legData.lastTickAgeMs}
+      />
+    ) : null;
   }
 
   return (
@@ -91,7 +97,13 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
       </div>
 
       {/* S/L footer — suppressed for strategies that don't use S/L as an entry or exit criterion */}
-      {usesSlRatio && <SLRatioLine slRatio={slRatio} meetsMin={slRatioMeetsMin} />}
+      {usesSlRatio && (
+        <SLRatioLine
+          slRatio={slRatio} meetsMin={slRatioMeetsMin}
+          source={legData.slRatioSource}
+          lastTickAgeMs={legData.lastTickAgeMs}
+        />
+      )}
     </div>
   );
 }
@@ -509,7 +521,14 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
   );
 }
 
-function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: boolean | null }) {
+function SLRatioLine({
+  slRatio, meetsMin, source, lastTickAgeMs,
+}: {
+  slRatio: number | null;
+  meetsMin: boolean | null;
+  source: "live_stream" | "snapshot" | null;
+  lastTickAgeMs: number | null;
+}) {
   if (slRatio == null) {
     return (
       <div style={{ fontSize: 11, fontFamily: fonts.mono, color: colors.textDim }}>
@@ -530,6 +549,14 @@ function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: 
     color = colors.textSecondary; // no gate for this strategy
   }
 
+  // LIVE badge surfaces only when the daemon's pre-entry stream is
+  // currently open for this strategy — operator sees "the S/L value
+  // above is from a live tick, not a 2-min-cached snapshot." Renders
+  // as "LIVE · {N}ms" so the operator can verify freshness at a
+  // glance. If lastTickAgeMs is null on a live source (no tick yet),
+  // shows just "LIVE".
+  const isLive = source === "live_stream";
+
   return (
     <div style={{ fontSize: 12, fontFamily: fonts.mono, fontWeight: 600, color }}>
       S/L: {slRatio.toFixed(3)}
@@ -547,6 +574,33 @@ function SLRatioLine({ slRatio, meetsMin }: { slRatio: number | null; meetsMin: 
           }}
         >
           {suffix}
+        </span>
+      )}
+      {isLive && (
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 700,
+            marginLeft: 6,
+            padding: "1px 5px",
+            borderRadius: 4,
+            background: colors.accentBlue + "18",
+            // Border alpha 40 matches the PASS/FAIL chip styling
+            // (R2 review of PR #173) — gate-decision chip should
+            // dominate visually; the LIVE chip is fidelity
+            // metadata that sits alongside it.
+            border: `1px solid ${colors.accentBlue}40`,
+            color: colors.accentBlue,
+            letterSpacing: 0.5,
+          }}
+          title={
+            lastTickAgeMs != null
+              ? `Live tick ${lastTickAgeMs}ms ago`
+              : "Pre-entry streaming subscription is open"
+          }
+        >
+          LIVE
+          {lastTickAgeMs != null && ` · ${lastTickAgeMs}ms`}
         </span>
       )}
     </div>

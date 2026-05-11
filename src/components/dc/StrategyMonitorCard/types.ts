@@ -27,6 +27,14 @@ export interface LegData {
   // pre-fix path that caused the 21/28 strike incident) is visible
   // without digging through logs. Null when no resolve has happened.
   ivSource: "chain" | "vix" | "default" | null;
+  // Phase 3 of live-tick-pre-entry. When the daemon has an active
+  // streaming subscription for this strategy (T-60s → T-0 window),
+  // the S/L ratio shown above is from a live tick rather than a
+  // 2-min-stale snapshot. The "LIVE · {age}ms" badge surfaces this
+  // so operators trust the gate fidelity at decision time.
+  slRatioSource: "live_stream" | "snapshot" | null;
+  lastTickAgeMs: number | null;
+  preEntryWindowActive: boolean;
   // 'debit' (DCs — we pay premium, profit when mark rises) or 'credit'
   // (SPY short puts/straddles — we collect premium, profit when mark
   // decays). Flips post-entry net-mark coloring and the TP math.

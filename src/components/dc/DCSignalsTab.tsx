@@ -94,6 +94,10 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         entryNetDebit: s.entry_net_debit ?? null,
         snapshot: (s.snapshot ?? null) as DCSnapshotInfo | null,
         ivSource: s.iv_source ?? null,
+        // Phase 3 live-tick fidelity surface (PR follow-up to #149).
+        slRatioSource: s.sl_ratio_source ?? null,
+        lastTickAgeMs: s.last_tick_age_ms ?? null,
+        preEntryWindowActive: s.pre_entry_window_active ?? false,
       });
     }
     return m;
@@ -128,6 +132,9 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         profitTargetPct: spec.profit_target_pct,
         usesSlRatio: spec.sl_ratio_min != null || spec.sl_ratio_exit != null,
         ivSource: base?.ivSource ?? null,
+        slRatioSource: base?.slRatioSource ?? null,
+        lastTickAgeMs: base?.lastTickAgeMs ?? null,
+        preEntryWindowActive: base?.preEntryWindowActive ?? false,
         entryDirection: spec.entry_direction,
       };
       list.push({ spec, signal, info, legData });
