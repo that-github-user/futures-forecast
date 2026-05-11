@@ -585,7 +585,11 @@ function SLRatioLine({
             padding: "1px 5px",
             borderRadius: 4,
             background: colors.accentBlue + "18",
-            border: `1px solid ${colors.accentBlue}60`,
+            // Border alpha 40 matches the PASS/FAIL chip styling
+            // (R2 review of PR #173) — gate-decision chip should
+            // dominate visually; the LIVE chip is fidelity
+            // metadata that sits alongside it.
+            border: `1px solid ${colors.accentBlue}40`,
             color: colors.accentBlue,
             letterSpacing: 0.5,
           }}
