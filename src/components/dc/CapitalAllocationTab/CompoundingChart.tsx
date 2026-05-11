@@ -240,7 +240,16 @@ export function CompoundingChart({
   // there is no month 36, so anchor on horizonMonths directly. If the window
   // grows past 36 (e.g. a future refit), Y3 still lands on 36.
   const yLate = milestone(Math.min(36, horizonMonths));
-  const yLateLabel = horizonMonths >= 36 ? "3y median" : `${(horizonMonths / 12).toFixed(2)}y median`;
+  // Label reads from policy.backtest.years for compounding policies (matches
+  // the 2.91y figure shown elsewhere in the UI). For 36+ month horizons we
+  // can use the conventional "3y" shorthand. Linear policies use horizon math
+  // directly since they have no backtest.years field.
+  const yLateLabel =
+    horizonMonths >= 36
+      ? "3y median"
+      : policy.backtest
+      ? `${policy.backtest.years.toFixed(2)}y median`
+      : `${(horizonMonths / 12).toFixed(2)}y median`;
 
   // `!= null` handles both null (fresh backend) and undefined (old backend
   // that doesn't serialize the field). Strict `!==` would crash below when
