@@ -98,6 +98,8 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: s.sl_ratio_source ?? null,
         lastTickAgeMs: s.last_tick_age_ms ?? null,
         preEntryWindowActive: s.pre_entry_window_active ?? false,
+        // Phase 4: shared response timestamp for client-side age recompute.
+        responseComputedAt: signals?.computed_at ?? null,
       });
     }
     return m;
@@ -135,6 +137,12 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: base?.slRatioSource ?? null,
         lastTickAgeMs: base?.lastTickAgeMs ?? null,
         preEntryWindowActive: base?.preEntryWindowActive ?? false,
+        // Envelope timestamp is shared across all strategies in
+        // the same /signals response; surfaced per-leg for the
+        // LIVE-badge client-side age recompute. Falls back to
+        // null on older daemons → badge shows static
+        // server-computed lastTickAgeMs.
+        responseComputedAt: signals?.computed_at ?? null,
         entryDirection: spec.entry_direction,
       };
       list.push({ spec, signal, info, legData });

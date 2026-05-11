@@ -10,6 +10,7 @@ import type { DCLegDetail, LegName } from "../../../api/dcTypes";
 import type { LifecycleState } from "../../../lib/dcLifecycle";
 import { formatExpiry } from "../../../lib/dcLifecycle";
 import { useTimezone } from "../../../hooks/useTimezone";
+import { useTick } from "../../../hooks/useTick";
 import { roundToSpxTick, roundToSpyTick } from "../../../lib/spxTick";
 import type { LegData } from "./types";
 
@@ -50,6 +51,7 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
         slRatio={slRatio} meetsMin={slRatioMeetsMin}
         source={legData.slRatioSource}
         lastTickAgeMs={legData.lastTickAgeMs}
+        responseComputedAt={legData.responseComputedAt}
       />
     ) : null;
   }
@@ -102,6 +104,7 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
           slRatio={slRatio} meetsMin={slRatioMeetsMin}
           source={legData.slRatioSource}
           lastTickAgeMs={legData.lastTickAgeMs}
+          responseComputedAt={legData.responseComputedAt}
         />
       )}
     </div>
@@ -522,13 +525,19 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
 }
 
 function SLRatioLine({
-  slRatio, meetsMin, source, lastTickAgeMs,
+  slRatio, meetsMin, source, lastTickAgeMs, responseComputedAt,
 }: {
   slRatio: number | null;
   meetsMin: boolean | null;
   source: "live_stream" | "snapshot" | null;
   lastTickAgeMs: number | null;
+  responseComputedAt: string | null;
 }) {
+  // Tick at 1Hz so the LIVE badge ages naturally between dashboard
+  // polls. The poll cadence is 5s during a pre-entry window
+  // (per useDCData's adaptive cadence) so this ticking value is
+  // overlayed against polls that arrive every 1-12 ticks.
+  useTick(1000);
   if (slRatio == null) {
     return (
       <div style={{ fontSize: 11, fontFamily: fonts.mono, color: colors.textDim }}>
@@ -550,12 +559,35 @@ function SLRatioLine({
   }
 
   // LIVE badge surfaces only when the daemon's pre-entry stream is
-  // currently open for this strategy — operator sees "the S/L value
-  // above is from a live tick, not a 2-min-cached snapshot." Renders
-  // as "LIVE · {N}ms" so the operator can verify freshness at a
-  // glance. If lastTickAgeMs is null on a live source (no tick yet),
-  // shows just "LIVE".
+  // currently open for this strategy. Displayed age is recomputed
+  // client-side each tick using the response envelope's
+  // `responseComputedAt` anchor:
+  //   displayAge = (Date.now() - Date.parse(responseComputedAt))
+  //                + lastTickAgeMs
+  // First term = "how long ago did the server compute this
+  // response"; second = "how stale was the tick at that server
+  // moment." Sum = "tick age from operator's wall-clock RIGHT NOW."
+  // Falls back to the static server-computed lastTickAgeMs when
+  // the daemon is older than the computed_at envelope (pre PR #152).
   const isLive = source === "live_stream";
+  let displayAgeMs: number | null = lastTickAgeMs;
+  if (isLive && lastTickAgeMs != null && responseComputedAt) {
+    const responseAge = Date.now() - Date.parse(responseComputedAt);
+    if (Number.isFinite(responseAge) && responseAge >= 0) {
+      displayAgeMs = lastTickAgeMs + responseAge;
+    }
+  }
+  // Format: <1s → "{N}ms", >=1s → "{N}s" rounded. Once we cross the
+  // second boundary the badge ticks once per second instead of
+  // showing a busy millisecond counter.
+  let ageLabel: string | null = null;
+  if (displayAgeMs != null) {
+    if (displayAgeMs < 1000) {
+      ageLabel = `${Math.max(0, Math.round(displayAgeMs))}ms`;
+    } else {
+      ageLabel = `${Math.round(displayAgeMs / 1000)}s`;
+    }
+  }
 
   return (
     <div style={{ fontSize: 12, fontFamily: fonts.mono, fontWeight: 600, color }}>
@@ -594,13 +626,13 @@ function SLRatioLine({
             letterSpacing: 0.5,
           }}
           title={
-            lastTickAgeMs != null
-              ? `Live tick ${lastTickAgeMs}ms ago`
+            ageLabel != null
+              ? `Live tick ${ageLabel} ago (computed client-side from response timestamp)`
               : "Pre-entry streaming subscription is open"
           }
         >
           LIVE
-          {lastTickAgeMs != null && ` · ${lastTickAgeMs}ms`}
+          {ageLabel != null && ` · ${ageLabel}`}
         </span>
       )}
     </div>

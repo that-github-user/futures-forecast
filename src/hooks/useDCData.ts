@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dcApi } from "../api/dcClient";
 import type {
   DCBrokerState,
@@ -100,6 +100,13 @@ function fireExitAlertNotification(alert: DCExitAlert): void {
 //     close within that window and slashes the trades payload
 //     (100 rows × ~15 fields) from 120 requests/hour to 12/hour.
 const FAST_INTERVAL_MS = 30_000;
+// Tighter fast-tier cadence when any visible strategy is in its
+// T-60s pre-entry window. The 30s default produces only 1-2 fresh
+// LIVE-badge readings per 60s window — makes "LIVE · 230ms" feel
+// ironic. 5s during a window gives the operator ~12 fresh values
+// before entry, comfortably within IBKR's rate limits at the
+// gateway. Drops back to 30s as soon as no strategies are active.
+const FAST_INTERVAL_PRE_ENTRY_MS = 5_000;
 const SLOW_INTERVAL_MS = 5 * 60_000;
 
 /** Narrow a PromiseSettledResult<T | null> to its value (null on reject
@@ -220,24 +227,44 @@ export function useDCData(): DCData {
     if (st) setStrategies(st);
   }, []);
 
+  // Adaptive fast-tier cadence (Phase 4 follow-up). When any
+  // strategy is in its pre-entry window, the daemon publishes live
+  // S/L values that move tick-by-tick; the dashboard should pick
+  // those up at a finer cadence than the 30s default so the LIVE
+  // badge shows fresh values throughout the 60s window. As soon as
+  // every window closes (next-entry > 60s away, or strategy
+  // entered), cadence drops back to 30s.
+  const hasActivePreEntryWindow = useMemo(() => {
+    return (signals?.signals ?? []).some(
+      (s) => s.pre_entry_window_active === true,
+    );
+  }, [signals]);
+
+  // Mount-only seed + permission prompt. Separated from the
+  // interval effect so a cadence-flip (re-creating the interval)
+  // doesn't trigger an extra fetch.
   useEffect(() => {
-    // Seed both tiers on mount. The fast tier's setLoading(false)
-    // flips the dashboard out of its spinner as soon as those five
-    // return; trades + strategies can keep loading in the background.
     fetchFast();
     fetchSlow();
-    const fastId = setInterval(fetchFast, FAST_INTERVAL_MS);
-    const slowId = setInterval(fetchSlow, SLOW_INTERVAL_MS);
-    // Best-effort: prompt the operator for browser-notification
-    // permission when the dashboard mounts. If they decline, the
-    // in-page exit-alert badge still surfaces alerts visually —
-    // this is purely an attention-amplifier for backgrounded tabs.
     void ensureNotificationPermission();
-    return () => {
-      clearInterval(fastId);
-      clearInterval(slowId);
-    };
   }, [fetchFast, fetchSlow]);
+
+  // Fast tier interval. Re-creates whenever the active-window flag
+  // flips so cadence can switch between FAST_INTERVAL_MS and
+  // FAST_INTERVAL_PRE_ENTRY_MS without unmount/remount churn.
+  useEffect(() => {
+    const interval = hasActivePreEntryWindow
+      ? FAST_INTERVAL_PRE_ENTRY_MS
+      : FAST_INTERVAL_MS;
+    const fastId = setInterval(fetchFast, interval);
+    return () => clearInterval(fastId);
+  }, [fetchFast, hasActivePreEntryWindow]);
+
+  // Slow tier interval (independent timer).
+  useEffect(() => {
+    const slowId = setInterval(fetchSlow, SLOW_INTERVAL_MS);
+    return () => clearInterval(slowId);
+  }, [fetchSlow]);
 
   return {
     summary, positions, trades, strategies, signals, risk,
