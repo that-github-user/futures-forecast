@@ -533,11 +533,6 @@ function SLRatioLine({
   lastTickAgeMs: number | null;
   responseComputedAt: string | null;
 }) {
-  // Tick at 1Hz so the LIVE badge ages naturally between dashboard
-  // polls. The poll cadence is 5s during a pre-entry window
-  // (per useDCData's adaptive cadence) so this ticking value is
-  // overlayed against polls that arrive every 1-12 ticks.
-  useTick(1000);
   if (slRatio == null) {
     return (
       <div style={{ fontSize: 11, fontFamily: fonts.mono, color: colors.textDim }}>
@@ -558,36 +553,13 @@ function SLRatioLine({
     color = colors.textSecondary; // no gate for this strategy
   }
 
-  // LIVE badge surfaces only when the daemon's pre-entry stream is
-  // currently open for this strategy. Displayed age is recomputed
-  // client-side each tick using the response envelope's
-  // `responseComputedAt` anchor:
-  //   displayAge = (Date.now() - Date.parse(responseComputedAt))
-  //                + lastTickAgeMs
-  // First term = "how long ago did the server compute this
-  // response"; second = "how stale was the tick at that server
-  // moment." Sum = "tick age from operator's wall-clock RIGHT NOW."
-  // Falls back to the static server-computed lastTickAgeMs when
-  // the daemon is older than the computed_at envelope (pre PR #152).
+  // The LIVE badge is its own component so the `useTick(1000)` it
+  // depends on only runs while a pre-entry stream is actually open
+  // for this strategy — saves N × 1Hz wasted re-renders across all
+  // non-live SLRatioLines through the trading session (R2 review of
+  // PR #175). Rules of Hooks forbid `if (isLive) useTick(...)`,
+  // hence the child-component extraction.
   const isLive = source === "live_stream";
-  let displayAgeMs: number | null = lastTickAgeMs;
-  if (isLive && lastTickAgeMs != null && responseComputedAt) {
-    const responseAge = Date.now() - Date.parse(responseComputedAt);
-    if (Number.isFinite(responseAge) && responseAge >= 0) {
-      displayAgeMs = lastTickAgeMs + responseAge;
-    }
-  }
-  // Format: <1s → "{N}ms", >=1s → "{N}s" rounded. Once we cross the
-  // second boundary the badge ticks once per second instead of
-  // showing a busy millisecond counter.
-  let ageLabel: string | null = null;
-  if (displayAgeMs != null) {
-    if (displayAgeMs < 1000) {
-      ageLabel = `${Math.max(0, Math.round(displayAgeMs))}ms`;
-    } else {
-      ageLabel = `${Math.round(displayAgeMs / 1000)}s`;
-    }
-  }
 
   return (
     <div style={{ fontSize: 12, fontFamily: fonts.mono, fontWeight: 600, color }}>
@@ -609,32 +581,74 @@ function SLRatioLine({
         </span>
       )}
       {isLive && (
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 700,
-            marginLeft: 6,
-            padding: "1px 5px",
-            borderRadius: 4,
-            background: colors.accentBlue + "18",
-            // Border alpha 40 matches the PASS/FAIL chip styling
-            // (R2 review of PR #173) — gate-decision chip should
-            // dominate visually; the LIVE chip is fidelity
-            // metadata that sits alongside it.
-            border: `1px solid ${colors.accentBlue}40`,
-            color: colors.accentBlue,
-            letterSpacing: 0.5,
-          }}
-          title={
-            ageLabel != null
-              ? `Live tick ${ageLabel} ago (computed client-side from response timestamp)`
-              : "Pre-entry streaming subscription is open"
-          }
-        >
-          LIVE
-          {ageLabel != null && ` · ${ageLabel}`}
-        </span>
+        <LiveBadge
+          lastTickAgeMs={lastTickAgeMs}
+          responseComputedAt={responseComputedAt}
+        />
       )}
     </div>
+  );
+}
+
+function LiveBadge({
+  lastTickAgeMs, responseComputedAt,
+}: {
+  lastTickAgeMs: number | null;
+  responseComputedAt: string | null;
+}) {
+  // 1Hz re-render so the displayed age ticks up between dashboard
+  // polls. Scope this hook to the LIVE-badge subtree only — when
+  // no strategy is in its pre-entry window, this component isn't
+  // mounted and the timer doesn't run.
+  useTick(1000);
+
+  // Displayed age = "how long ago did the server compute this
+  // response" + "how stale was the tick at that server moment."
+  // Sum = "tick age from operator's wall-clock RIGHT NOW."
+  // Falls back to the static server-computed lastTickAgeMs when
+  // the daemon is older than the computed_at envelope (pre PR #152).
+  let displayAgeMs: number | null = lastTickAgeMs;
+  if (lastTickAgeMs != null && responseComputedAt) {
+    const responseAge = Date.now() - Date.parse(responseComputedAt);
+    if (Number.isFinite(responseAge) && responseAge >= 0) {
+      displayAgeMs = lastTickAgeMs + responseAge;
+    }
+  }
+  // <1s → "{N}ms", >=1s → "{N}s" rounded.
+  let ageLabel: string | null = null;
+  if (displayAgeMs != null) {
+    if (displayAgeMs < 1000) {
+      ageLabel = `${Math.max(0, Math.round(displayAgeMs))}ms`;
+    } else {
+      ageLabel = `${Math.round(displayAgeMs / 1000)}s`;
+    }
+  }
+
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        marginLeft: 6,
+        padding: "1px 5px",
+        borderRadius: 4,
+        background: colors.accentBlue + "18",
+        // Border alpha 40 matches the PASS/FAIL chip styling
+        // (R2 review of PR #173) — gate-decision chip should
+        // dominate visually; the LIVE chip is fidelity
+        // metadata that sits alongside it.
+        border: `1px solid ${colors.accentBlue}40`,
+        color: colors.accentBlue,
+        letterSpacing: 0.5,
+      }}
+      title={
+        ageLabel != null
+          ? `Live tick ${ageLabel} ago (computed client-side from response timestamp)`
+          : "Pre-entry streaming subscription is open"
+      }
+    >
+      LIVE
+      {ageLabel != null && ` · ${ageLabel}`}
+    </span>
   );
 }
