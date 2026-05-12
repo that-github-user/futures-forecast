@@ -90,10 +90,8 @@ function makePolicy(key: string, p: FixtureCase["input"]["policy"]): DCAllocatio
     global_pct: p.global_pct,
     per_strat_pct: p.per_strat_pct,
     hard_cap: p.hard_cap,
-    copeland_mode: "aggressive",
-    recommended: key === "rec_60_10",
-    reference_only: false,
-    backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 3.8, trades_skipped: 0 },
+    recommended: key === "live",
+    backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 2.91, trades_skipped: 0 },
     monte_carlo: { median: 0, p5: 0, p95: 0 },
     linear_growth: null,
   };
@@ -186,7 +184,7 @@ describe("roundHalfToEven — matches Python round()", () => {
 
 describe("computeSuggestedContracts — defensive edge cases", () => {
   const basePolicy: DCAllocationPolicy = {
-    key: "rec_60_10",
+    key: "live",
     name: "",
     description: "",
     base_pct: 5,
@@ -195,10 +193,8 @@ describe("computeSuggestedContracts — defensive edge cases", () => {
     global_pct: 60,
     per_strat_pct: 10,
     hard_cap: 50,
-    copeland_mode: "aggressive",
     recommended: true,
-    reference_only: false,
-    backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 3.8, trades_skipped: 0 },
+    backtest: { start_equity: 100_000, terminal_equity: 0, pf: 0, max_dd_pct: 0, years: 2.91, trades_skipped: 0 },
     monte_carlo: null,
     linear_growth: null,
   };

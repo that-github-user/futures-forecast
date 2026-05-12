@@ -32,9 +32,23 @@ export interface LegData {
   // the S/L ratio shown above is from a live tick rather than a
   // 2-min-stale snapshot. The "LIVE · {age}ms" badge surfaces this
   // so operators trust the gate fidelity at decision time.
-  slRatioSource: "live_stream" | "snapshot" | null;
+  // "live_stream_stale" (PR #274): the pre-entry stream just ended;
+  // the values shown are the last live snapshot held in the daemon's
+  // afterglow buffer (up to ~2 min). Dashboard dims values + shows
+  // "RECENT" instead of "LIVE" so the operator knows they're seeing
+  // last-known-good, not current.
+  slRatioSource: "live_stream" | "live_stream_stale" | "snapshot" | null;
   lastTickAgeMs: number | null;
   preEntryWindowActive: boolean;
+  // True when slRatioSource === "live_stream_stale" — the pre-entry
+  // stream just ended and these values are last-known-good from the
+  // daemon's afterglow buffer (#274). Card-wide signal so per-leg
+  // mids and the net-debit headline can be dimmed in lockstep with
+  // the RECENT badge on the S/L line (R2 review of PR #163 round 1).
+  // Required field (not optional) — every LegData construction site
+  // must supply it so a new card path can't accidentally skip the
+  // afterglow visual without TypeScript flagging it.
+  isStale: boolean;
   // Phase 4 follow-up: ISO timestamp of when the API computed the
   // response carrying `lastTickAgeMs`. The LIVE badge uses
   // `(Date.now() - Date.parse(responseComputedAt)) + lastTickAgeMs`

@@ -98,6 +98,9 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: s.sl_ratio_source ?? null,
         lastTickAgeMs: s.last_tick_age_ms ?? null,
         preEntryWindowActive: s.pre_entry_window_active ?? false,
+        // PR #163: card-wide afterglow signal so net-debit + per-leg
+        // mids dim alongside the RECENT badge on the S/L line.
+        isStale: s.sl_ratio_source === "live_stream_stale",
         // Phase 4: shared response timestamp for client-side age recompute.
         responseComputedAt: signals?.computed_at ?? null,
       });
@@ -137,6 +140,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: base?.slRatioSource ?? null,
         lastTickAgeMs: base?.lastTickAgeMs ?? null,
         preEntryWindowActive: base?.preEntryWindowActive ?? false,
+        isStale: base?.isStale ?? false,
         // Envelope timestamp is shared across all strategies in
         // the same /signals response; surfaced per-leg for the
         // LIVE-badge client-side age recompute. Falls back to
@@ -601,10 +605,10 @@ function PortfolioInput({ value, onChange }: { value: number; onChange: (v: numb
 }
 
 const POLICY_LABEL: Record<PolicyKey, string> = {
-  take_all: "Take-all",
-  rec_60_10: "Recommended 60/10",
-  cons_40_8: "Stricter 40/8",
-  cop_cons_60_10: "Cop-Con 60/10",
+  live: "Live (recommended)",
+  conservative: "Conservative 3%/40-8",
+  go_only: "GO-only (no GO+ boost)",
+  aggressive: "Aggressive 7%/70-12",
   static_1ct: "Static 1 ct (baseline)",
 };
 
@@ -640,11 +644,7 @@ function PolicySelector({
         cursor: "pointer",
       }}
     >
-      {(Object.keys(POLICY_LABEL) as PolicyKey[])
-        // Hide reference-only policies (take_all) — they render on the
-        // Capital tab chart as overlays, not as selectable live policies.
-        .filter((k) => !policies(k)?.reference_only)
-        .map((k) => (
+      {(Object.keys(POLICY_LABEL) as PolicyKey[]).map((k) => (
         <option key={k} value={k}>
           {POLICY_LABEL[k]}
         </option>

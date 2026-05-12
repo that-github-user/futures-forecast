@@ -2,8 +2,8 @@
  * PolicyPicker — Panel A of the Capital tab. Renders a selectable grid
  * of DCAllocationPolicy cards. Each PolicyCard summarizes the policy
  * (name, description, recommended/baseline badge, terminal/PF/MaxDD
- * stats for vega-prime policies, or annual P/L / 3.8y terminal for
- * the linear-growth baseline). The `Stat` primitive here is private
+ * stats for ensemble-gate policies, or annual P/L / 2.91y terminal
+ * for the linear-growth baseline). The `Stat` primitive here is private
  * to the card layout.
  */
 
@@ -23,7 +23,7 @@ export function PolicyPicker({
   portfolioSize: number;
 }) {
   return (
-    <Panel title="Allocation Policy" subtitle="Four validated combinations — pick one">
+    <Panel title="Allocation Policy" subtitle="Live policy + 3 variants — pick one">
       <div
         style={{
           display: "grid",
@@ -120,13 +120,12 @@ function PolicyCard({
         (() => {
           // static_1ct carries linear_growth parameters. These numbers are
           // UNSCALED: at 1 contract per entry, dollar P/L is identical whether
-          // the user's account is $25K or $500K — the trade makes the trade
-          // whatever. Terminal adds that constant gain to the user's starting
-          // equity, so the 3.8y number varies with portfolioSize but the
-          // annualized P/L does not.
+          // the user's account is $25K or $500K. Terminal adds that constant
+          // gain to the user's starting equity over the 35-month (2.91y)
+          // backtest window — the annualized P/L does not depend on size.
           const lg = policy.linear_growth;
           const annualPL = lg ? lg.monthly_pl * 12 : 0;
-          const terminal38 = lg ? portfolioSize + lg.monthly_pl * 46 : portfolioSize;
+          const terminalLinear = lg ? portfolioSize + lg.monthly_pl * 35 : portfolioSize;
           return (
             <>
               <div
@@ -145,8 +144,8 @@ function PolicyCard({
                   color={colors.textPrimary}
                 />
                 <Stat
-                  label="3.8y terminal"
-                  value={`$${formatCompact(terminal38)}`}
+                  label="2.91y terminal"
+                  value={`$${formatCompact(terminalLinear)}`}
                 />
               </div>
               <div style={{ fontSize: 10, color: colors.textDim, marginTop: 2 }}>

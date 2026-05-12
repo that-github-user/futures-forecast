@@ -162,13 +162,18 @@ export interface DCSignalStatus {
   //   null      — strategy not yet resolved, or pre-observability row
   iv_source: "chain" | "vix" | "default" | null;
   // Phase 3 of live-tick-pre-entry (gate-data fidelity surface):
-  //   "live_stream" — sl_ratio above is from a streaming
-  //                   pre-entry subscription (strategy in its
-  //                   T-60s → T-0 window). Renders the LIVE badge.
-  //   "snapshot"    — sl_ratio is from the 2-min SL worker poll
-  //                   (potentially stale by up to 2 minutes).
-  //   null          — no S/L data for this strategy yet.
-  sl_ratio_source?: "live_stream" | "snapshot" | null;
+  //   "live_stream"       — sl_ratio is from a streaming pre-entry
+  //                         subscription (strategy in its T-60s →
+  //                         T-0 window). Renders the LIVE badge.
+  //   "live_stream_stale" — pre-entry stream just ended; values are
+  //                         the last snapshot held in the daemon's
+  //                         afterglow buffer (#274). Up to ~2 min
+  //                         old. Dashboard dims values + shows
+  //                         "RECENT" instead of LIVE.
+  //   "snapshot"          — sl_ratio is from the 2-min SL worker
+  //                         poll (potentially stale by up to 2 min).
+  //   null                — no S/L data for this strategy yet.
+  sl_ratio_source?: "live_stream" | "live_stream_stale" | "snapshot" | null;
   // Oldest-leg tick age in ms at API-call time, when source is
   // "live_stream". Null otherwise.
   last_tick_age_ms?: number | null;
@@ -394,11 +399,10 @@ export interface DCStrategySpec {
 
 
 // ---------------------------------------------------------------------------
-// Capital Allocation tab (CAPITAL_ALLOCATION.md §4, §5, §8, §10)
+// Capital Allocation tab (ensemble-gate backtest, 2023-06-01 → 2026-04-29)
 // ---------------------------------------------------------------------------
 
-export type PolicyKey = "take_all" | "rec_60_10" | "cons_40_8" | "cop_cons_60_10" | "static_1ct";
-export type CopelandMode = "aggressive" | "conservative";
+export type PolicyKey = "live" | "conservative" | "go_only" | "aggressive" | "static_1ct";
 
 export interface DCPolicyBacktest {
   start_equity: number;
@@ -431,16 +435,11 @@ export interface DCAllocationPolicy {
   global_pct: number;
   per_strat_pct: number;
   hard_cap: number;
-  copeland_mode: CopelandMode;
   recommended: boolean;
-  // Reference-only policies render as an overlay on the compounding chart
-  // but don't appear in the picker (used for take_all, which isn't
-  // executable on a real broker).
-  reference_only: boolean;
-  // Null for the static_1ct baseline (no vega-prime research behind it);
-  // populated for every other policy.
+  // Null for the static_1ct baseline (no compounding research applies);
+  // populated for every ensemble-gate policy.
   backtest: DCPolicyBacktest | null;
-  // Only populated for the rec_60_10 policy — see CAPITAL_ALLOCATION.md §10.
+  // Only populated for the `live` policy — 500-path bootstrap (14-day blocks).
   monte_carlo: DCPolicyMonteCarlo | null;
   // Set only for non-compounding policies (static_1ct). Enables linear
   // median + Gaussian-noise sample-path rendering.

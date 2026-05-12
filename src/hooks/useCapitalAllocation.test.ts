@@ -22,10 +22,10 @@ describe("useCapitalAllocation constants", () => {
     // at the last listed literal (keep the list manually synced with
     // the type). `satisfies` ensures the test itself stays strict.
     const everyKnownKey = [
-      "take_all",
-      "rec_60_10",
-      "cons_40_8",
-      "cop_cons_60_10",
+      "live",
+      "conservative",
+      "go_only",
+      "aggressive",
       "static_1ct",
     ] satisfies readonly PolicyKey[];
     for (const k of everyKnownKey) {
