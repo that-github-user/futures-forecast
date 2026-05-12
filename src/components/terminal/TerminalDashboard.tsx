@@ -122,10 +122,15 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
     : renderState.sub === "AWAITING"
       ? "Data"
       : renderState.sub === "BLOCKED"
-        ? renderState.underlyingBias === "LONG"
-          ? "would-be Buy"
+        ? // Short forms ("→ Buy" / "→ Sell") avoid wrapping the
+          // headline label on narrow mobile viewports where the
+          // score-block flex column gets tight. The full sentence
+          // lives in the SynthesisCard chip's title attribute for
+          // operators who want context.
+          renderState.underlyingBias === "LONG"
+          ? "→ Buy"
           : renderState.underlyingBias === "SHORT"
-            ? "would-be Sell"
+            ? "→ Sell"
             : "Override"
         : renderState.sub === "MIXED"
           ? "Split"
@@ -1184,19 +1189,21 @@ function FlatSubStateChip({
   // just describe the mechanism. The "no edge" language pairs with
   // the broader trader vocabulary (vs telemetry-speak like "no
   // directional signal").
-  // For BLOCKED with an underlying directional lean (#279), append
-  // the would-be direction so the operator can see WHAT the
-  // synthesizer wanted to say despite the override — useful for
-  // attribution and for spotting overrides that may be over-firing.
-  const blockedSuffix =
+  // For BLOCKED with an underlying directional lean (#279), front-
+  // load the new information (the underlying view) before the block
+  // reason — an operator who already knows the override is firing
+  // can otherwise miss the new bit at the end of a long sentence
+  // (R2 review of PR #180). The "do not trade off the score"
+  // imperative stays at the tail so it's the parting note.
+  const blockedPrefix =
     underlyingBias === "LONG"
-      ? " The synthesizer's underlying view would have been LONG (Buy)."
+      ? "Underlying view: LONG (Buy). "
       : underlyingBias === "SHORT"
-        ? " The synthesizer's underlying view would have been SHORT (Sell)."
+        ? "Underlying view: SHORT (Sell). "
         : "";
   const title =
     subState === "BLOCKED"
-      ? `Override active: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.${blockedSuffix}`
+      ? `${blockedPrefix}Suppressed by override: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.`
       : subState === "MIXED"
         ? "Sub-systems disagree (large contributions in opposing directions); score nets near zero. Wait for resolution before sizing — one tick could flip the bias."
         : "All sub-systems near zero; no edge. Stand down until a directional setup forms.";

@@ -789,6 +789,11 @@
   letter-spacing: 0.08em;
   vertical-align: middle;
   cursor: help;
+  /* Defensive: BLOCKED-with-underlyingBias renders longer text
+   * ("BLOCKED → BUY" / "BLOCKED → SELL"). Keep on one line so
+   * narrow mobile cards don't push the chip onto a second row
+   * inside the score flex container. */
+  white-space: nowrap;
 }
 .flat-sub-chip.neutral {
   background: rgba(120, 120, 130, 0.16);
