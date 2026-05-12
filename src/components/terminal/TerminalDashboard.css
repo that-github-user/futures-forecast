@@ -758,7 +758,52 @@
   font-variant-numeric: tabular-nums;
 }
 .terminal-card.synthesis .terminal-card-score .num.placeholder {
-  color: var(--ink-40);
+  /* #276: when bias is FLAT but we have a real score (NEUTRAL / MIXED /
+   * BLOCKED), the number is no longer a placeholder em-dash — it's
+   * the operator's signal about how close we are to ±1.0 thresholds.
+   * Keep it readable at ink-60 (not ink-40) so it doesn't recede into
+   * the chrome. AWAITING-true-no-data still renders the em-dash. */
+  color: var(--ink-60);
+}
+
+/* ── #276: FLAT sub-state chip next to SYNTHESIS card score ──
+ *
+ * Three sub-states, each with a distinct hue so a glanceable read
+ * tells the operator WHY there's no directional bias:
+ *   NEUTRAL — gray, muted. "all systems near zero" — genuinely quiet.
+ *   MIXED   — amber, caution. "systems disagree" — contested, score
+ *             may flip with one tick.
+ *   BLOCKED — red, stop. "override is suppressing the score" —
+ *             the score is a lie per synthesizer §4.1.1.
+ *
+ * Chip stays compact so the 48px score numeral remains the dominant
+ * element; the chip is fidelity metadata, not the headline. */
+.flat-sub-chip {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+  cursor: help;
+}
+.flat-sub-chip.neutral {
+  background: rgba(120, 120, 130, 0.16);
+  border: 1px solid rgba(120, 120, 130, 0.45);
+  color: var(--ink-60);
+}
+.flat-sub-chip.mixed {
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px dashed rgba(245, 158, 11, 0.55);
+  color: var(--accent-amber, #f59e0b);
+}
+.flat-sub-chip.blocked {
+  background: rgba(214, 76, 56, 0.16);
+  border: 1px solid rgba(214, 76, 56, 0.55);
+  color: var(--neg-persimmon);
 }
 
 /* ── Levels card — two-column key/value grid ──────────────── */
