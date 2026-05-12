@@ -35,11 +35,29 @@ export function DCArmedBanner({ signals, onClickJumpToSignals }: Props) {
     const slByName = new Map<string, number | null>();
     for (const s of signals?.signals ?? []) slByName.set(s.strategy_name, s.sl_ratio ?? null);
 
+    // Daemon outcome map (#277): when a strategy's entry slot has
+    // fired AND been recorded as a skip (within 30s), the banner
+    // should NOT keep showing it as "firing" — the daemon already
+    // decided. Passing the outcome to deriveLifecycle flips its
+    // state to passed_skipped which the banner naturally excludes.
+    const outcomeByName = new Map<string, { outcome: string | null; reason: string | null }>();
+    for (const s of signals?.signals ?? []) {
+      outcomeByName.set(s.strategy_name, {
+        outcome: s.today_outcome ?? null,
+        reason: s.today_outcome_reason ?? null,
+      });
+    }
+
     const out: Array<{ name: string; state: string; secondsUntilNext: number | null; nextHHMM: string | null; signal: string | null; slRatio: number | null; usesSlRatio: boolean }> = [];
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
-      const info = deriveLifecycle(spec, signal, featuresStale, now);
+      const outcome = outcomeByName.get(spec.name);
+      const info = deriveLifecycle(
+        spec, signal, featuresStale, now,
+        outcome?.outcome ?? null,
+        outcome?.reason ?? null,
+      );
       if (info.state === "imminent" || info.state === "firing") {
         out.push({
           name: spec.name,

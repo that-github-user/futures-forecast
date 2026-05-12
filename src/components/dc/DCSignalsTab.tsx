@@ -79,6 +79,21 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
     return m;
   }, [signals]);
 
+  // Daemon-authoritative outcome map (#277). Passed into
+  // deriveLifecycle below so the post-window state ("ENTERED" vs
+  // "NO FIRE") reflects what the daemon actually did, not what the
+  // ensemble signal would have suggested.
+  const outcomeByName = useMemo(() => {
+    const m = new Map<string, { outcome: string | null; reason: string | null }>();
+    for (const s of signals?.signals ?? []) {
+      m.set(s.strategy_name, {
+        outcome: s.today_outcome ?? null,
+        reason: s.today_outcome_reason ?? null,
+      });
+    }
+    return m;
+  }, [signals]);
+
   // Signals-derived half of the per-strategy display bundle. The monitors loop
   // below overlays the spec-derived fields (profitTargetPct, usesSlRatio) to
   // form the full LegData.
@@ -122,7 +137,12 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
     for (const spec of specs) {
       if (!subs.isSubscribed(spec.name)) continue;
       const signal = signalByName.get(spec.name) ?? null;
-      const info = deriveLifecycle(spec, signal, featuresStale, now);
+      const outcome = outcomeByName.get(spec.name);
+      const info = deriveLifecycle(
+        spec, signal, featuresStale, now,
+        outcome?.outcome ?? null,
+        outcome?.reason ?? null,
+      );
       // Start from the signals-derived bundle (may be missing if no data yet),
       // then overlay per-strategy constants from the spec (profit target,
       // whether the strategy actually uses S/L as a criterion).
@@ -176,7 +196,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
       return a.spec.name.localeCompare(b.spec.name);
     });
     return list;
-  }, [specs, subs, signalByName, legDataByName, featuresStale, now]);
+  }, [specs, subs, signalByName, outcomeByName, legDataByName, featuresStale, now]);
 
   // Compact projection of the fields that actually drive notification
   // transitions — (name, state). `monitors` itself gets a new reference
