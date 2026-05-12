@@ -36,6 +36,7 @@ const TZ_OPTIONS: TZOption[] = ["ET", "CT", "MT", "PT", "local"];
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h"];
 import type { SynthesizerContribution, TerminalSnapshot } from "../../api/terminalTypes";
+import { deriveScoreRenderState } from "../../lib/synthesizerFlatState";
 import { RouteNav } from "../nav/RouteNav";
 import { SystemFeed } from "./SystemFeed";
 import { OverlaysSheet } from "./OverlaysSheet";
@@ -73,14 +74,22 @@ export function TerminalDashboard() {
 
 function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const score = data?.synthesizer?.score;
-  const hasScore = score !== undefined && score !== null && data?.synthesizer.bias !== "FLAT";
+  // Single source of truth for "directional" vs "flat-sub-state"
+  // rendering. Shared with SynthesisCard so the two surfaces never
+  // disagree about which chip to show (#276).
+  const renderState = deriveScoreRenderState(data?.synthesizer);
+  const isDirectional = renderState.kind === "directional";
+  // Always show the score number when we have one — even at -0.24 the
+  // operator wants to see proximity-to-threshold. Only the true
+  // AWAITING (score null) state renders the em-dash placeholder.
   // Per spec §4.1: the headline score is a 240px monumental Editorial
   // Italic glyph — meant to read as a sculptural object, not telemetry.
   // Integer rounding keeps the figure clean. The SynthesisCard body
   // shows the same number with one decimal where precision matters.
-  const scoreDisplay = hasScore
-    ? `${score! >= 0 ? "+" : ""}${Math.round(score!)}`
-    : "—";
+  const isAwaiting = renderState.kind === "flat" && renderState.sub === "AWAITING";
+  const scoreDisplay = isAwaiting
+    ? "—"
+    : `${score! >= 0 ? "+" : ""}${Math.round(score!)}`;
 
   const regimeLabel = data?.regime?.regime_label ?? "unknown";
   const hasRegime = regimeLabel !== "unknown";
@@ -92,14 +101,46 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const change = data?.es_change ?? 0;
   const changePositive = change >= 0;
 
+  // Headline-strip label copy for each render state. The placeholder
+  // class de-emphasizes the glyph for non-directional states so the
+  // sculptural element doesn't pretend to be actionable telemetry.
+  const labelTop = isDirectional
+    ? (renderState.bias === "LONG" ? "Buy" : "Sell")
+    : renderState.sub === "AWAITING"
+      ? "Awaiting"
+      : renderState.sub === "BLOCKED"
+        ? "Blocked"
+        : renderState.sub === "MIXED"
+          ? "Mixed"
+          : "Neutral";
+  const labelBottom = isDirectional
+    ? "Bias"
+    : renderState.sub === "AWAITING"
+      ? "Data"
+      : renderState.sub === "BLOCKED"
+        ? "Override"
+        : renderState.sub === "MIXED"
+          ? "Split"
+          : "No signal";
+
+  // Tint the headline label by sub-state so the 240px monumental
+  // glyph isn't the only color cue (R2 nit). Headline glyph stays
+  // ink-40 grayscale per the sculptural treatment; the small label
+  // beneath picks up the chip color so glance-reading the headline
+  // surfaces MIXED-vs-NEUTRAL-vs-BLOCKED without scanning to the
+  // SynthesisCard.
+  const labelClass = !isDirectional
+    ? ` flat-${renderState.sub.toLowerCase()}`
+    : "";
+
   return (
     <section className="terminal-headline">
       <div className="terminal-score-block">
-        <span className={`terminal-score${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
-        <span className="terminal-score-label">
-          {hasScore ? (data!.synthesizer.bias === "LONG" ? "Buy" : "Sell") : "Awaiting"}
+        <span className={`terminal-score${isDirectional ? "" : " placeholder"}`}>{scoreDisplay}</span>
+        <span className={`terminal-score-label${labelClass}`}>
+          {labelTop}
           <br />
-          {hasScore ? "Bias" : "Data"}
+          {labelBottom}
         </span>
       </div>
       <div className={`terminal-regime${hasRegime ? "" : " placeholder"}`}>
@@ -1066,19 +1107,23 @@ const SYSTEM_SHORT: Record<string, string> = {
 function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
   const synth = data?.synthesizer;
   const score = synth?.score ?? null;
-  const bias = synth?.bias ?? "FLAT";
   const contributions = synth?.contributions ?? [];
 
-  const hasScore = score != null && bias !== "FLAT";
+  // Same render-state derivation as the headline strip (#276) so the
+  // two surfaces never disagree about which chip to show. Score number
+  // is always shown when score != null (even at -0.24 in NEUTRAL/MIXED)
+  // — operator wants to see proximity-to-threshold instead of "—".
+  const renderState = deriveScoreRenderState(synth);
+  const isDirectional = renderState.kind === "directional";
+  const isAwaiting = renderState.kind === "flat" && renderState.sub === "AWAITING";
+
   // Per spec §4.5: SYNTHESIS card score uses Editorial Italic at 64px,
   // mirroring the headline. Float-format with one decimal here since
   // the card's smaller size benefits from precision; headline keeps
   // its integer monumental glyph.
-  const scoreDisplay = hasScore
-    ? `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`
-    : score === 0
-      ? "0.0"
-      : "—";
+  const scoreDisplay = isAwaiting
+    ? "—"
+    : `${score! >= 0 ? "+" : ""}${score!.toFixed(1)}`;
 
   return (
     <div className="terminal-card synthesis">
@@ -1087,7 +1132,10 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
         <span className="terminal-card-ts">—</span>
       </div>
       <div className="terminal-card-score">
-        <span className={`num${hasScore ? "" : " placeholder"}`}>{scoreDisplay}</span>
+        <span className={`num${isDirectional ? "" : " placeholder"}`}>{scoreDisplay}</span>
+        {renderState.kind === "flat" && renderState.sub !== "AWAITING" && (
+          <FlatSubStateChip subState={renderState.sub} overrides={synth?.overrides ?? []} />
+        )}
       </div>
       <div className="terminal-card-body">
         {synth != null && contributions.length > 0 ? (
@@ -1101,6 +1149,37 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Small chip rendered next to the SYNTHESIS card's score number when
+ *  bias is not directional (#276). Distinct color + copy for each
+ *  sub-state so the operator can tell at a glance whether the system
+ *  is "no signal" (NEUTRAL), "systems disagree" (MIXED), or "override
+ *  is suppressing actionability" (BLOCKED). AWAITING is suppressed by
+ *  the caller — the em-dash placeholder is signal enough. */
+function FlatSubStateChip({
+  subState,
+  overrides,
+}: {
+  subState: "BLOCKED" | "MIXED" | "NEUTRAL";
+  overrides: string[];
+}) {
+  const className = `flat-sub-chip ${subState.toLowerCase()}`;
+  // Tooltips lead with what the operator should DO (R2 nit) — not
+  // just describe the mechanism. The "no edge" language pairs with
+  // the broader trader vocabulary (vs telemetry-speak like "no
+  // directional signal").
+  const title =
+    subState === "BLOCKED"
+      ? `Override active: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.`
+      : subState === "MIXED"
+        ? "Sub-systems disagree (large contributions in opposing directions); score nets near zero. Wait for resolution before sizing — one tick could flip the bias."
+        : "All sub-systems near zero; no edge. Stand down until a directional setup forms.";
+  return (
+    <span className={className} title={title}>
+      {subState}
+    </span>
   );
 }
 
