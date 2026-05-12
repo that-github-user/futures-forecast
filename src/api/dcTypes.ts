@@ -162,13 +162,18 @@ export interface DCSignalStatus {
   //   null      — strategy not yet resolved, or pre-observability row
   iv_source: "chain" | "vix" | "default" | null;
   // Phase 3 of live-tick-pre-entry (gate-data fidelity surface):
-  //   "live_stream" — sl_ratio above is from a streaming
-  //                   pre-entry subscription (strategy in its
-  //                   T-60s → T-0 window). Renders the LIVE badge.
-  //   "snapshot"    — sl_ratio is from the 2-min SL worker poll
-  //                   (potentially stale by up to 2 minutes).
-  //   null          — no S/L data for this strategy yet.
-  sl_ratio_source?: "live_stream" | "snapshot" | null;
+  //   "live_stream"       — sl_ratio is from a streaming pre-entry
+  //                         subscription (strategy in its T-60s →
+  //                         T-0 window). Renders the LIVE badge.
+  //   "live_stream_stale" — pre-entry stream just ended; values are
+  //                         the last snapshot held in the daemon's
+  //                         afterglow buffer (#274). Up to ~2 min
+  //                         old. Dashboard dims values + shows
+  //                         "RECENT" instead of LIVE.
+  //   "snapshot"          — sl_ratio is from the 2-min SL worker
+  //                         poll (potentially stale by up to 2 min).
+  //   null                — no S/L data for this strategy yet.
+  sl_ratio_source?: "live_stream" | "live_stream_stale" | "snapshot" | null;
   // Oldest-leg tick age in ms at API-call time, when source is
   // "live_stream". Null otherwise.
   last_tick_age_ms?: number | null;

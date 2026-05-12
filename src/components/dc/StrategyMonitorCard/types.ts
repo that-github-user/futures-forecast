@@ -32,7 +32,12 @@ export interface LegData {
   // the S/L ratio shown above is from a live tick rather than a
   // 2-min-stale snapshot. The "LIVE · {age}ms" badge surfaces this
   // so operators trust the gate fidelity at decision time.
-  slRatioSource: "live_stream" | "snapshot" | null;
+  // "live_stream_stale" (PR #274): the pre-entry stream just ended;
+  // the values shown are the last live snapshot held in the daemon's
+  // afterglow buffer (up to ~2 min). Dashboard dims values + shows
+  // "RECENT" instead of "LIVE" so the operator knows they're seeing
+  // last-known-good, not current.
+  slRatioSource: "live_stream" | "live_stream_stale" | "snapshot" | null;
   lastTickAgeMs: number | null;
   preEntryWindowActive: boolean;
   // Phase 4 follow-up: ISO timestamp of when the API computed the

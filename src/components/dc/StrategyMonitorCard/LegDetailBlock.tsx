@@ -529,7 +529,7 @@ function SLRatioLine({
 }: {
   slRatio: number | null;
   meetsMin: boolean | null;
-  source: "live_stream" | "snapshot" | null;
+  source: "live_stream" | "live_stream_stale" | "snapshot" | null;
   lastTickAgeMs: number | null;
   responseComputedAt: string | null;
 }) {
@@ -560,6 +560,11 @@ function SLRatioLine({
   // PR #175). Rules of Hooks forbid `if (isLive) useTick(...)`,
   // hence the child-component extraction.
   const isLive = source === "live_stream";
+  // Afterglow state (#274): pre-entry stream just ended; values are
+  // last-known-good from the daemon's afterglow buffer. Operator
+  // needs to know these aren't live anymore — RECENT chip stands in
+  // for LIVE until the snapshot path catches up.
+  const isStale = source === "live_stream_stale";
 
   return (
     <div style={{ fontSize: 12, fontFamily: fonts.mono, fontWeight: 600, color }}>
@@ -586,7 +591,35 @@ function SLRatioLine({
           responseComputedAt={responseComputedAt}
         />
       )}
+      {isStale && <RecentBadge />}
     </div>
+  );
+}
+
+function RecentBadge() {
+  // Last-known-good values from the post-cancel afterglow window
+  // (#274). Visually distinct from LIVE (muted ink, no pulsing age
+  // counter) so operators can tell at a glance that ticks have
+  // stopped but the values are still trustworthy as a recent
+  // anchor. Border alpha 40 matches PASS/FAIL + LIVE chips for
+  // visual consistency.
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        marginLeft: 6,
+        padding: "1px 5px",
+        borderRadius: 4,
+        background: colors.textMuted + "18",
+        border: `1px solid ${colors.textMuted}40`,
+        color: colors.textMuted,
+        letterSpacing: 0.5,
+      }}
+      title="Pre-entry stream just ended — values are the last live snapshot, refreshing on next SL poll"
+    >
+      RECENT
+    </span>
   );
 }
 
