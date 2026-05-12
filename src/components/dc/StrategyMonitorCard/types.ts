@@ -45,6 +45,9 @@ export interface LegData {
   // daemon's afterglow buffer (#274). Card-wide signal so per-leg
   // mids and the net-debit headline can be dimmed in lockstep with
   // the RECENT badge on the S/L line (R2 review of PR #163 round 1).
+  // Required field (not optional) — every LegData construction site
+  // must supply it so a new card path can't accidentally skip the
+  // afterglow visual without TypeScript flagging it.
   isStale: boolean;
   // Phase 4 follow-up: ISO timestamp of when the API computed the
   // response carrying `lastTickAgeMs`. The LIVE badge uses
