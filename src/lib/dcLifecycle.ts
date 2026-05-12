@@ -291,9 +291,15 @@ export function deriveLifecycle(
       });
     }
 
-    // Past the window end
+    // Past the window end. Range-window `recently_fired` decision
+    // uses the same daemon-outcome-aware gate as the discrete-entry
+    // sites below so a range-window strategy that the daemon
+    // blocked (SL/VIX/margin/…) flips to passed_skipped instead of
+    // rendering "Just fired" for 10 minutes. No range-window
+    // strategies exist today, but parity with the discrete sites
+    // keeps the classifier coherent against future additions.
     const sinceWindow = secondsOfDay - winEnd;
-    if (sinceWindow <= IMMINENT_WINDOW_SECONDS && armedSignal) {
+    if (sinceWindow <= IMMINENT_WINDOW_SECONDS && shouldRenderAsFired(signal, todayOutcome)) {
       return withOutcome({ ...todayBase,
         state: "recently_fired",
         windowKind,
