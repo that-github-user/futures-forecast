@@ -104,6 +104,10 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   // Headline-strip label copy for each render state. The placeholder
   // class de-emphasizes the glyph for non-directional states so the
   // sculptural element doesn't pretend to be actionable telemetry.
+  // BLOCKED with an underlyingBias (#279) surfaces the would-be
+  // direction in the bottom label so the operator can see WHAT the
+  // synthesizer wanted to say despite the override — useful for
+  // attribution and noticing over-firing overrides.
   const labelTop = isDirectional
     ? (renderState.bias === "LONG" ? "Buy" : "Sell")
     : renderState.sub === "AWAITING"
@@ -118,7 +122,16 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
     : renderState.sub === "AWAITING"
       ? "Data"
       : renderState.sub === "BLOCKED"
-        ? "Override"
+        ? // Short forms ("→ Buy" / "→ Sell") avoid wrapping the
+          // headline label on narrow mobile viewports where the
+          // score-block flex column gets tight. The full sentence
+          // lives in the SynthesisCard chip's title attribute for
+          // operators who want context.
+          renderState.underlyingBias === "LONG"
+          ? "→ Buy"
+          : renderState.underlyingBias === "SHORT"
+            ? "→ Sell"
+            : "Override"
         : renderState.sub === "MIXED"
           ? "Split"
           : "No signal";
@@ -1134,7 +1147,11 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
       <div className="terminal-card-score">
         <span className={`num${isDirectional ? "" : " placeholder"}`}>{scoreDisplay}</span>
         {renderState.kind === "flat" && renderState.sub !== "AWAITING" && (
-          <FlatSubStateChip subState={renderState.sub} overrides={synth?.overrides ?? []} />
+          <FlatSubStateChip
+            subState={renderState.sub}
+            overrides={synth?.overrides ?? []}
+            underlyingBias={renderState.underlyingBias}
+          />
         )}
       </div>
       <div className="terminal-card-body">
@@ -1161,24 +1178,45 @@ function SynthesisCard({ data }: { data: TerminalSnapshot | null }) {
 function FlatSubStateChip({
   subState,
   overrides,
+  underlyingBias,
 }: {
   subState: "BLOCKED" | "MIXED" | "NEUTRAL";
   overrides: string[];
+  underlyingBias?: "LONG" | "SHORT";
 }) {
   const className = `flat-sub-chip ${subState.toLowerCase()}`;
   // Tooltips lead with what the operator should DO (R2 nit) — not
   // just describe the mechanism. The "no edge" language pairs with
   // the broader trader vocabulary (vs telemetry-speak like "no
   // directional signal").
+  // For BLOCKED with an underlying directional lean (#279), front-
+  // load the new information (the underlying view) before the block
+  // reason — an operator who already knows the override is firing
+  // can otherwise miss the new bit at the end of a long sentence
+  // (R2 review of PR #180). The "do not trade off the score"
+  // imperative stays at the tail so it's the parting note.
+  const blockedPrefix =
+    underlyingBias === "LONG"
+      ? "Underlying view: LONG (Buy). "
+      : underlyingBias === "SHORT"
+        ? "Underlying view: SHORT (Sell). "
+        : "";
   const title =
     subState === "BLOCKED"
-      ? `Override active: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.`
+      ? `${blockedPrefix}Suppressed by override: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.`
       : subState === "MIXED"
         ? "Sub-systems disagree (large contributions in opposing directions); score nets near zero. Wait for resolution before sizing — one tick could flip the bias."
         : "All sub-systems near zero; no edge. Stand down until a directional setup forms.";
+  // Compact inline "BLOCKED → BUY" treatment when an underlying bias
+  // exists, so the operator sees the would-be direction at a glance
+  // even without hovering. ASCII arrow keeps glyph weight light.
+  const chipText =
+    subState === "BLOCKED" && underlyingBias
+      ? `${subState} → ${underlyingBias === "LONG" ? "BUY" : "SELL"}`
+      : subState;
   return (
     <span className={className} title={title}>
-      {subState}
+      {chipText}
     </span>
   );
 }

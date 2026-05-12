@@ -197,6 +197,9 @@ describe("deriveScoreRenderState", () => {
   });
 
   it("flat BLOCKED supersedes directional LONG when overrides active", () => {
+    // Post-#279: BLOCKED also carries underlyingBias=LONG so the
+    // UI can surface "Blocked — would-be Buy" instead of losing
+    // the directional information entirely.
     const s = synth({
       score: 2.0,
       bias: "LONG",
@@ -205,6 +208,7 @@ describe("deriveScoreRenderState", () => {
     expect(deriveScoreRenderState(s)).toEqual({
       kind: "flat",
       sub: "BLOCKED",
+      underlyingBias: "LONG",
     });
   });
 
@@ -247,5 +251,72 @@ describe("deriveScoreRenderState", () => {
       kind: "flat",
       sub: "AWAITING",
     });
+  });
+
+  // ── #279: BLOCKED surfaces underlying directional lean ───────────
+
+  it("BLOCKED + bias=LONG carries underlyingBias=LONG", () => {
+    // The whole point of #279: when an override fires on a
+    // directional score, operator should see "Blocked — would-be
+    // Buy" rather than losing the directional information entirely.
+    const s = synth({
+      score: 2.1,
+      bias: "LONG",
+      overrides: ["backwardation"],
+      contributions: [contrib("volatility", 6)],
+    });
+    expect(deriveScoreRenderState(s)).toEqual({
+      kind: "flat",
+      sub: "BLOCKED",
+      underlyingBias: "LONG",
+    });
+  });
+
+  it("BLOCKED + bias=SHORT carries underlyingBias=SHORT", () => {
+    const s = synth({
+      score: -1.8,
+      bias: "SHORT",
+      overrides: ["weekly-vwap-lost"],
+    });
+    expect(deriveScoreRenderState(s)).toEqual({
+      kind: "flat",
+      sub: "BLOCKED",
+      underlyingBias: "SHORT",
+    });
+  });
+
+  it("BLOCKED + bias=FLAT has no underlyingBias (nothing to surface)", () => {
+    // Genuine FLAT-with-override: synthesizer wasn't leaning either
+    // way; the override is just additional context.
+    const s = synth({
+      score: -0.1,
+      bias: "FLAT",
+      overrides: ["macro-event-imminent"],
+    });
+    expect(deriveScoreRenderState(s)).toEqual({
+      kind: "flat",
+      sub: "BLOCKED",
+      // underlyingBias intentionally undefined — exact-shape match
+    });
+  });
+
+  it("non-BLOCKED flat states do not surface underlyingBias", () => {
+    // MIXED has no underlying single bias (contributions split);
+    // NEUTRAL is genuinely no-direction. Neither should carry the
+    // field even if synth.bias happened to be non-FLAT (shouldn't
+    // happen in practice, but defensive).
+    const s = synth({
+      score: -0.24,
+      bias: "FLAT",
+      contributions: [
+        contrib("volatility", 5),
+        contrib("structure", -5),
+      ],
+    });
+    const result = deriveScoreRenderState(s);
+    expect(result.kind).toBe("flat");
+    expect(result).toEqual({ kind: "flat", sub: "MIXED" });
+    // No underlyingBias key on the result.
+    expect("underlyingBias" in result).toBe(false);
   });
 });
