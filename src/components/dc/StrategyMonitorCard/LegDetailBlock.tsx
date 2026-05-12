@@ -41,7 +41,7 @@ const LEG_LABELS: Record<LegName, string> = {
 };
 
 export function LegDetailBlock({ legData }: { legData: LegData }) {
-  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio, ivSource, entryDirection } = legData;
+  const { legs, netDebit, entryNetDebit, snapshot, slRatio, slRatioMeetsMin, profitTargetPct, usesSlRatio, ivSource, entryDirection, isStale } = legData;
 
   // No leg data yet (worker hasn't polled or this strategy isn't eligible).
   // Fall back to just the S/L line for strategies that use it; otherwise render nothing.
@@ -65,6 +65,7 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
         snapshotTime={snapshot?.entry_time ?? null}
         ivSource={ivSource}
         entryDirection={entryDirection}
+        isStale={isStale}
       />
       <ProfitTargetLine
         netDebit={netDebit}
@@ -94,7 +95,7 @@ export function LegDetailBlock({ legData }: { legData: LegData }) {
         {LEG_ORDER.map((legName) => {
           const leg = legs[legName];
           if (!leg) return null; // defensive — backend currently always builds all 4
-          return <LegRow key={legName} label={LEG_LABELS[legName]} leg={leg} />;
+          return <LegRow key={legName} label={LEG_LABELS[legName]} leg={leg} isStale={isStale} />;
         })}
       </div>
 
@@ -117,12 +118,14 @@ function NetDebitHeader({
   snapshotTime,
   ivSource,
   entryDirection,
+  isStale,
 }: {
   netDebit: number | null;
   entryNetDebit: number | null;
   snapshotTime: string | null;
   ivSource: "chain" | "vix" | "default" | null;
   entryDirection: "debit" | "credit";
+  isStale: boolean;
 }) {
   const { formatPositionDateTime, tzLabel } = useTimezone();
   const isCredit = entryDirection === "credit";
@@ -254,9 +257,21 @@ function NetDebitHeader({
       <div style={{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: fonts.sans }}>
         {label}
       </div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: colors.textPrimary }}>
+      <div
+        style={{
+          fontSize: 17,
+          fontWeight: 700,
+          // Dim the headline price during afterglow to match the
+          // LOCKED-stagnant pattern above (R2 review of PR #163
+          // round 1) — operators rely on the net-debit number to
+          // decide manual quoting, so its visual brightness must
+          // track its actual liveness.
+          color: isStale ? colors.textSecondary : colors.textPrimary,
+        }}
+      >
         ${netDebit.toFixed(2)}
       </div>
+      {isStale && <RecentBadge />}
       {hasSnapshot && (
         <div
           style={{ fontSize: 10, color: colors.textMuted, display: "flex", alignItems: "baseline", gap: 4 }}
@@ -471,12 +486,14 @@ function TableHeader({ text, align }: { text: string; align: "left" | "right" })
   );
 }
 
-function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
+function LegRow({ label, leg, isStale }: { label: string; leg: DCLegDetail; isStale: boolean }) {
   const actionColor = leg.action === "STO" ? colors.accentGreen : colors.accentRed; // green = credit side, red = debit side
   const currentStr = leg.mid != null ? leg.mid.toFixed(2) : "--";
   const entryStr = leg.entry_mid != null ? leg.entry_mid.toFixed(2) : "";
   const hasBoth = leg.mid != null && leg.entry_mid != null;
   const delta = hasBoth ? leg.mid! - leg.entry_mid! : null;
+  // Dim the "Now" column during afterglow — these mids are
+  // last-known-good, not live (R2 review of PR #163 round 1).
 
   // STO legs: positive delta = more credit = BETTER → green
   // BTO legs: positive delta = more debit = WORSE → red
@@ -515,7 +532,7 @@ function LegRow({ label, leg }: { label: string; leg: DCLegDetail }) {
         <span style={{ color: colors.textMuted }}>{leg.strike}</span>
       </div>
       <div style={{ color: colors.textSecondary, fontSize: 10 }}>{formatExpiry(leg.expiry)}</div>
-      <div style={{ color: leg.mid != null ? colors.textPrimary : colors.textDim, textAlign: "right" }}>{currentStr}</div>
+      <div style={{ color: leg.mid != null ? (isStale ? colors.textSecondary : colors.textPrimary) : colors.textDim, textAlign: "right" }}>{currentStr}</div>
       <div style={{ color: leg.entry_mid != null ? colors.textSecondary : colors.textDim, textAlign: "right" }}>
         {entryStr || "—"}
       </div>
@@ -598,11 +615,19 @@ function SLRatioLine({
 
 function RecentBadge() {
   // Last-known-good values from the post-cancel afterglow window
-  // (#274). Visually distinct from LIVE (muted ink, no pulsing age
-  // counter) so operators can tell at a glance that ticks have
-  // stopped but the values are still trustworthy as a recent
-  // anchor. Border alpha 40 matches PASS/FAIL + LIVE chips for
-  // visual consistency.
+  // (#274). Visually distinct from LIVE on two axes (R2 review of
+  // PR #163 round 1):
+  //   1. Color — amber instead of blue. Amber is the project's
+  //      "caution / transient" tone (DCArmedBanner, GateModePill),
+  //      a step softer than red but unmistakably "pay attention."
+  //      textMuted (the original choice) read too similar to the
+  //      "@ entry" annotation label on a wall display.
+  //   2. Border style — dashed instead of solid. Breaks shape parity
+  //      with LIVE / PASS / FAIL chips at a glance even before the
+  //      operator parses the color or the letters.
+  // Tooltip is action-oriented (what to DO) rather than mechanism-
+  // descriptive — operators glancing at a card don't have time to
+  // infer the implication from "pre-entry stream just ended."
   return (
     <span
       style={{
@@ -611,12 +636,12 @@ function RecentBadge() {
         marginLeft: 6,
         padding: "1px 5px",
         borderRadius: 4,
-        background: colors.textMuted + "18",
-        border: `1px solid ${colors.textMuted}40`,
-        color: colors.textMuted,
+        background: colors.accentAmber + "18",
+        border: `1px dashed ${colors.accentAmber}66`,
+        color: colors.accentAmber,
         letterSpacing: 0.5,
       }}
-      title="Pre-entry stream just ended — values are the last live snapshot, refreshing on next SL poll"
+      title="Stream ended — last snapshot up to 2 min old. Do not quote manually off these values; next SL poll will refresh."
     >
       RECENT
     </span>

@@ -98,6 +98,9 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: s.sl_ratio_source ?? null,
         lastTickAgeMs: s.last_tick_age_ms ?? null,
         preEntryWindowActive: s.pre_entry_window_active ?? false,
+        // PR #163: card-wide afterglow signal so net-debit + per-leg
+        // mids dim alongside the RECENT badge on the S/L line.
+        isStale: s.sl_ratio_source === "live_stream_stale",
         // Phase 4: shared response timestamp for client-side age recompute.
         responseComputedAt: signals?.computed_at ?? null,
       });
@@ -137,6 +140,7 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
         slRatioSource: base?.slRatioSource ?? null,
         lastTickAgeMs: base?.lastTickAgeMs ?? null,
         preEntryWindowActive: base?.preEntryWindowActive ?? false,
+        isStale: base?.isStale ?? false,
         // Envelope timestamp is shared across all strategies in
         // the same /signals response; surfaced per-leg for the
         // LIVE-badge client-side age recompute. Falls back to

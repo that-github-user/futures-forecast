@@ -40,6 +40,12 @@ export interface LegData {
   slRatioSource: "live_stream" | "live_stream_stale" | "snapshot" | null;
   lastTickAgeMs: number | null;
   preEntryWindowActive: boolean;
+  // True when slRatioSource === "live_stream_stale" — the pre-entry
+  // stream just ended and these values are last-known-good from the
+  // daemon's afterglow buffer (#274). Card-wide signal so per-leg
+  // mids and the net-debit headline can be dimmed in lockstep with
+  // the RECENT badge on the S/L line (R2 review of PR #163 round 1).
+  isStale: boolean;
   // Phase 4 follow-up: ISO timestamp of when the API computed the
   // response carrying `lastTickAgeMs`. The LIVE badge uses
   // `(Date.now() - Date.parse(responseComputedAt)) + lastTickAgeMs`
