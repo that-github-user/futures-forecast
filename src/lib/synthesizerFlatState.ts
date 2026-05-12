@@ -92,10 +92,23 @@ export function classifyFlatState(synth: SynthesizerData | null | undefined): Fl
  *
  * Centralizes the precedence (BLOCKED beats directional, AWAITING
  * beats everything when score is null) so both render sites agree.
+ *
+ * `underlyingBias` (#279): when BLOCKED suppresses an otherwise-
+ * directional score, this carries the underlying bias the
+ * synthesizer would have called. Lets the UI surface "Blocked —
+ * would-be Buy" so the operator can see WHAT the synthesizer wanted
+ * to say despite the block — useful for attribution and for
+ * noticing whether overrides are over-firing. Undefined for
+ * AWAITING (no data) and for genuine FLAT-with-override (where
+ * there was no underlying lean to lose).
  */
 export type ScoreRenderState =
   | { kind: "directional"; bias: "LONG" | "SHORT" }
-  | { kind: "flat"; sub: FlatSubState };
+  | {
+      kind: "flat";
+      sub: FlatSubState;
+      underlyingBias?: "LONG" | "SHORT";
+    };
 
 export function deriveScoreRenderState(
   synth: SynthesizerData | null | undefined,
@@ -104,7 +117,17 @@ export function deriveScoreRenderState(
   // AWAITING and BLOCKED both supersede directional rendering — the
   // operator should NOT see "Buy" or "Sell" when there's no data or
   // an override is suppressing the score.
-  if (sub === "AWAITING" || sub === "BLOCKED") return { kind: "flat", sub };
+  if (sub === "AWAITING") return { kind: "flat", sub };
+  if (sub === "BLOCKED") {
+    // Surface the underlying lean when the synthesizer's bias was
+    // directional. synth is non-null here because BLOCKED requires
+    // synth.overrides.length > 0 (and overrides comes from synth).
+    const underlyingBias =
+      synth!.bias === "LONG" || synth!.bias === "SHORT"
+        ? synth!.bias
+        : undefined;
+    return { kind: "flat", sub, underlyingBias };
+  }
   if (synth!.bias === "LONG" || synth!.bias === "SHORT") {
     return { kind: "directional", bias: synth!.bias };
   }
