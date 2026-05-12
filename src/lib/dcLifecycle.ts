@@ -57,6 +57,14 @@ export interface LifecycleInfo {
   /** Next entry day-of-week (Python convention: 0=Mon..6=Sun). For active states = today.
    *  For inactive/closed = the next matching weekday from spec.entry_days. Used for sort. */
   nextEntryDow: number;
+  /** Most recent daemon outcome for today's entry slot, surfaced from
+   *  signal_events via the API (#277). Lets the strategy card render
+   *  a tooltip explaining WHY the daemon skipped — see
+   *  StrategyMonitorCard/BodyContent.tsx. Null when no entry
+   *  evaluation has fired today, or the API doesn't yet emit it. */
+  todayOutcome: string | null;
+  /** Human-readable reason from signal_events.outcome_reason. */
+  todayOutcomeReason: string | null;
 }
 
 const RTH_CLOSE_SECONDS = 16 * 3600; // 16:00 ET
@@ -142,12 +150,50 @@ function isGoSignal(signal: string | null): boolean {
   return signal === "GO" || signal === "GO_PLUS";
 }
 
+/** Was today's entry actually filled? Source-of-truth is the daemon's
+ *  signal_events.outcome surfaced via DCSignalStatus.today_outcome
+ *  (#277). Blacklist `entered` — anything else (blocked_*, skipped_*,
+ *  future enum values) is "didn't enter," so a daemon that grows a
+ *  new skip path doesn't need a frontend update. */
+function enteredToday(todayOutcome: string | null): boolean {
+  return todayOutcome === "entered";
+}
+
+/** Decide whether to treat post-window state as "fired" (will render
+ *  passed_will_fire / firing / recently_fired) vs "skipped" (passed_
+ *  skipped). When the daemon's authoritative outcome is available
+ *  for today, trust it. When it isn't (pre-observability rows, daemon
+ *  was down at entry time, or the API hasn't shipped #277 yet), fall
+ *  back to the ensemble signal — preserves pre-#277 behavior so the
+ *  card doesn't flip to "NO FIRE" on cold-start. */
+function shouldRenderAsFired(
+  signal: string | null,
+  todayOutcome: string | null,
+): boolean {
+  if (todayOutcome != null) return enteredToday(todayOutcome);
+  return isGoSignal(signal);
+}
+
 export function deriveLifecycle(
   spec: DCStrategySpec,
   signal: string | null,
   featuresStale: boolean,
   now: Date,
+  todayOutcome: string | null = null,
+  todayOutcomeReason: string | null = null,
 ): LifecycleInfo {
+  // Inject the daemon-authoritative outcome fields into every return
+  // via this thin wrapper rather than threading them into the ~9
+  // baseInfo callsites individually. Local closure picks up the
+  // function-scope todayOutcome / todayOutcomeReason params.
+  const withOutcome = (
+    partial: Parameters<typeof baseInfo>[0],
+  ): LifecycleInfo => baseInfo({
+    ...partial,
+    todayOutcome,
+    todayOutcomeReason,
+  });
+
   const windowKind = classifyWindow(spec);
   const { pythonDow, secondsOfDay } = etPartsAt(now);
   const isEntryDay = spec.entry_days.includes(pythonDow);
@@ -156,7 +202,7 @@ export function deriveLifecycle(
   // (Otherwise a Sunday-evening user would see "closed" for a Monday-only
   // strategy because secondsOfDay is past RTH close.)
   if (!isEntryDay) {
-    return baseInfo({
+    return withOutcome({
       state: "inactive",
       windowKind,
       isArmed: false,
@@ -168,7 +214,7 @@ export function deriveLifecycle(
   // After RTH close on an entry day: nothing more to anticipate today.
   // Next entry = next matching weekday after today (may be next week).
   if (secondsOfDay >= RTH_CLOSE_SECONDS) {
-    return baseInfo({
+    return withOutcome({
       state: "closed",
       windowKind,
       nextEntryDow: nextEntryDowFrom(spec.entry_days, pythonDow),
@@ -182,7 +228,7 @@ export function deriveLifecycle(
   const todayBase = { nextEntryDow: pythonDow };
 
   if (featuresStale) {
-    return baseInfo({
+    return withOutcome({
       state: "pre_features",
       windowKind,
       isArmed: false,
@@ -203,7 +249,7 @@ export function deriveLifecycle(
       const delta = winStart - secondsOfDay;
       const nextHHMM = spec.entry_times[0];
       if (delta <= IMMINENT_WINDOW_SECONDS) {
-        return baseInfo({ ...todayBase,
+        return withOutcome({ ...todayBase,
           state: armedSignal ? "imminent" : "not_fired_yet",
           windowKind,
           nextEntryHHMM: nextHHMM,
@@ -212,7 +258,7 @@ export function deriveLifecycle(
           firesToday: armedSignal,
         });
       }
-      return baseInfo({ ...todayBase,
+      return withOutcome({ ...todayBase,
         state: armedSignal ? "primed" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
@@ -233,7 +279,7 @@ export function deriveLifecycle(
         : timeToEnd <= IMMINENT_WINDOW_SECONDS
           ? "imminent" as const
           : "primed" as const;
-      return baseInfo({ ...todayBase,
+      return withOutcome({ ...todayBase,
         state: windowState,
         windowKind,
         nextEntryHHMM: spec.entry_window_end,
@@ -248,7 +294,7 @@ export function deriveLifecycle(
     // Past the window end
     const sinceWindow = secondsOfDay - winEnd;
     if (sinceWindow <= IMMINENT_WINDOW_SECONDS && armedSignal) {
-      return baseInfo({ ...todayBase,
+      return withOutcome({ ...todayBase,
         state: "recently_fired",
         windowKind,
         lastEntryHHMM: spec.entry_window_end,
@@ -257,8 +303,8 @@ export function deriveLifecycle(
         firesToday: armedSignal,
       });
     }
-    return baseInfo({ ...todayBase,
-      state: armedSignal ? "passed_will_fire" : "passed_skipped",
+    return withOutcome({ ...todayBase,
+      state: shouldRenderAsFired(signal, todayOutcome) ? "passed_will_fire" : "passed_skipped",
       windowKind,
       lastEntryHHMM: spec.entry_window_end,
       secondsSinceLast: sinceWindow,
@@ -288,8 +334,8 @@ export function deriveLifecycle(
   if (lastSec != null) {
     const secondsSince = secondsOfDay - lastSec;
     if (secondsSince <= FIRING_WINDOW_SECONDS) {
-      return baseInfo({ ...todayBase,
-        state: armedSignal ? "firing" : "passed_skipped",
+      return withOutcome({ ...todayBase,
+        state: shouldRenderAsFired(signal, todayOutcome) ? "firing" : "passed_skipped",
         windowKind,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: secondsSince,
@@ -300,8 +346,8 @@ export function deriveLifecycle(
       });
     }
     if (secondsSince <= IMMINENT_WINDOW_SECONDS) {
-      return baseInfo({ ...todayBase,
-        state: armedSignal ? "recently_fired" : "passed_skipped",
+      return withOutcome({ ...todayBase,
+        state: shouldRenderAsFired(signal, todayOutcome) ? "recently_fired" : "passed_skipped",
         windowKind,
         lastEntryHHMM: lastHHMM,
         secondsSinceLast: secondsSince,
@@ -329,7 +375,7 @@ export function deriveLifecycle(
   if (nextSec != null) {
     const delta = nextSec - secondsOfDay;
     if (delta <= IMMINENT_WINDOW_SECONDS) {
-      return baseInfo({ ...todayBase,
+      return withOutcome({ ...todayBase,
         state: armedSignal ? "imminent" : "not_fired_yet",
         windowKind,
         nextEntryHHMM: nextHHMM,
@@ -340,7 +386,7 @@ export function deriveLifecycle(
         firesToday: armedSignal,
       });
     }
-    return baseInfo({ ...todayBase,
+    return withOutcome({ ...todayBase,
       state: armedSignal ? "primed" : "not_fired_yet",
       windowKind,
       nextEntryHHMM: nextHHMM,
@@ -354,8 +400,8 @@ export function deriveLifecycle(
 
   // All discrete entries have passed and we're more than 10min past the
   // last one (otherwise the recently_fired branch above would have caught it).
-  return baseInfo({ ...todayBase,
-    state: armedSignal ? "passed_will_fire" : "passed_skipped",
+  return withOutcome({ ...todayBase,
+    state: shouldRenderAsFired(signal, todayOutcome) ? "passed_will_fire" : "passed_skipped",
     windowKind,
     lastEntryHHMM: lastHHMM,
     secondsSinceLast: lastSec != null ? secondsOfDay - lastSec : null,
@@ -372,6 +418,8 @@ function baseInfo(partial: Partial<LifecycleInfo> & { state: LifecycleState; win
     secondsSinceLast: null,
     isArmed: false,
     firesToday: false,
+    todayOutcome: null,
+    todayOutcomeReason: null,
     ...partial,
   };
 }

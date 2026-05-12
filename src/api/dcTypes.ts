@@ -179,6 +179,25 @@ export interface DCSignalStatus {
   last_tick_age_ms?: number | null;
   // True when this strategy is currently in its pre-entry window.
   pre_entry_window_active?: boolean | null;
+  // Most recent entry-time outcome for this strategy today (NY date),
+  // read directly from the daemon's signal_events table (#277).
+  // Lets the dashboard render the post-window state without re-
+  // deriving daemon decisions (SL gate, VIX gate, deconflict,
+  // margin block, order rejection, …) on the client.
+  // Frontend rule: blacklist `entered` — anything else = didn't
+  // enter — so future daemon outcomes self-classify as skipped
+  // without frontend updates.
+  // Known values: entered | skipped_signal | blocked_sl_gate |
+  // blocked_vix | blocked_margin | blocked_order |
+  // blocked_deconflict | blocked_strike | blocked_features |
+  // blocked_canTrade. Open enum; UI must default to skipped.
+  // Null when no entry evaluation has happened yet today.
+  today_outcome?: string | null;
+  // Human-readable detail from signal_events.outcome_reason — e.g.,
+  // "SL ratio 0.65 below 0.70 minimum" for a blocked_sl_gate
+  // outcome. Surfaced as a tooltip on the card body so the operator
+  // sees WHY the daemon skipped without digging through Events tab.
+  today_outcome_reason?: string | null;
 }
 
 export interface DCFeatures {

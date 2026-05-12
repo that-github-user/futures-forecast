@@ -129,3 +129,91 @@ describe("parseHHMMToSeconds", () => {
     expect(parseHHMMToSeconds("9:5")).toBe(9 * 3600 + 5 * 60);
   });
 });
+
+describe("deriveLifecycle: today_outcome blacklist-on-entered semantics (#277)", () => {
+  // The fix: post-window state should reflect what the DAEMON did,
+  // not what the ensemble signal said. Frontend rule is to blacklist
+  // `entered` — every other outcome value means "didn't enter."
+
+  const s = spec(["09:45"], [0, 1, 2, 3, 4]);
+
+  // Use a time past the 10-minute recently_fired window so we land
+  // in the terminal post-window branch (passed_will_fire vs
+  // passed_skipped) rather than recently_fired vs passed_skipped.
+  const POST_WINDOW = atET("11:00");  // 1h 15min past entry
+
+  it("outcome=entered → passed_will_fire (daemon entered)", () => {
+    const info = deriveLifecycle(s, "GO", false, POST_WINDOW, "entered");
+    expect(info.state).toBe("passed_will_fire");
+    expect(info.todayOutcome).toBe("entered");
+  });
+
+  it("outcome=blocked_sl_gate → passed_skipped (operator-reported case)", () => {
+    // The 2026-05-12 case: GO signal but SL gate failed. Pre-#277 this
+    // rendered as "Should have entered earlier" — wrong; daemon
+    // correctly skipped.
+    const info = deriveLifecycle(
+      s, "GO", false, POST_WINDOW, "blocked_sl_gate",
+      "SL ratio 0.65 below 0.70 minimum",
+    );
+    expect(info.state).toBe("passed_skipped");
+    expect(info.todayOutcome).toBe("blocked_sl_gate");
+    expect(info.todayOutcomeReason).toBe("SL ratio 0.65 below 0.70 minimum");
+  });
+
+  it("outcome=skipped_signal → passed_skipped", () => {
+    const info = deriveLifecycle(s, "SKIP", false, POST_WINDOW, "skipped_signal");
+    expect(info.state).toBe("passed_skipped");
+  });
+
+  it("outcome=blocked_margin → passed_skipped", () => {
+    // Daemon-side block, not a signal/SL miss. Frontend doesn't
+    // need to know what blocked_margin specifically means — just
+    // that anything-not-entered is "didn't enter."
+    const info = deriveLifecycle(s, "GO", false, POST_WINDOW, "blocked_margin");
+    expect(info.state).toBe("passed_skipped");
+  });
+
+  it("future unknown outcome (e.g. blocked_capital) → passed_skipped (forward-compat)", () => {
+    // The whole point of the blacklist-`entered` rule: a daemon that
+    // grows a new skip reason tomorrow MUST classify as passed_skipped
+    // here without a frontend update.
+    const info = deriveLifecycle(
+      s, "GO", false, POST_WINDOW, "blocked_capital_constraint_xyz",
+    );
+    expect(info.state).toBe("passed_skipped");
+  });
+
+  it("outcome=null with GO signal → passed_will_fire (legacy fallback)", () => {
+    // No outcome from API (cold-start, daemon was down, pre-#277
+    // deploy). Falls back to ensemble signal — preserves prior
+    // behavior so the card doesn't suddenly read NO FIRE.
+    const info = deriveLifecycle(s, "GO", false, POST_WINDOW, null);
+    expect(info.state).toBe("passed_will_fire");
+  });
+
+  it("outcome=null with SKIP signal → passed_skipped (legacy fallback)", () => {
+    const info = deriveLifecycle(s, "SKIP", false, POST_WINDOW, null);
+    expect(info.state).toBe("passed_skipped");
+  });
+
+  it("outcome flows into LifecycleInfo on every state (pre-window too)", () => {
+    // Pre-window state — outcome is null in practice but we still
+    // pass it through so a tooltip-capable UI surface has access.
+    const info = deriveLifecycle(s, "GO", false, atET("09:00"), "entered");
+    // 45min pre-entry → primed
+    expect(info.state).toBe("primed");
+    expect(info.todayOutcome).toBe("entered");
+  });
+
+  it("recently_fired 30-60s after entry + outcome=blocked_sl_gate → passed_skipped", () => {
+    // Edge case: daemon writes signal_events row within ~30s of fire,
+    // so the recently_fired window (30s-10min post-fire) sees the
+    // outcome immediately. Card should flip from "FIRING" → "NO FIRE"
+    // promptly, not wait 10min for the recently_fired window to close.
+    const info = deriveLifecycle(
+      s, "GO", false, atET("09:46", 30), "blocked_sl_gate",
+    );
+    expect(info.state).toBe("passed_skipped");
+  });
+});

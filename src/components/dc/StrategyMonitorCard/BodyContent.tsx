@@ -115,9 +115,25 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
         <Body
           headline="No fire today"
           subline={
-            info.lastEntryHHMM
-              ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
-              : `Signal was ${formatSignal(signal)} at fire time`
+            // Prefer the daemon-authoritative reason from
+            // signal_events.outcome_reason (#277) over the generic
+            // "Signal was X at fire time" — operator sees the WHY
+            // (e.g. "SL ratio 0.65 below 0.70 minimum") on hover.
+            // Falls back to the legacy signal-only subline when the
+            // API hasn't shipped #277 yet OR no entry evaluation
+            // was recorded today (daemon down / not yet fired).
+            info.todayOutcomeReason
+              ? `${info.todayOutcomeReason} (${formatSignal(signal)})`
+              : info.lastEntryHHMM
+                ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
+                : `Signal was ${formatSignal(signal)} at fire time`
+          }
+          title={
+            // Tooltip exposes the verbose-but-detailed combo for
+            // operators who hover for context.
+            info.todayOutcome
+              ? `Daemon outcome: ${info.todayOutcome}${info.todayOutcomeReason ? ` — ${info.todayOutcomeReason}` : ""}`
+              : undefined
           }
         />
       );
@@ -142,14 +158,19 @@ function Body({
   subline,
   accent,
   large,
+  title,
 }: {
   headline: string;
   subline?: ReactNode;
   accent?: string;
   large?: boolean;
+  title?: string;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 2 }}
+      title={title}
+    >
       <div
         style={{
           fontSize: large ? 18 : 13,
