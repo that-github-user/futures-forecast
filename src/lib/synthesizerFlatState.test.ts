@@ -155,6 +155,14 @@ describe("classifyFlatState", () => {
     const s = synth({ score: 0.0, contributions: [] });
     expect(classifyFlatState(s)).toBe("NEUTRAL");
   });
+
+  it("classifies score === 0 exactly as NEUTRAL (not AWAITING)", () => {
+    // 0 is falsy but not null/undefined — the classifier must
+    // distinguish (R1 nit). Confirms the `synth.score == null` check
+    // is strict-null and doesn't accidentally swallow zero.
+    const s = synth({ score: 0, bias: "FLAT" });
+    expect(classifyFlatState(s)).toBe("NEUTRAL");
+  });
 });
 
 describe("deriveScoreRenderState", () => {

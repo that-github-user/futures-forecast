@@ -806,6 +806,14 @@
   color: var(--neg-persimmon);
 }
 
+/* Headline-strip label color cue for FLAT sub-states (#276 R2 nit).
+ * Glance-readable from the 240px score block without needing to scan
+ * to the SynthesisCard's chip. ink-60 base is preserved for AWAITING. */
+.terminal-score-label.flat-blocked { color: var(--neg-persimmon); }
+.terminal-score-label.flat-mixed   { color: var(--accent-amber, #f59e0b); }
+.terminal-score-label.flat-neutral { color: var(--ink-60); }
+.terminal-score-label.flat-awaiting { color: var(--ink-40); }
+
 /* ── Levels card — two-column key/value grid ──────────────── */
 .levels-list {
   display: grid;

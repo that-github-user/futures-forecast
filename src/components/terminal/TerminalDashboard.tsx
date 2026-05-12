@@ -123,11 +123,21 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
           ? "Split"
           : "No signal";
 
+  // Tint the headline label by sub-state so the 240px monumental
+  // glyph isn't the only color cue (R2 nit). Headline glyph stays
+  // ink-40 grayscale per the sculptural treatment; the small label
+  // beneath picks up the chip color so glance-reading the headline
+  // surfaces MIXED-vs-NEUTRAL-vs-BLOCKED without scanning to the
+  // SynthesisCard.
+  const labelClass = !isDirectional
+    ? ` flat-${renderState.sub.toLowerCase()}`
+    : "";
+
   return (
     <section className="terminal-headline">
       <div className="terminal-score-block">
         <span className={`terminal-score${isDirectional ? "" : " placeholder"}`}>{scoreDisplay}</span>
-        <span className="terminal-score-label">
+        <span className={`terminal-score-label${labelClass}`}>
           {labelTop}
           <br />
           {labelBottom}
@@ -1156,12 +1166,16 @@ function FlatSubStateChip({
   overrides: string[];
 }) {
   const className = `flat-sub-chip ${subState.toLowerCase()}`;
+  // Tooltips lead with what the operator should DO (R2 nit) — not
+  // just describe the mechanism. The "no edge" language pairs with
+  // the broader trader vocabulary (vs telemetry-speak like "no
+  // directional signal").
   const title =
     subState === "BLOCKED"
-      ? `Override active: ${overrides.join(", ")} — score is suppressed`
+      ? `Override active: ${overrides.join(", ")}. Do not trade off the score — the synthesizer's directional view is being suppressed by a hard-stop condition.`
       : subState === "MIXED"
-        ? "Sub-systems disagree (large contributions in opposing directions); score nets near zero"
-        : "All sub-systems near zero; no directional signal";
+        ? "Sub-systems disagree (large contributions in opposing directions); score nets near zero. Wait for resolution before sizing — one tick could flip the bias."
+        : "All sub-systems near zero; no edge. Stand down until a directional setup forms.";
   return (
     <span className={className} title={title}>
       {subState}
