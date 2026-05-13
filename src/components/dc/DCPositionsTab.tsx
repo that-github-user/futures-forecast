@@ -393,7 +393,7 @@ function PositionDetailPanel({
       )}
       {tentOpen && p.position_uid != null && (
         <TentChartModal
-          target={{ kind: "position", positionUid: p.position_uid }}
+          target={{ kind: "position", positionUid: p.position_uid, frontExp: p.front_exp }}
           title={p.strategy_name}
           onClose={() => setTentOpen(false)}
         />
