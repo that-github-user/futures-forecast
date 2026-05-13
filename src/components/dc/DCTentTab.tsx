@@ -49,7 +49,7 @@ export function DCTentTab({ positions, trades }: Props) {
         positions={positions}
         onOpen={(p) =>
           setModalTarget({
-            target: { kind: "position", positionUid: p.position_uid! },
+            target: { kind: "position", positionUid: p.position_uid!, frontExp: p.front_exp },
             title: p.strategy_name,
           })
         }
@@ -58,7 +58,7 @@ export function DCTentTab({ positions, trades }: Props) {
         trades={trades}
         onOpen={(t) =>
           setModalTarget({
-            target: { kind: "trade", tradeId: t.id },
+            target: { kind: "trade", tradeId: t.id, frontExp: t.front_exp ?? undefined },
             title: `${t.strategy_name} (closed ${t.close_date?.slice(0, 10) ?? "?"})`,
           })
         }
