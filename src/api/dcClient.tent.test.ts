@@ -73,6 +73,17 @@ describe("dcApi.positionTent", () => {
     expect(url).toContain("2026-05-12T14%3A30%3A00-04%3A00");
   });
 
+  it("encodes `+` in UTC-offset as_of values as %2B", async () => {
+    // Pasting a UTC-suffixed log timestamp (e.g. from journalctl)
+    // should round-trip the literal +00:00 offset, not be mangled
+    // into a space by URLSearchParams' default form-encoding.
+    await dcApi.positionTent("uid", { asOf: "2026-05-12T18:30:00+00:00" });
+    const url = String(calls[0][0]);
+    expect(url).toContain("as_of=2026-05-12T18%3A30%3A00%2B00%3A00");
+    // Negative-form sanity: NOT a literal `+` in the URL.
+    expect(url).not.toContain("+00:00");
+  });
+
   it("emits both params when both are provided", async () => {
     await dcApi.positionTent("uid", {
       ivSource: "entry",

@@ -82,18 +82,27 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchFrozen(target), fetchLive(target)])
-      .then(([f, l]) => {
+    // Promise.allSettled vs Promise.all: dcClient.dcGet already
+    // catches fetch rejections and returns null, so today the
+    // .all-vs-allSettled distinction is moot in practice. allSettled
+    // is the safer contract (one bad fetch can't kill the other's
+    // partial-success render) and defends against a future dcGet
+    // refactor that bubbles errors. R1#B2 fix.
+    Promise.allSettled([fetchFrozen(target), fetchLive(target)])
+      .then((results) => {
         if (cancelled) return;
+        const [frozenResult, liveResult] = results;
+        const f = frozenResult.status === "fulfilled"
+          ? frozenResult.value
+          : null;
+        const l = liveResult.status === "fulfilled"
+          ? liveResult.value
+          : null;
         setFrozen(f);
         setLive(l);
         if (f == null) {
           setError("Tent data unavailable for this position");
         }
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(String(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -197,6 +206,35 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
                 ⚠ {w}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Phantom action hint. Sits below the (optional) warnings
+            banner so the operator knows what — if anything — to do
+            about a would-have-entered trade. Followers entered
+            manually based on the daemon's signal; this row is the
+            historical record of what would have happened. R2#S3. */}
+        {isPhantom && (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "8px 12px",
+              background: withAlpha(colors.accentRed, 0.08),
+              border: `1px solid ${withAlpha(colors.accentRed, 0.3)}`,
+              borderRadius: 4,
+              fontSize: 12,
+              color: colors.textPrimary,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong style={{ color: colors.accentRed }}>Phantom:</strong>{" "}
+            the daemon's entry-fill phase failed (ladder exhausted /
+            parked-at-ask without fill) after every signal-side gate
+            cleared. Followers got the GO signal manually; this row
+            preserves the would-have-entered trade so the tent
+            tracker stays honest. No action required on this row;
+            check the daemon's entry-ladder logs if the pattern
+            repeats.
           </div>
         )}
 
@@ -304,13 +342,21 @@ function IvSourceBadge({ label }: { label: string }) {
       }`,
       fontFamily: fonts.mono,
     }}>
-      {label}
+      {/* `⚠` prefix matches the warnings-banner visual language so the
+          amber-degraded variant reads as "warning" to a first-time
+          operator without relying on color intuition alone. R2#S4 fix. */}
+      {isWarning ? `⚠ ${label}` : label}
     </span>
   );
 }
 
 
 function PhantomPill() {
+  // Red (not amber) so the pill pops against the modal's dashed-amber
+  // container border. "Automation missed entry" is closer to a regret
+  // signal than a warning — amber is reserved for IV-degradation
+  // warnings; red here unambiguously marks "automation did not act
+  // when the followers were told to." R2#S2 fix.
   return (
     <span style={{
       fontSize: 10,
@@ -318,9 +364,9 @@ function PhantomPill() {
       borderRadius: 3,
       letterSpacing: 0.5,
       textTransform: "uppercase",
-      background: withAlpha(colors.accentAmber, 0.15),
-      color: colors.accentAmber,
-      border: `1px solid ${colors.accentAmber}`,
+      background: withAlpha(colors.accentRed, 0.15),
+      color: colors.accentRed,
+      border: `1px solid ${colors.accentRed}`,
       fontFamily: fonts.mono,
       fontWeight: 600,
     }}>

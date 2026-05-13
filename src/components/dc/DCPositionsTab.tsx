@@ -352,7 +352,10 @@ function PositionDetailPanel({
   // is hidden for those rather than greyed-out, since the UID is the
   // path param and a fallback like "id" would 404.
   const [tentOpen, setTentOpen] = useState(false);
-  const canShowTent = p.position_uid != null;
+  // `!== ""` defends against a backend that ever emits an empty
+  // position_uid — the UID is the API path param, so an empty
+  // string would build `/positions//tent` and 404. R1#S1.
+  const canShowTent = p.position_uid != null && p.position_uid !== "";
 
   return (
     <div style={{

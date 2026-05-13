@@ -114,9 +114,10 @@ export function DCHistoryTab({ trades }: Props) {
                             borderRadius: 3,
                             cursor: "pointer",
                             fontFamily: fonts.sans,
+                            letterSpacing: 0.3,
                           }}
                         >
-                          ▲
+                          ▲ Tent
                         </button>
                       )}
                     </td>
