@@ -113,8 +113,9 @@ function OpenPositionsGrid({
         lineHeight: 1.4,
       }}>
         DC payoff projections across SPX, sampled at the current
-        time-to-expiry. Click any card for the full chart with frozen-
-        vs-live IV overlay, breakevens, and IV-drift provenance.
+        time-to-expiry. Click any card for the full chart with the
+        live-IV curve, breakevens, current SPX, and (when an entry-IV
+        anchor exists) a frozen-IV overlay for drift comparison.
       </div>
       {renderable.length === 0 ? (
         <div style={emptyStyle}>
