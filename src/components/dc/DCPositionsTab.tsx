@@ -18,6 +18,7 @@ import { useStrategySpecs } from "../../hooks/useStrategySpecs";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import { tableStyle, thStyle, tdStyle, tdMono } from "./tableStyles";
+import { TentChartModal } from "./TentChartModal";
 
 interface Props {
   positions: DCPosition[];
@@ -346,6 +347,13 @@ function PositionDetailPanel({
   position: DCPosition;
   spec: DCStrategySpec | undefined;
 }) {
+  // Local modal state for the tent drill-down. Legacy positions
+  // without position_uid (pre-PR 2) can't render a tent — the button
+  // is hidden for those rather than greyed-out, since the UID is the
+  // path param and a fallback like "id" would 404.
+  const [tentOpen, setTentOpen] = useState(false);
+  const canShowTent = p.position_uid != null;
+
   return (
     <div style={{
       display: "grid",
@@ -354,6 +362,40 @@ function PositionDetailPanel({
       fontFamily: fonts.sans,
       fontSize: 12,
     }}>
+      {canShowTent && (
+        <div style={{
+          gridColumn: "1 / -1",
+          display: "flex",
+          justifyContent: "flex-end",
+          marginTop: -8,
+        }}>
+          <button
+            onClick={() => setTentOpen(true)}
+            aria-label={`Show tent payoff chart for ${p.strategy_name}`}
+            style={{
+              fontSize: 11,
+              padding: "4px 12px",
+              background: withAlpha(colors.accentBlue, 0.1),
+              color: colors.accentBlue,
+              border: `1px solid ${withAlpha(colors.accentBlue, 0.4)}`,
+              borderRadius: 4,
+              cursor: "pointer",
+              fontFamily: fonts.sans,
+              letterSpacing: 0.3,
+            }}
+          >
+            ▲ Tent
+          </button>
+        </div>
+      )}
+      {tentOpen && p.position_uid != null && (
+        <TentChartModal
+          target={{ kind: "position", positionUid: p.position_uid }}
+          title={p.strategy_name}
+          onClose={() => setTentOpen(false)}
+        />
+      )}
+
       {/* Position metadata */}
       <DetailSection title="Position">
         <DetailRow label="Quantity" value={`${p.quantity} contract${p.quantity === 1 ? "" : "s"}`} />

@@ -7,6 +7,7 @@ import type {
   DCBrokerState,
   DCCapitalSummary,
   DCExitAlert,
+  DCGreekSnapshotsResponse,
   DCHealthResponse,
   DCPosition,
   DCRiskStatus,
@@ -15,6 +16,7 @@ import type {
   DCStrategySpec,
   DCStrategyStats,
   DCSummary,
+  DCTentResponse,
   DCTrade,
 } from "./dcTypes";
 
@@ -47,6 +49,48 @@ export const dcApi = {
   risk: () => dcGet<DCRiskStatus>("/dc-api/v1/risk"),
   summary: () => dcGet<DCSummary>("/dc-api/v1/summary"),
   capitalSummary: () => dcGet<DCCapitalSummary>("/dc-api/v1/capital/summary"),
+  // Tent-PnL endpoints (PR 4–6). `iv_source` defaults match the API:
+  //   - position / phantom default to "latest" (overlays live-drift
+  //     curve when greek_snapshots has rows for the UID)
+  //   - trade default to "entry" (trade_history doesn't carry
+  //     position_uid for the greek_snapshots join, so the API only
+  //     accepts "entry" on this endpoint)
+  positionTent: (
+    positionUid: string,
+    opts: { ivSource?: "entry" | "latest"; asOf?: string } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (opts.ivSource) params.set("iv_source", opts.ivSource);
+    if (opts.asOf) params.set("as_of", opts.asOf);
+    const qs = params.toString();
+    return dcGet<DCTentResponse>(
+      `/dc-api/v1/positions/${encodeURIComponent(positionUid)}/tent${qs ? `?${qs}` : ""}`,
+    );
+  },
+  phantomTent: (
+    positionUid: string,
+    opts: { ivSource?: "entry" | "latest"; asOf?: string } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (opts.ivSource) params.set("iv_source", opts.ivSource);
+    if (opts.asOf) params.set("as_of", opts.asOf);
+    const qs = params.toString();
+    return dcGet<DCTentResponse>(
+      `/dc-api/v1/phantoms/${encodeURIComponent(positionUid)}/tent${qs ? `?${qs}` : ""}`,
+    );
+  },
+  tradeTent: (tradeId: number, opts: { asOf?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.asOf) params.set("as_of", opts.asOf);
+    const qs = params.toString();
+    return dcGet<DCTentResponse>(
+      `/dc-api/v1/trades/${tradeId}/tent${qs ? `?${qs}` : ""}`,
+    );
+  },
+  positionGreeks: (positionUid: string) =>
+    dcGet<DCGreekSnapshotsResponse>(
+      `/dc-api/v1/positions/${encodeURIComponent(positionUid)}/greeks`,
+    ),
   signalEvents: (opts: {
     date?: string | null;  // YYYY-MM-DD, "all", or null/undefined for today
     strategy?: string;

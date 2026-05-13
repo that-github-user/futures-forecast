@@ -502,3 +502,87 @@ export interface DCExitAlert {
   detected_at: string;       // ISO-8601 ET wall-clock
   cleared_at: string | null;
 }
+
+// ── Tent-PnL tracker (PR 4–7) ─────────────────────────────────────
+//
+// Mirrors the Pydantic models in automated-dc-entry/api/schemas.py.
+// `iv_source` echoes one of four labels the renderer should
+// distinguish in tooltips / badges:
+//   "entry"          — positions.entry_*_iv (frozen at fill)
+//   "latest"         — most recent greek_snapshots row (live-drift)
+//   "entry_fallback" — caller asked for "latest" but no snapshot yet
+//   "intrinsic"      — no IVs anywhere; tent is intrinsic-only
+//                      (frontend MUST surface the warning).
+//
+// `current_spx_source`:
+//   "broker_state"        — live SPX feed available; render the
+//                           "you are here" marker.
+//   "fallback_midstrike"  — broker_state.json missing; tent is
+//                           centered on strike midpoint and the
+//                           operator should NOT see a SPX marker.
+//
+// `phantom: true` → render with dashed border + "would-have-entered"
+//                   pill so operators can tell phantoms from real
+//                   positions.
+//
+// `warnings`: human-readable degradation strings — banner candidates.
+export type DCTentIVSource = "entry" | "latest" | "entry_fallback" | "intrinsic";
+export type DCTentSpxSource = "broker_state" | "fallback_midstrike";
+
+export interface DCTentPoint {
+  spx: number;
+  value: number;
+}
+
+export interface DCTentResponse {
+  points: DCTentPoint[];
+  current_spx: number | null;
+  current_spx_source: DCTentSpxSource;
+  entry_debit: number;
+  breakeven_low: number | null;
+  breakeven_high: number | null;
+  pole_low: number;          // = put strike
+  pole_high: number;         // = call strike
+  days_in_trade: number;
+  days_to_front_exp: number;
+  days_to_back_exp: number;
+  iv_source: DCTentIVSource;
+  phantom: boolean;
+  as_of_resolved: string;
+  snapshot_time: string | null;
+  warnings: string[];
+  iv_front_put: number | null;
+  iv_front_call: number | null;
+  iv_back_put: number | null;
+  iv_back_call: number | null;
+}
+
+export interface DCGreekSnapshot {
+  snapshot_time: string;
+  spx_price: number | null;
+  days_to_front_exp: number | null;
+  days_to_back_exp: number | null;
+  front_put_iv: number | null;
+  front_call_iv: number | null;
+  back_put_iv: number | null;
+  back_call_iv: number | null;
+  front_put_delta: number | null;
+  front_call_delta: number | null;
+  back_put_delta: number | null;
+  back_call_delta: number | null;
+  front_put_vega: number | null;
+  front_call_vega: number | null;
+  back_put_vega: number | null;
+  back_call_vega: number | null;
+  front_put_theta: number | null;
+  front_call_theta: number | null;
+  back_put_theta: number | null;
+  back_call_theta: number | null;
+  source: string;
+  created_at: string | null;
+}
+
+export interface DCGreekSnapshotsResponse {
+  position_uid: string;
+  snapshots: DCGreekSnapshot[];
+}
