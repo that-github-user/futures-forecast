@@ -201,6 +201,12 @@ export function TentChart({
       },
       xAxis: {
         type: "value",
+        // `scale: true` tells ECharts to fit the axis to the actual data
+        // extents instead of "nicely" extending to zero. Without this,
+        // SPX in [6800, 7640] gets rendered on an axis that spans
+        // [0, 8000] — tent shape collapses into the rightmost ~10% of
+        // the chart, illegible. Operator-reported regression.
+        scale: true,
         name: compact ? "" : "SPX",
         nameLocation: "middle",
         nameGap: 24,
@@ -216,6 +222,10 @@ export function TentChart({
       },
       yAxis: {
         type: "value",
+        // Same `scale: true` rationale as xAxis — a tent whose value
+        // ranges $4-$45 should fit the chart, not show $0-$50 with
+        // half the chart wasted on empty space below the valley.
+        scale: true,
         name: compact ? "" : "Position value ($)",
         nameLocation: "middle",
         nameGap: 44,
