@@ -53,17 +53,51 @@ async function fetchFrozen(target: TentTarget): Promise<DCTentResponse | null> {
 }
 
 
-async function fetchLive(target: TentTarget): Promise<DCTentResponse | null> {
+async function fetchLive(
+  target: TentTarget, asOf?: string,
+): Promise<DCTentResponse | null> {
+  const opts = asOf ? { ivSource: "latest" as const, asOf } : { ivSource: "latest" as const };
   switch (target.kind) {
     case "position":
-      return dcApi.positionTent(target.positionUid, { ivSource: "latest" });
+      return dcApi.positionTent(target.positionUid, opts);
     case "phantom":
-      return dcApi.phantomTent(target.positionUid, { ivSource: "latest" });
+      return dcApi.phantomTent(target.positionUid, opts);
     case "trade":
       // Trade endpoint only supports iv_source=entry; live overlay
       // is intentionally unavailable.
       return null;
   }
+}
+
+
+/**
+ * Compute ISO timestamps for the evolution-overlay fetches.
+ *
+ * Returns:
+ *   - halfwayAsOf: midway between now and front expiration. Bridge
+ *     curve showing how the tent reshapes mid-life.
+ *   - atExpiryAsOf: just before front expiration (subtract a small
+ *     epsilon so T_front isn't exactly 0 — the BS pricer collapses
+ *     to intrinsic at T_front=0 and a near-expiry curve renders the
+ *     "tent peaks at strikes" shape more faithfully than the strictly-
+ *     intrinsic version).
+ *
+ * Returns null when `daysToFrontExp` isn't usable (negative, NaN,
+ * or so small the evolution curves would overlap today's curve).
+ */
+function computeEvolutionAsOfs(
+  daysToFrontExp: number, now: Date = new Date(),
+): { halfwayAsOf: string; atExpiryAsOf: string } | null {
+  if (!Number.isFinite(daysToFrontExp) || daysToFrontExp <= 0.5) return null;
+  const MS_PER_DAY = 86_400_000;
+  const halfway = new Date(now.getTime() + (daysToFrontExp / 2) * MS_PER_DAY);
+  // 4 hours before front expiry. Avoids T_front=0 edge case + lands
+  // inside a real trading session so the curve is operationally meaningful.
+  const atExpiry = new Date(now.getTime() + (daysToFrontExp - 4 / 24) * MS_PER_DAY);
+  return {
+    halfwayAsOf: halfway.toISOString(),
+    atExpiryAsOf: atExpiry.toISOString(),
+  };
 }
 
 
@@ -77,17 +111,31 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
   // initializer already gives the correct loading state on mount.
   const [frozen, setFrozen] = useState<DCTentResponse | null>(null);
   const [live, setLive] = useState<DCTentResponse | null>(null);
+  // Evolution overlays — same iv_source as live (latest snapshot) but
+  // with as_of advanced to midway/at-expiry. Lets operators see how
+  // the tent shape evolves over time, especially the "two tents"
+  // double-peak at front expiry. Optional — null until phase 2 fetch
+  // completes, or stays null when front expiry is too close to render
+  // meaningful evolution curves.
+  const [halfway, setHalfway] = useState<DCTentResponse | null>(null);
+  const [atExpiry, setAtExpiry] = useState<DCTentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    // Promise.allSettled vs Promise.all: dcClient.dcGet already
+    // Two-phase fetch:
+    //   Phase 1: frozen (entry IVs) + live (current as_of). Same as
+    //     pre-#186 behavior. Live's days_to_front_exp drives phase 2.
+    //   Phase 2: halfway + at-expiry live curves, using as_of values
+    //     derived from days_to_front_exp. Async and best-effort —
+    //     evolution overlays are nice-to-have; if either fetch fails
+    //     the primary chart still renders.
+    //
+    // Promise.allSettled (not Promise.all): dcClient.dcGet already
     // catches fetch rejections and returns null, so today the
     // .all-vs-allSettled distinction is moot in practice. allSettled
-    // is the safer contract (one bad fetch can't kill the other's
-    // partial-success render) and defends against a future dcGet
-    // refactor that bubbles errors. R1#B2 fix.
+    // is the safer contract for a future refactor that bubbles errors.
     Promise.allSettled([fetchFrozen(target), fetchLive(target)])
       .then((results) => {
         if (cancelled) return;
@@ -103,10 +151,24 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
         if (f == null) {
           setError("Tent data unavailable for this position");
         }
-      })
-      .finally(() => {
-        if (cancelled) return;
         setLoading(false);
+        // Phase 2: kick off evolution-overlay fetches if live gave us
+        // a usable days_to_front_exp. Don't block loading state on
+        // these — primary chart renders immediately with today's curve.
+        if (l != null) {
+          const asOfs = computeEvolutionAsOfs(l.days_to_front_exp);
+          if (asOfs != null) {
+            Promise.allSettled([
+              fetchLive(target, asOfs.halfwayAsOf),
+              fetchLive(target, asOfs.atExpiryAsOf),
+            ]).then((evResults) => {
+              if (cancelled) return;
+              const [hResult, aResult] = evResults;
+              setHalfway(hResult.status === "fulfilled" ? hResult.value : null);
+              setAtExpiry(aResult.status === "fulfilled" ? aResult.value : null);
+            });
+          }
+        }
       });
     return () => {
       cancelled = true;
@@ -293,7 +355,13 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
           </div>
         )}
         {!loading && !error && (
-          <TentChart frozenCurve={frozen} liveCurve={live} height={360} />
+          <TentChart
+            frozenCurve={frozen}
+            liveCurve={live}
+            halfwayCurve={halfway}
+            atExpiryCurve={atExpiry}
+            height={360}
+          />
         )}
 
         {/* Footer metadata */}

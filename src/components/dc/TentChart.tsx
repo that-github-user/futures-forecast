@@ -37,6 +37,22 @@ export interface TentChartProps {
    * the live overlay is suppressed.
    */
   liveCurve?: DCTentResponse | null;
+  /**
+   * Live-IV curve at "halfway to front expiry" — same IVs as
+   * `liveCurve` but with as_of advanced. Shows the tent mid-life.
+   * Optional; rendered as a subtle bridge overlay between today
+   * and at-expiry. Suppressed when DTE is too small for a
+   * meaningful midpoint.
+   */
+  halfwayCurve?: DCTentResponse | null;
+  /**
+   * Live-IV curve at "just before front expiry" — the canonical
+   * "two tents" shape. Operators expect this view (OptionStrat-style
+   * time slider) and the at-expiry breakevens are the operationally
+   * meaningful DC breakevens. When present, the breakeven markLines
+   * are sourced from THIS curve, not `frozenCurve`.
+   */
+  atExpiryCurve?: DCTentResponse | null;
   /** Pixel height. Default 340; small-multiples shrink to ~200. */
   height?: number;
   /** Compact mode hides axis labels and legend (small-multiples). */
@@ -50,11 +66,15 @@ const COLOR_SPX = colors.accentGreen;       // green — current SPX marker
 const COLOR_BREAKEVEN = colors.textMuted;   // muted — zero P&L verticals
 const COLOR_POLE = colors.textDim;          // dim — short-strike markers
 const COLOR_DEBIT_LINE = withAlpha(colors.textMuted, 0.4);
+const COLOR_HALFWAY = colors.textSecondary; // bridge curve: mid-life snapshot
+const COLOR_AT_EXPIRY = colors.accentRed;   // at-expiry: canonical "two tents" shape
 
 
 export function TentChart({
   frozenCurve,
   liveCurve,
+  halfwayCurve = null,
+  atExpiryCurve = null,
   height = 340,
   compact = false,
 }: TentChartProps) {
@@ -126,23 +146,32 @@ export function TentChart({
       label: { formatter: `C${frozenCurve.pole_high.toFixed(0)}`, color: COLOR_POLE },
     });
 
-    // Breakevens — null on either side means "off-chart", so skip.
-    if (frozenCurve.breakeven_low != null) {
+    // Breakevens — the canonical DC breakevens are AT-EXPIRY: where
+    // the at-expiry tent crosses entry_debit. Today's curve often has
+    // 0 or 1 breakevens because mid-life the tent peaks haven't yet
+    // grown past entry_debit (back-leg time premium hasn't decoupled
+    // from front-leg yet). Operator-meaningful answer is "where do I
+    // break even AT EXPIRY", which is what the at-expiry curve
+    // computes. Prefer that; fall back to frozen/today's only when
+    // at-expiry curve isn't loaded.
+    const beSource = atExpiryCurve ?? frozenCurve;
+    const beLabel = atExpiryCurve != null ? "BE@exp" : "BE";
+    if (beSource.breakeven_low != null) {
       verticals.push({
-        xAxis: frozenCurve.breakeven_low,
+        xAxis: beSource.breakeven_low,
         lineStyle: { color: COLOR_BREAKEVEN, width: 1, type: "dashed" },
         label: {
-          formatter: `BE ${frozenCurve.breakeven_low.toFixed(0)}`,
+          formatter: `${beLabel} ${beSource.breakeven_low.toFixed(0)}`,
           color: COLOR_BREAKEVEN,
         },
       });
     }
-    if (frozenCurve.breakeven_high != null) {
+    if (beSource.breakeven_high != null) {
       verticals.push({
-        xAxis: frozenCurve.breakeven_high,
+        xAxis: beSource.breakeven_high,
         lineStyle: { color: COLOR_BREAKEVEN, width: 1, type: "dashed" },
         label: {
-          formatter: `BE ${frozenCurve.breakeven_high.toFixed(0)}`,
+          formatter: `${beLabel} ${beSource.breakeven_high.toFixed(0)}`,
           color: COLOR_BREAKEVEN,
         },
       });
@@ -217,6 +246,44 @@ export function TentChart({
       });
     }
 
+    // Evolution overlays — same IV source as live, advanced as_of.
+    // Shows how the tent reshapes over time. The at-expiry curve is
+    // the canonical "two tents" shape operators recognize from
+    // OptionStrat-style time sliders. Dotted to read as "future
+    // projection, not measured value". Rendered AFTER live so they
+    // sit visually on top.
+    const showHalfway =
+      halfwayCurve != null &&
+      halfwayCurve.iv_source === "latest" &&
+      halfwayCurve.points.length > 0;
+    const showAtExpiry =
+      atExpiryCurve != null &&
+      atExpiryCurve.iv_source === "latest" &&
+      atExpiryCurve.points.length > 0;
+
+    if (showHalfway) {
+      series.push({
+        name: "Halfway",
+        type: "line",
+        data: halfwayCurve!.points.map((p) => [p.spx, p.value]),
+        smooth: true,
+        symbol: "none",
+        itemStyle: { color: COLOR_HALFWAY },
+        lineStyle: { color: COLOR_HALFWAY, width: 1.5, type: "dotted" as const },
+      });
+    }
+    if (showAtExpiry) {
+      series.push({
+        name: "At front expiry",
+        type: "line",
+        data: atExpiryCurve!.points.map((p) => [p.spx, p.value]),
+        smooth: true,
+        symbol: "none",
+        itemStyle: { color: COLOR_AT_EXPIRY },
+        lineStyle: { color: COLOR_AT_EXPIRY, width: 2, type: "dashed" as const },
+      });
+    }
+
     return {
       backgroundColor: "transparent",
       animation: false,
@@ -232,6 +299,8 @@ export function TentChart({
             data: [
               ...(showFrozen ? ["Frozen IV (entry)"] : []),
               ...(showLive ? ["Live IV"] : []),
+              ...(showHalfway ? ["Halfway"] : []),
+              ...(showAtExpiry ? ["At front expiry"] : []),
             ],
             textStyle: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11 },
             top: 4,
@@ -311,6 +380,12 @@ export function TentChart({
       option={option}
       style={{ height, width: "100%" }}
       notMerge
+      // SVG renderer (instead of canvas) so the chart stays crisp at
+      // any browser zoom level. Canvas renderer bakes in the resolution
+      // at mount time and goes blurry at zoom > 100% (operator-reported
+      // at 170% zoom). SVG is resolution-independent. Marginal perf
+      // cost on our ~170-point tent (negligible).
+      opts={{ renderer: "svg" }}
     />
   );
 }
