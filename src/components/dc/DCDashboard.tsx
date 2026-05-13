@@ -1,5 +1,6 @@
 /**
- * DC Trading Dashboard — main layout with 4 tabs.
+ * DC Trading Dashboard — main layout, 7 tabs:
+ * Signals, Strategies, Positions, Tent, History, Events, Capital.
  * Displays SPX double calendar spread trading data.
  */
 
@@ -13,16 +14,18 @@ import { DCHistoryTab } from "./DCHistoryTab";
 import { DCStrategiesTab } from "./DCStrategiesTab";
 import { DCSignalsTab } from "./DCSignalsTab";
 import { DCEventsTab } from "./DCEventsTab";
+import { DCTentTab } from "./DCTentTab";
 import { DCArmedBanner } from "./DCArmedBanner";
 import { DCSystemHealthStrip } from "./DCSystemHealthStrip";
 import { CapitalAllocationTab } from "./CapitalAllocationTab";
 
-type DCTab = "positions" | "history" | "strategies" | "signals" | "capital" | "events";
+type DCTab = "positions" | "history" | "strategies" | "signals" | "capital" | "events" | "tent";
 
 const TABS: { value: DCTab; label: string }[] = [
   { value: "signals", label: "Signals" },
   { value: "strategies", label: "Strategies" },
   { value: "positions", label: "Positions" },
+  { value: "tent", label: "Tent" },
   { value: "history", label: "History" },
   { value: "events", label: "Events" },
   { value: "capital", label: "Capital" },
@@ -149,6 +152,9 @@ export function DCDashboard() {
         )}
         {tab === "events" && <DCEventsTab />}
         {tab === "capital" && <CapitalAllocationTab />}
+        {tab === "tent" && (
+          <DCTentTab positions={data.positions} trades={data.trades} />
+        )}
       </div>
     </div>
   );
