@@ -557,6 +557,40 @@ export interface DCTentResponse {
   iv_back_call: number | null;
 }
 
+/**
+ * All 4 tent curves for one position in a single response. Replaces
+ * the 4-separate-fetches pattern that compounded Cloudflare Tunnel
+ * latency into a 20s wait (operator-reported). Bundle endpoint
+ * collapses to one CFT roundtrip ≈ 100-500ms.
+ *
+ * Each curve field is optional:
+ *   - frozen: null when iv_source can't resolve to 'entry' (closed
+ *     trade without entry IVs, e.g.)
+ *   - today: null only on hard compute failure (per-curve degradation
+ *     is logged; bundle is still returned)
+ *   - halfway / at_expiry: null when DTE is too small for evolution
+ *     curves (within ~0.5 days of front expiry) or front_exp is
+ *     unparseable
+ *
+ * `cache_hit` is a diagnostic map (curve_kind → bool) — True when
+ * the curve was served from the precomputed `tent_curves` SQLite
+ * cache, False when the bundled handler computed it on-demand (cold
+ * cache, new position before first greek_logger tick).
+ *
+ * `served_at` marks when the API assembled the bundle (distinct
+ * from each curve's `as_of_resolved` and `snapshot_time` which mark
+ * compute-time and IV-source-time respectively).
+ */
+export interface DCTentBundleResponse {
+  frozen: DCTentResponse | null;
+  today: DCTentResponse | null;
+  halfway: DCTentResponse | null;
+  at_expiry: DCTentResponse | null;
+  cache_hit: Record<string, boolean>;
+  served_at: string;
+}
+
+
 export interface DCGreekSnapshot {
   snapshot_time: string;
   spx_price: number | null;

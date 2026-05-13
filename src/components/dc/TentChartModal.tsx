@@ -28,18 +28,15 @@ import { TentChart } from "./TentChart";
 
 
 /**
- * `frontExp` (YYYYMMDD) is optional but strongly recommended. When
- * present, the modal fires all 4 tent fetches (frozen + live + halfway
- * + at-expiry) in parallel from mount — halving wall time vs the
- * 2-phase fallback that has to wait for the live response's
- * `days_to_front_exp` field before kicking off the evolution fetches.
- * Callers without easy access to the date (very old trade rows where
- * front_exp is null) can omit and accept the slower path.
+ * The modal hits a single bundled API endpoint (vega-pilot PR #178)
+ * that returns all 4 tent curves in one response. No need to plumb
+ * front_exp through anymore — the backend computes all evolution
+ * as_of values from the position's own row.
  */
 export type TentTarget =
-  | { kind: "position"; positionUid: string; frontExp?: string }
-  | { kind: "phantom"; positionUid: string; frontExp?: string }
-  | { kind: "trade"; tradeId: number; frontExp?: string };
+  | { kind: "position"; positionUid: string }
+  | { kind: "phantom"; positionUid: string }
+  | { kind: "trade"; tradeId: number };
 
 
 interface TentChartModalProps {
@@ -50,88 +47,22 @@ interface TentChartModalProps {
 }
 
 
-async function fetchFrozen(target: TentTarget): Promise<DCTentResponse | null> {
+/**
+ * Single bundled fetch — replaces the 4-separate-fetches pattern.
+ * Backend serves all 4 tent curves in one response served from
+ * SQLite precompute cache (see vega-pilot PR #178). Wall time:
+ * one Cloudflare Tunnel roundtrip ≈ 100-500ms vs the prior
+ * 20-second compound from 4 sequential CFT requests.
+ */
+async function fetchBundle(target: TentTarget) {
   switch (target.kind) {
     case "position":
-      return dcApi.positionTent(target.positionUid, { ivSource: "entry" });
+      return dcApi.positionTentBundle(target.positionUid);
     case "phantom":
-      return dcApi.phantomTent(target.positionUid, { ivSource: "entry" });
+      return dcApi.phantomTentBundle(target.positionUid);
     case "trade":
-      return dcApi.tradeTent(target.tradeId);
+      return dcApi.tradeTentBundle(target.tradeId);
   }
-}
-
-
-async function fetchLive(
-  target: TentTarget, asOf?: string,
-): Promise<DCTentResponse | null> {
-  const opts = asOf ? { ivSource: "latest" as const, asOf } : { ivSource: "latest" as const };
-  switch (target.kind) {
-    case "position":
-      return dcApi.positionTent(target.positionUid, opts);
-    case "phantom":
-      return dcApi.phantomTent(target.positionUid, opts);
-    case "trade":
-      // Trade endpoint only supports iv_source=entry; live overlay
-      // is intentionally unavailable.
-      return null;
-  }
-}
-
-
-/**
- * Compute ISO timestamps for the evolution-overlay fetches.
- *
- * Returns:
- *   - halfwayAsOf: midway between now and front expiration. Bridge
- *     curve showing how the tent reshapes mid-life.
- *   - atExpiryAsOf: just before front expiration (subtract a small
- *     epsilon so T_front isn't exactly 0 — the BS pricer collapses
- *     to intrinsic at T_front=0 and a near-expiry curve renders the
- *     "tent peaks at strikes" shape more faithfully than the strictly-
- *     intrinsic version).
- *
- * Returns null when `daysToFrontExp` isn't usable (negative, NaN,
- * or so small the evolution curves would overlap today's curve).
- */
-function computeEvolutionAsOfs(
-  daysToFrontExp: number, now: Date = new Date(),
-): { halfwayAsOf: string; atExpiryAsOf: string } | null {
-  if (!Number.isFinite(daysToFrontExp) || daysToFrontExp <= 0.5) return null;
-  const MS_PER_DAY = 86_400_000;
-  const halfway = new Date(now.getTime() + (daysToFrontExp / 2) * MS_PER_DAY);
-  // 4 hours before front expiry. Avoids T_front=0 edge case + lands
-  // inside a real trading session so the curve is operationally meaningful.
-  const atExpiry = new Date(now.getTime() + (daysToFrontExp - 4 / 24) * MS_PER_DAY);
-  return {
-    halfwayAsOf: halfway.toISOString(),
-    atExpiryAsOf: atExpiry.toISOString(),
-  };
-}
-
-
-/**
- * Convert a YYYYMMDD front-expiration string to "days from now"
- * (real-numbered, e.g. 9.68). Returns null on parse failure so the
- * caller can fall back to the 2-phase pull-from-response path.
- *
- * Treats front expiry as 16:00 ET on the date (SPX/SPXW PM-settled
- * cash expiration) — close enough for as_of calculations; the API
- * also uses 16:00 ET as the canonical expiration moment.
- */
-function daysToFrontExpFromString(
-  frontExp: string | undefined | null, now: Date = new Date(),
-): number | null {
-  if (!frontExp || frontExp.length !== 8) return null;
-  const y = Number(frontExp.slice(0, 4));
-  const m = Number(frontExp.slice(4, 6));
-  const d = Number(frontExp.slice(6, 8));
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
-  // 20:00 UTC = 16:00 ET (during EDT). Slight offset during EST but
-  // immaterial for as_of calculations on intraday-resolution curves.
-  const expDate = new Date(Date.UTC(y, m - 1, d, 20, 0, 0));
-  const deltaMs = expDate.getTime() - now.getTime();
-  return deltaMs / 86_400_000;
 }
 
 
@@ -158,72 +89,28 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
 
   useEffect(() => {
     let cancelled = false;
-    // Fetch strategy:
-    //   Fast path (target.frontExp present): compute as_ofs locally
-    //     from front_exp and fire ALL 4 fetches in parallel from t=0.
-    //     Wall time = max(single roundtrip) ≈ 50ms.
-    //   Slow path (target.frontExp missing): 2-phase — fetch frozen +
-    //     live first, read days_to_front_exp from live response, then
-    //     fire halfway + at-expiry. Wall time = 2× roundtrip ≈ 100ms.
-    //     Only triggers for very old trade rows where front_exp is
-    //     null on the DCTrade record.
-    //
-    // Promise.allSettled (not Promise.all): dcClient.dcGet already
-    // catches fetch rejections and returns null, so .all-vs-allSettled
-    // is moot today but safer for a future refactor that bubbles errors.
-    const dteFromTarget = daysToFrontExpFromString(target.frontExp);
-    const asOfsFromTarget =
-      dteFromTarget != null ? computeEvolutionAsOfs(dteFromTarget) : null;
-
-    if (asOfsFromTarget != null) {
-      // FAST PATH — all 4 in parallel.
-      Promise.allSettled([
-        fetchFrozen(target),
-        fetchLive(target),
-        fetchLive(target, asOfsFromTarget.halfwayAsOf),
-        fetchLive(target, asOfsFromTarget.atExpiryAsOf),
-      ]).then((results) => {
-        if (cancelled) return;
-        const [frozenResult, liveResult, halfwayResult, atExpiryResult] = results;
-        const f = frozenResult.status === "fulfilled" ? frozenResult.value : null;
-        const l = liveResult.status === "fulfilled" ? liveResult.value : null;
-        const h = halfwayResult.status === "fulfilled" ? halfwayResult.value : null;
-        const a = atExpiryResult.status === "fulfilled" ? atExpiryResult.value : null;
-        setFrozen(f);
-        setLive(l);
-        setHalfway(h);
-        setAtExpiry(a);
-        if (f == null) setError("Tent data unavailable for this position");
+    // Single bundled fetch — backend returns all 4 tent curves in
+    // one response served from SQLite precompute cache. Replaces
+    // the pre-#189 4-fetch-with-phase-2 pattern that compounded
+    // Cloudflare Tunnel latency into 20s of perceived wait.
+    fetchBundle(target).then((bundle) => {
+      if (cancelled) return;
+      if (bundle == null) {
+        setError("Tent data unavailable for this position");
         setLoading(false);
-      });
-    } else {
-      // SLOW PATH — 2-phase fallback (no front_exp available from caller).
-      Promise.allSettled([fetchFrozen(target), fetchLive(target)])
-        .then((results) => {
-          if (cancelled) return;
-          const [frozenResult, liveResult] = results;
-          const f = frozenResult.status === "fulfilled" ? frozenResult.value : null;
-          const l = liveResult.status === "fulfilled" ? liveResult.value : null;
-          setFrozen(f);
-          setLive(l);
-          if (f == null) setError("Tent data unavailable for this position");
-          setLoading(false);
-          if (l != null) {
-            const asOfs = computeEvolutionAsOfs(l.days_to_front_exp);
-            if (asOfs != null) {
-              Promise.allSettled([
-                fetchLive(target, asOfs.halfwayAsOf),
-                fetchLive(target, asOfs.atExpiryAsOf),
-              ]).then((evResults) => {
-                if (cancelled) return;
-                const [hResult, aResult] = evResults;
-                setHalfway(hResult.status === "fulfilled" ? hResult.value : null);
-                setAtExpiry(aResult.status === "fulfilled" ? aResult.value : null);
-              });
-            }
-          }
-        });
-    }
+        return;
+      }
+      setFrozen(bundle.frozen);
+      setLive(bundle.today);
+      setHalfway(bundle.halfway);
+      setAtExpiry(bundle.at_expiry);
+      // No primary curve present at all → error state. If at least
+      // one of frozen/today rendered, the chart is usable.
+      if (bundle.frozen == null && bundle.today == null) {
+        setError("Tent data unavailable for this position");
+      }
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
