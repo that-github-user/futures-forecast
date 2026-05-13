@@ -290,8 +290,15 @@ export function TentChart({
       grid: {
         left: compact ? 36 : 56,
         right: compact ? 16 : 32,
+        // Top stays small — the chart owns this space for markLine
+        // labels (BE@exp / P#### / C####) which render at the top of
+        // each vertical line. Pre-#187 the legend lived here and
+        // collided with the labels at the top of the chart.
         top: compact ? 16 : 32,
-        bottom: compact ? 28 : 40,
+        // Bottom needs to clear: x-axis name "SPX" (~24px) + the
+        // moved-from-top legend strip (~24px) + a little padding.
+        // Compact mode: legend is hidden so revert to tight bottom.
+        bottom: compact ? 28 : 64,
       },
       legend: compact
         ? { show: false }
@@ -303,7 +310,12 @@ export function TentChart({
               ...(showAtExpiry ? ["At front expiry"] : []),
             ],
             textStyle: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11 },
-            top: 4,
+            // Moved to bottom (was top: 4) — at the top it collided
+            // with the markLine labels (BE@exp / P-strike / C-strike)
+            // that anchor to the top of each vertical line. Bottom
+            // placement is conventional for line charts with named
+            // markers and never overlaps with annotation labels.
+            bottom: 4,
           },
       tooltip: {
         trigger: "axis",
