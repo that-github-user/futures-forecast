@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { DCTrade } from "../../api/dcTypes";
-import { colors, fonts, withAlphaByte } from "../../styles/tokens";
+import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import { SignalBadge } from "./SignalBadge";
 import {
   tableStyle,
@@ -7,12 +8,17 @@ import {
   tdStyle,
   tdMono,
 } from "./tableStyles";
+import { TentChartModal } from "./TentChartModal";
 
 interface Props {
   trades: DCTrade[];
 }
 
 export function DCHistoryTab({ trades }: Props) {
+  // Modal target for the per-trade through-expiry tent. Closing
+  // sets back to null.
+  const [tentTrade, setTentTrade] = useState<DCTrade | null>(null);
+
   const wins = trades.filter((t) => t.result === "win").length;
   const losses = trades.filter((t) => t.result === "loss").length;
   const totalPnl = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
@@ -58,6 +64,7 @@ export function DCHistoryTab({ trades }: Props) {
                   <th style={thStyle}>Exit Reason</th>
                   <th style={thStyle}>Qty</th>
                   <th style={thStyle}>Strikes</th>
+                  <th style={thStyle} aria-label="Tent chart action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -89,10 +96,42 @@ export function DCHistoryTab({ trades }: Props) {
                     <td style={tdMono}>
                       {t.put_strike && t.call_strike ? `${t.put_strike}P / ${t.call_strike}C` : "—"}
                     </td>
+                    <td style={tdStyle}>
+                      {/* Tent button — disabled when strikes are
+                          missing (legacy rows without the full
+                          schema). Strikes are required for the
+                          through-expiry tent. */}
+                      {t.put_strike != null && t.call_strike != null && (
+                        <button
+                          onClick={() => setTentTrade(t)}
+                          aria-label={`Show through-expiry tent for ${t.strategy_name} closed ${t.close_date ?? ""}`}
+                          style={{
+                            fontSize: 10,
+                            padding: "2px 8px",
+                            background: withAlpha(colors.accentBlue, 0.1),
+                            color: colors.accentBlue,
+                            border: `1px solid ${withAlpha(colors.accentBlue, 0.4)}`,
+                            borderRadius: 3,
+                            cursor: "pointer",
+                            fontFamily: fonts.sans,
+                            letterSpacing: 0.3,
+                          }}
+                        >
+                          ▲ Tent
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {tentTrade != null && (
+              <TentChartModal
+                target={{ kind: "trade", tradeId: tentTrade.id }}
+                title={`${tentTrade.strategy_name} (closed ${tentTrade.close_date?.slice(0, 10) ?? "?"})`}
+                onClose={() => setTentTrade(null)}
+              />
+            )}
           </div>
         )}
       </div>
