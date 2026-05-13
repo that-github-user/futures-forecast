@@ -102,8 +102,19 @@ function OpenPositionsGrid({
     <div className="panel" style={{ padding: 12 }}>
       <div className="panel-header" style={{ marginBottom: 8 }}>
         <span className="panel-title">
-          Open positions — through-expiry tent ({renderable.length})
+          Through-expiry payoff — open positions ({renderable.length})
         </span>
+      </div>
+      <div style={{
+        fontSize: 11,
+        color: colors.textMuted,
+        fontFamily: fonts.sans,
+        marginBottom: 8,
+        lineHeight: 1.4,
+      }}>
+        DC payoff projections across SPX, sampled at the current
+        time-to-expiry. Click any card for the full chart with frozen-
+        vs-live IV overlay, breakevens, and IV-drift provenance.
       </div>
       {renderable.length === 0 ? (
         <div style={emptyStyle}>
@@ -259,8 +270,9 @@ function ClosedTradesPanel({
       </div>
       {renderable.length === 0 ? (
         <div style={emptyStyle}>
-          No closed trades in the selected window
-          {days > 0 ? ` (last ${days} day${days === 1 ? "" : "s"})` : ""}.
+          {days > 0
+            ? `No closed trades in the last ${days} day${days === 1 ? "" : "s"}.`
+            : "No closed trades on record."}
         </div>
       ) : (
         <div
@@ -268,7 +280,12 @@ function ClosedTradesPanel({
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
             gap: 8,
-            maxHeight: "calc(100vh - 400px)",
+            // R2#2 round-1 fix: floor the calc so the grid doesn't
+            // collapse to a few pixels on small viewports
+            // (tablet/phone-landscape, or desktops with the armed/
+            // offline banner stack pushing real available height
+            // below 400px).
+            maxHeight: "max(240px, calc(100vh - 400px))",
             overflowY: "auto",
           }}
         >
@@ -398,19 +415,35 @@ function useTentSmallMultiples(
 ): Record<string, DCTentResponse | null> {
   const [tents, setTents] = useState<Record<string, DCTentResponse | null>>({});
 
-  // Build a stable key so positions-with-same-UIDs don't re-fetch on
-  // every parent re-render. Pure-data dependency on the UID set, not
-  // the position objects.
-  const uidKey = useMemo(
-    () => positions.map((p) => p.position_uid).filter(Boolean).sort().join("|"),
-    [positions],
-  );
-
-  useEffect(() => {
-    const uids = positions
+  // Derive a sorted uids array + a stable string key from positions.
+  // useMemo on `[positions]` is unavoidable here — `positions` is a
+  // fresh array reference every parent re-render (useDCData polls at
+  // 30s and yields a new identity each tick). The memo collapses
+  // those identity changes into a content-equal key.
+  const { uids, uidKey } = useMemo(() => {
+    const list = positions
       .map((p) => p.position_uid)
-      .filter((u): u is string => u != null && u !== "");
-    if (uids.length === 0) return;
+      .filter((u): u is string => u != null && u !== "")
+      .sort();
+    return { uids: list, uidKey: list.join("|") };
+  }, [positions]);
+
+  // R1#1 round-1 fix: depend ONLY on `uidKey` (not `positions`). The
+  // effect closes over `uids` from the useMemo above, which is itself
+  // memoized on `positions` — so when the uid set CONTENT changes
+  // (a position opens or closes), uidKey changes and the effect
+  // re-runs with fresh `uids`. When `positions` re-renders with the
+  // same uid set (parent's 30s poll), uidKey is unchanged and the
+  // effect skips re-running. Without this, the effect would tear
+  // down its 60s interval and re-fire on every parent poll, doubling
+  // the network footprint with no observability gain.
+  useEffect(() => {
+    if (uids.length === 0) {
+      // Clear any stale tents from a prior non-empty state so a
+      // future N → 0 → N transition doesn't briefly show old data.
+      setTents({});
+      return;
+    }
 
     let cancelled = false;
 
@@ -433,7 +466,8 @@ function useTentSmallMultiples(
       cancelled = true;
       clearInterval(interval);
     };
-  }, [uidKey, positions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uidKey]);
 
   return tents;
 }
