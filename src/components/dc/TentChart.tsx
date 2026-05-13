@@ -61,6 +61,17 @@ export function TentChart({
   const option = useMemo(() => {
     if (frozenCurve == null) return null;
 
+    // Frozen series suppression: when the backend resolved iv_source
+    // to "intrinsic" (legacy position with no entry_*_iv columns AND
+    // no live snapshots yet), `frozen.points` are mathematically zero
+    // everywhere — same-strike DC intrinsic = 0. Rendering a labeled
+    // "Frozen IV (entry)" curve along the X axis is actively
+    // misleading (operator sees what looks like a flat tent at $0
+    // with the entry_debit markLine at $22 — appears as a "delta
+    // impulse" at the current_spx vertical). Suppress and rely on
+    // the warnings array (rendered by TentChartModal) to explain.
+    const frozenIsIntrinsic = frozenCurve.iv_source === "intrinsic";
+
     // Decide whether the live overlay adds information. When the
     // backend returned `entry_fallback`, frozen and live are
     // bitwise-identical and stacking them just halves the visual
@@ -69,8 +80,15 @@ export function TentChart({
       liveCurve != null &&
       liveCurve.iv_source === "latest" &&
       liveCurve.points.length > 0;
+    // If the frozen curve is intrinsic-junk AND no usable live curve
+    // exists, there's nothing tent-shaped to render. Caller should
+    // already be surfacing the warnings array; we render an empty
+    // option object so ECharts shows axes without garbage data.
+    const showFrozen = !frozenIsIntrinsic;
 
-    const frozenData = frozenCurve.points.map((p) => [p.spx, p.value]);
+    const frozenData = showFrozen
+      ? frozenCurve.points.map((p) => [p.spx, p.value])
+      : [];
     const liveData = showLive
       ? liveCurve!.points.map((p) => [p.spx, p.value])
       : [];
@@ -130,46 +148,72 @@ export function TentChart({
       });
     }
 
-    const series: Record<string, unknown>[] = [
-      {
+    // MarkLine config (verticals + entry_debit horizontal) attaches
+    // to whichever series renders first — frozen if present, else
+    // live. Centralized so a frozen-suppressed render still gets
+    // the breakeven verticals and entry_debit reference line.
+    const markLineConfig = {
+      symbol: "none",
+      silent: true,
+      lineStyle: { color: COLOR_DEBIT_LINE, type: "dashed", width: 1 },
+      data: [
+        ...verticals,
+        {
+          yAxis: frozenCurve.entry_debit,
+          lineStyle: { color: COLOR_DEBIT_LINE, type: "dashed", width: 1 },
+          label: {
+            formatter: `entry $${frozenCurve.entry_debit.toFixed(2)}`,
+            color: colors.textMuted,
+            position: "insideEndTop" as const,
+          },
+        },
+      ],
+    };
+
+    const series: Record<string, unknown>[] = [];
+
+    if (showFrozen) {
+      series.push({
         name: "Frozen IV (entry)",
         type: "line",
         data: frozenData,
         smooth: true,
         symbol: "none",
+        // `itemStyle.color` drives the legend marker; without it
+        // ECharts picks from a default palette so the legend dot
+        // can mismatch the line color (operator reported a yellow
+        // dot on a blue Live IV line, etc.). Force both to the
+        // series' line color so legend == on-chart color always.
+        itemStyle: { color: COLOR_FROZEN },
         lineStyle: { color: COLOR_FROZEN, width: 2 },
         areaStyle: { color: withAlpha(COLOR_FROZEN, 0.12) },
-        // Horizontal markLine at entry_debit — the zero-P&L threshold.
-        // Anchoring it to the frozen series so it doesn't double when
-        // both curves are shown.
-        markLine: {
-          symbol: "none",
-          silent: true,
-          lineStyle: { color: COLOR_DEBIT_LINE, type: "dashed", width: 1 },
-          data: [
-            ...verticals,
-            {
-              yAxis: frozenCurve.entry_debit,
-              lineStyle: { color: COLOR_DEBIT_LINE, type: "dashed", width: 1 },
-              label: {
-                formatter: `entry $${frozenCurve.entry_debit.toFixed(2)}`,
-                color: colors.textMuted,
-                position: "insideEndTop" as const,
-              },
-            },
-          ],
-        },
-      },
-    ];
+        markLine: markLineConfig,
+      });
+    }
 
     if (showLive) {
+      // When frozen is suppressed (intrinsic-only legacy position),
+      // live is the only curve in the chart — promote it from dashed
+      // overlay to solid primary with area fill + the markLine.
+      const livePromoted = !showFrozen;
       series.push({
         name: "Live IV",
         type: "line",
         data: liveData,
         smooth: true,
         symbol: "none",
-        lineStyle: { color: COLOR_LIVE, width: 2, type: "dashed" },
+        itemStyle: { color: COLOR_LIVE },
+        lineStyle: {
+          color: COLOR_LIVE,
+          width: 2,
+          ...(livePromoted ? {} : { type: "dashed" as const }),
+        },
+        ...(livePromoted
+          ? {
+              areaStyle: { color: withAlpha(COLOR_LIVE, 0.12) },
+              markLine: markLineConfig,
+            }
+          : {}),
       });
     }
 
@@ -185,7 +229,10 @@ export function TentChart({
       legend: compact
         ? { show: false }
         : {
-            data: showLive ? ["Frozen IV (entry)", "Live IV"] : ["Frozen IV (entry)"],
+            data: [
+              ...(showFrozen ? ["Frozen IV (entry)"] : []),
+              ...(showLive ? ["Live IV"] : []),
+            ],
             textStyle: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11 },
             top: 4,
           },
