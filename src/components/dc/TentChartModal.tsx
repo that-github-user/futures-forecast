@@ -125,6 +125,33 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
   const isPhantom = frozen?.phantom === true;
   const ivSourceLabel = labelForIvSource(live?.iv_source ?? frozen?.iv_source ?? null);
 
+  // Filter the API's warnings array for the modal. When the frozen
+  // fetch resolved to "intrinsic" (legacy position with no entry IVs)
+  // the API correctly emits "no implied vol data available — tent
+  // curve is intrinsic-only" — but that's only true of the FROZEN
+  // overlay. If the live curve is rendering successfully, showing
+  // that warning verbatim is misleading (operator sees a real tent
+  // AND a "no IV data" warning, which contradicts). Suppress the
+  // frozen-intrinsic warning in that case and replace it with a
+  // more accurate one that names the actual degradation.
+  const liveIsRendering =
+    live != null && live.iv_source === "latest" && live.points.length > 0;
+  const adjustedWarnings = (() => {
+    const raw = frozen?.warnings ?? [];
+    if (!liveIsRendering || frozen?.iv_source !== "intrinsic") return raw;
+    // Drop the API's intrinsic-only banner (identified by stable
+    // substring — same wording is pinned by backend tests) and
+    // prepend a more honest replacement.
+    const filtered = raw.filter((w) => !w.includes("intrinsic-only"));
+    return [
+      "Frozen-IV (entry) overlay unavailable — this legacy position " +
+        "predates entry-IV capture (PR #170). Live IV is rendering " +
+        "below; you're seeing the current curve only, not a drift " +
+        "comparison vs entry.",
+      ...filtered,
+    ];
+  })();
+
   return (
     <div
       onClick={onClose}
@@ -187,8 +214,12 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
           </button>
         </div>
 
-        {/* Warnings banner */}
-        {frozen && frozen.warnings.length > 0 && (
+        {/* Warnings banner — uses `adjustedWarnings` which suppresses
+            the API's "intrinsic-only" message when Live IV is
+            rendering (the warning was correct of the frozen overlay
+            but contradicted the rendered live curve). See the
+            comment near `adjustedWarnings` for the rationale. */}
+        {adjustedWarnings.length > 0 && (
           <div
             role="alert"
             style={{
@@ -201,7 +232,7 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
               color: colors.accentAmber,
             }}
           >
-            {frozen.warnings.map((w, i) => (
+            {adjustedWarnings.map((w, i) => (
               <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}>
                 ⚠ {w}
               </div>
