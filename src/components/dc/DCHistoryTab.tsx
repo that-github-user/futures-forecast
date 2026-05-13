@@ -127,7 +127,7 @@ export function DCHistoryTab({ trades }: Props) {
             </table>
             {tentTrade != null && (
               <TentChartModal
-                target={{ kind: "trade", tradeId: tentTrade.id, frontExp: tentTrade.front_exp ?? undefined }}
+                target={{ kind: "trade", tradeId: tentTrade.id }}
                 title={`${tentTrade.strategy_name} (closed ${tentTrade.close_date?.slice(0, 10) ?? "?"})`}
                 onClose={() => setTentTrade(null)}
               />

@@ -16,6 +16,7 @@ import type {
   DCStrategySpec,
   DCStrategyStats,
   DCSummary,
+  DCTentBundleResponse,
   DCTentResponse,
   DCTrade,
 } from "./dcTypes";
@@ -87,6 +88,22 @@ export const dcApi = {
       `/dc-api/v1/trades/${tradeId}/tent${qs ? `?${qs}` : ""}`,
     );
   },
+  // Bundled tent endpoints (PR #178 backend). Single roundtrip
+  // returns all 4 curves; modal uses these instead of 4 separate
+  // fetches. Per-curve endpoints above stay for back-compat /
+  // ad-hoc inspection.
+  positionTentBundle: (positionUid: string) =>
+    dcGet<DCTentBundleResponse>(
+      `/dc-api/v1/positions/${encodeURIComponent(positionUid)}/tent/bundle`,
+    ),
+  phantomTentBundle: (positionUid: string) =>
+    dcGet<DCTentBundleResponse>(
+      `/dc-api/v1/phantoms/${encodeURIComponent(positionUid)}/tent/bundle`,
+    ),
+  tradeTentBundle: (tradeId: number) =>
+    dcGet<DCTentBundleResponse>(
+      `/dc-api/v1/trades/${tradeId}/tent/bundle`,
+    ),
   positionGreeks: (positionUid: string) =>
     dcGet<DCGreekSnapshotsResponse>(
       `/dc-api/v1/positions/${encodeURIComponent(positionUid)}/greeks`,
