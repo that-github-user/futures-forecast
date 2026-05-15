@@ -641,23 +641,24 @@ export function TerminalChartCore({
         label: "SET", color: palette.ink60, style: LineStyle.Dashed, width: 1,
       },
       // Prev prior-session HLC — gated by overlays.priorHlc.previous
-      // (the session BEFORE the one carried in pd_*). Visually
-      // differentiated from PDH/PDL/PDC with a dashed line + ink40
-      // (one shade dimmer) so traders can tell the two layers apart
-      // when both are stacked — the "current" reference stays
-      // visually dominant, "previous" sits behind as a secondary
-      // anchor. Label suffix "(-1)" reinforces the session offset.
+      // (the session BEFORE the one carried in pd_*). Differentiated
+      // from PDH/PDL/PDC with Dashed line style + "(-1)" label suffix.
+      // Color stays at palette.ink60 (matching the current layer) —
+      // the existing chart reserves ink40 for borders/structural
+      // strokes, never data lines, so double-dimming here would risk
+      // making the prev layer hard to see on a busy chart. Dashed +
+      // label suffix is already strong differentiation.
       {
         key: "PDH-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_high,
-        label: "PDH (-1)", color: palette.ink40, style: LineStyle.Dashed, width: 1,
+        label: "PDH (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
       },
       {
         key: "PDL-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_low,
-        label: "PDL (-1)", color: palette.ink40, style: LineStyle.Dashed, width: 1,
+        label: "PDL (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
       },
       {
         key: "PDC-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_close,
-        label: "PDC (-1)", color: palette.ink40, style: LineStyle.Dashed, width: 1,
+        label: "PDC (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
       },
       // ORH / ORL chips — one per active OR window (1m / 5m / 15m).
       // Rendered via createPriceLine like the rest of the level

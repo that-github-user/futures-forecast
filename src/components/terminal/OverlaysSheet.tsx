@@ -226,12 +226,16 @@ export function OverlaysSheet({
                   >
                     PDH / PDL / PDC
                   </button>
+                  {/* No `title` attr on the mobile pill — tooltips
+                      don't surface reliably on touch. The section
+                      comment above explains the layer; users who
+                      need more context get it in the desktop
+                      tooltip variant. */}
                   <button
                     type="button"
                     className={`pill${overlays.priorHlc.previous ? " on" : ""}`}
                     onClick={() => togglePriorHlc("previous")}
                     aria-pressed={overlays.priorHlc.previous}
-                    title="Prior-prior session HLC — overnight reference layer"
                   >
                     Prev PDH / PDL / PDC
                   </button>
