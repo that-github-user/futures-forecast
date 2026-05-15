@@ -519,6 +519,40 @@
   color: var(--ink-40);
 }
 
+/* ── Chart STALE badge ──────────────────────────────────────────
+   Flips on when /v1/bars/es-intraday reports `stale: true` (backend
+   PR #181 — circuit-breaker cooldown or recent fetch timeout served
+   cached bars instead of a live IBKR fetch). Sits absolutely
+   positioned in the chart container's top-right so the trader can
+   see at a glance that the chart isn't lying about being live.
+   Persimmon-red matches the project's existing stale convention
+   (.terminal-card-ts.stale) — deliberately NOT amber, which is
+   reserved for the MIXED-signal chip elsewhere. zIndex 2 sits above
+   the empty-state overlay (zIndex 1) so it remains visible during
+   cold-start situations. */
+.terminal-chart-stale-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(199, 90, 60, 0.15);
+  color: var(--neg-persimmon, #c75a3c);
+  border: 1px solid rgba(199, 90, 60, 0.4);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  pointer-events: auto;
+  cursor: help;
+  /* The label is rendered uppercase in JSX directly; we don't apply
+     `text-transform: uppercase` here because the age suffix ("4m",
+     "2h 15m") would otherwise get capitalized to "4M" — reads
+     ambiguously as a unit prefix (mega). Keeping the label-vs-value
+     casing split in markup avoids the issue. */
+}
+
 /* ── System feed ───────────────────────────────────────────── */
 .terminal-feed {
   /* Left pad trimmed from 24px → 16px to reclaim wasted whitespace

@@ -95,6 +95,20 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
 // without reloading.
 const DEFAULT_VISIBLE_HOURS = 12;
 
+/** Format a data-age in seconds as a human-readable badge suffix.
+ *  Under a minute reads as "Xs", under an hour as "Xm", and longer
+ *  as "Xh Ym". Returns null when the backend hasn't recorded any
+ *  successful fetch yet (cold-start) so the badge can show just
+ *  "STALE" without a misleading "0s" reading. */
+function formatStaleAge(seconds: number | null): string | null {
+  if (seconds == null) return null;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 interface Props {
@@ -146,6 +160,13 @@ export function TerminalChartCore({
   // Bar buffer.
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Staleness flags from the bars endpoint (backend task #294).
+  // `stale=true` flips the chart's STALE badge on so a customer
+  // doesn't mistake yesterday's cached bars for live data during an
+  // IBKR outage. `dataAgeSeconds` formats the badge with the actual
+  // age — distinguishes "stale by 30s" from "stale by 6 hours."
+  const [stale, setStale] = useState(false);
+  const [dataAgeSeconds, setDataAgeSeconds] = useState<number | null>(null);
 
   const palette = useMemo(() => resolveLumenPalette(), []);
 
@@ -162,6 +183,12 @@ export function TerminalChartCore({
         const data = await fetchTerminalIntradayBars();
         if (!cancelled) {
           setBars(data.bars);
+          // Default both to "fresh" when older payloads omit the
+          // fields (graceful degradation during cross-repo deploy
+          // ordering — older backend keeps `stale`/`data_age_seconds`
+          // undefined, frontend treats that as "no signal of stale").
+          setStale(data.stale === true);
+          setDataAgeSeconds(data.data_age_seconds ?? null);
           setError(null);
         }
       } catch (e) {
@@ -834,6 +861,10 @@ export function TerminalChartCore({
     palette,
   ]);
 
+  // Pre-compute the formatted age once per render so both the badge
+  // body and its aria-label can reference the same string.
+  const ageStr = formatStaleAge(dataAgeSeconds);
+
   return (
     <div
       className="terminal-chart-canvas"
@@ -883,6 +914,38 @@ export function TerminalChartCore({
           ISeriesPrimitive — see overlayPrimitiveRef. The rectangles
           are drawn on the chart's canvas synchronously with every
           pan/zoom frame, so no HTML overlay div is needed here. */}
+      {/* Stale-data badge. Flips on when the backend bars endpoint
+          flags `stale=true` (intraday_eth slot is in circuit-breaker
+          cooldown OR the most recent fetch timed out — backend task
+          #294). Styled via `.terminal-chart-stale-badge` in
+          TerminalDashboard.css so it follows the project's
+          persimmon-red staleness convention and theme tokens.
+          Wording "CACHED" (not "STALE") so a touch-only user gets
+          the cause without needing the hover tooltip — data is in
+          the historical-fetcher cache because the live fetch failed.
+          a11y: role=status + aria-live=polite so screen readers get
+          a "chart data is delayed" announcement when the badge
+          appears, matching DCPositionsTab's stale-banner pattern. */}
+      {stale && (
+        <div
+          className="terminal-chart-stale-badge"
+          role="status"
+          aria-live="polite"
+          aria-label={
+            ageStr
+              ? `Chart data is cached; last live update ${ageStr} ago`
+              : "Chart data is cached; live IBKR fetch unavailable"
+          }
+          title={
+            "Bars served from cache — live IBKR fetch unavailable. "
+            + "Chart is showing the most-recent successful data; "
+            + "operator should expect resumption when the data feed recovers."
+          }
+        >
+          <span style={{ textTransform: "uppercase" }}>Cached</span>
+          {ageStr && <> • {ageStr}</>}
+        </div>
+      )}
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
       )}
