@@ -37,12 +37,27 @@ export const OR_WINDOWS: { key: OrWindowKey; label: string; minutes: number }[] 
   { key: "m15", label: "15m", minutes: 15 },
 ];
 
+// ── Prior-session HLC overlay state ─────────────────────────────────
+//
+// `current` controls the standard PDH/PDL/PDC lines — the most-recent
+// completed RTH session. `previous` controls a secondary layer showing
+// the session BEFORE that (pre-cutover semantics, useful as an overnight
+// reference because the prior-prior-day's HLC often acts as visible
+// support/resistance when yesterday's range stayed inside it). The
+// frontend renders them in distinct line styles so the trader can tell
+// the two layers apart.
+
+export type PriorHlcOverlayState = {
+  current: boolean;
+  previous: boolean;
+};
+
 // ── Overlay state shape ─────────────────────────────────────────────
 
 export type OverlayState = {
   vwap: VwapOverlayState;
   pocVa: boolean;
-  priorHlc: boolean;
+  priorHlc: PriorHlcOverlayState;
   openingRange: OrOverlayState;
 };
 
@@ -53,7 +68,7 @@ export const DEFAULT_OVERLAYS: OverlayState = {
     rth: { vwap: false, band1: false, band2: false },
   },
   pocVa: true,
-  priorHlc: true,
+  priorHlc: { current: true, previous: false },
   openingRange: { m1: false, m5: true, m15: false },
 };
 
