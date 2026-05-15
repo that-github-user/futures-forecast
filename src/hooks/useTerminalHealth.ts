@@ -42,8 +42,18 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
     let cancelled = false;
 
     const tick = async () => {
-      const h = await terminal.health();
-      if (!cancelled) setData(h);
+      try {
+        const h = await terminal.health();
+        if (!cancelled) setData(h);
+      } catch {
+        // `terminal.health()` already returns null on HTTP errors (the
+        // wrapper in terminalClient.ts swallows them). This catch is
+        // belt-and-suspenders for any future throw — e.g. a network
+        // error during the in-flight promise. Treat as "offline" so
+        // `online === false` and the strip stays hidden rather than
+        // showing a stuck-degraded state from an earlier tick.
+        if (!cancelled) setData(null);
+      }
     };
 
     tick();
