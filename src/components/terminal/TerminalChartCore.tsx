@@ -95,6 +95,20 @@ const TIMEFRAME_MINUTES: Record<Timeframe, number> = {
 // without reloading.
 const DEFAULT_VISIBLE_HOURS = 12;
 
+/** Format a data-age in seconds as a human-readable badge suffix.
+ *  Under a minute reads as "Xs", under an hour as "Xm", and longer
+ *  as "Xh Ym". Returns null when the backend hasn't recorded any
+ *  successful fetch yet (cold-start) so the badge can show just
+ *  "STALE" without a misleading "0s" reading. */
+function formatStaleAge(seconds: number | null): string | null {
+  if (seconds == null) return null;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 interface Props {
@@ -146,6 +160,13 @@ export function TerminalChartCore({
   // Bar buffer.
   const [bars, setBars] = useState<TerminalIntradayBar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Staleness flags from the bars endpoint (backend task #294).
+  // `stale=true` flips the chart's STALE badge on so a customer
+  // doesn't mistake yesterday's cached bars for live data during an
+  // IBKR outage. `dataAgeSeconds` formats the badge with the actual
+  // age — distinguishes "stale by 30s" from "stale by 6 hours."
+  const [stale, setStale] = useState(false);
+  const [dataAgeSeconds, setDataAgeSeconds] = useState<number | null>(null);
 
   const palette = useMemo(() => resolveLumenPalette(), []);
 
@@ -162,6 +183,12 @@ export function TerminalChartCore({
         const data = await fetchTerminalIntradayBars();
         if (!cancelled) {
           setBars(data.bars);
+          // Default both to "fresh" when older payloads omit the
+          // fields (graceful degradation during cross-repo deploy
+          // ordering — older backend keeps `stale`/`data_age_seconds`
+          // undefined, frontend treats that as "no signal of stale").
+          setStale(data.stale === true);
+          setDataAgeSeconds(data.data_age_seconds ?? null);
           setError(null);
         }
       } catch (e) {
@@ -883,6 +910,46 @@ export function TerminalChartCore({
           ISeriesPrimitive — see overlayPrimitiveRef. The rectangles
           are drawn on the chart's canvas synchronously with every
           pan/zoom frame, so no HTML overlay div is needed here. */}
+      {/* Stale-data badge. Flips on when the backend bars endpoint
+          flags `stale=true` (intraday_eth slot is in circuit-breaker
+          cooldown OR the most recent fetch timed out — backend task
+          #294). Sits absolutely positioned in the top-right so it's
+          visible without displacing the chart. Amber/yellow treatment
+          (not red — data is still usable as historical reference,
+          just not live), with a tooltip explaining the cause. */}
+      {stale && (
+        <div
+          className="terminal-chart-stale-badge"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            zIndex: 2,
+            background: "rgba(245, 158, 11, 0.15)",   // amber-500 @ 15%
+            color: "#f59e0b",                          // amber-500
+            border: "1px solid rgba(245, 158, 11, 0.4)",
+            borderRadius: 4,
+            padding: "3px 8px",
+            fontFamily: "var(--font-mono, monospace)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            pointerEvents: "auto",
+            cursor: "help",
+          }}
+          title={
+            "Bars served from cache — live IBKR fetch unavailable. "
+            + "Chart is showing the most-recent successful data; "
+            + "operator should expect resumption when the data feed recovers."
+          }
+        >
+          {(() => {
+            const ageStr = formatStaleAge(dataAgeSeconds);
+            return ageStr ? `Stale • ${ageStr}` : "Stale";
+          })()}
+        </div>
+      )}
       {tooltip && (
         <ChartTooltip tooltip={tooltip} tzLabel={tzLabel} formatBarTime={formatBarTime} />
       )}

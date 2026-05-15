@@ -147,6 +147,19 @@ export interface TerminalIntradayBar {
 
 export interface TerminalIntradayBarsResponse {
   bars: TerminalIntradayBar[];
+  /** True when the served bars came from the historical-fetcher cache
+   *  during a fetch failure — either the `intraday_eth` slot is in
+   *  circuit-breaker cooldown or the most recent IBKR fetch attempt
+   *  timed out. Chart renders a "STALE" badge so a customer doesn't
+   *  mistake yesterday's bars for live data during an IBKR outage.
+   *  Defaults to false on older payloads (graceful degradation during
+   *  cross-repo deploy ordering). */
+  stale?: boolean;
+  /** Seconds since the most recent SUCCESSFUL IBKR fetch for the
+   *  intraday_eth slot. null means no fetch has ever succeeded
+   *  (cold start). Formatted onto the STALE badge for operator
+   *  triage — distinguishes "stale by 30s" from "stale by 6 hours". */
+  data_age_seconds?: number | null;
 }
 
 // Macro calendar (System 8 — advisory-only).
