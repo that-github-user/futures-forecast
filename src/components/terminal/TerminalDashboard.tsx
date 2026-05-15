@@ -40,6 +40,7 @@ import { deriveScoreRenderState } from "../../lib/synthesizerFlatState";
 import { RouteNav } from "../nav/RouteNav";
 import { SystemFeed } from "./SystemFeed";
 import { OverlaysSheet } from "./OverlaysSheet";
+import { TerminalHealthStrip } from "./TerminalHealthStrip";
 import "./TerminalDashboard.css";
 
 const SYSTEM_LABELS = {
@@ -63,6 +64,12 @@ export function TerminalDashboard() {
   return (
     <div className="terminal-root">
       <RouteNav current="terminal" />
+      {/* Health strip — renders only when /v1/health flags a degraded
+          state. Sits between RouteNav and HeadlineStrip so an
+          operator's eye lands on it first when something's wrong;
+          collapses to nothing during healthy operation so the
+          dashboard layout is unchanged. */}
+      <TerminalHealthStrip />
       <HeadlineStrip data={data} />
       <MiddleBand data={data} />
       <ScorecardGrid data={data} />

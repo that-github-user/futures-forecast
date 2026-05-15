@@ -519,6 +519,41 @@
   color: var(--ink-40);
 }
 
+/* ── Dashboard health strip (task #307) ───────────────────────────
+   Slim banner between RouteNav and HeadlineStrip. Renders ONLY when
+   `degraded_streams` or `historical_degraded` is non-empty on the
+   /v1/health response. Persimmon-red matches the chart's CACHED
+   badge so the operator gets a consistent visual language for
+   "data is degraded" across the dashboard. Does not occupy layout
+   when healthy — pure render-gate via the React component. */
+.terminal-health-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 18px;
+  background: rgba(199, 90, 60, 0.10);
+  color: var(--neg-persimmon, #c75a3c);
+  border-bottom: 1px solid rgba(199, 90, 60, 0.35);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.terminal-health-strip-label {
+  /* Static "FEED DEGRADED" tag — uppercased here in CSS because the
+     label is a fixed string with no embedded values that could pick
+     up unwanted casing. */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+}
+.terminal-health-strip-body {
+  /* The body interpolates raw subsystem names like "intraday_eth";
+     no text-transform so an underscored slot name doesn't get
+     surprising case mangling. ink-60 lightens vs the persimmon
+     label so the body reads as supporting detail, not headline. */
+  color: var(--ink-60, #94a3b8);
+}
+
 /* ── Chart STALE badge ──────────────────────────────────────────
    Flips on when /v1/bars/es-intraday reports `stale: true` (backend
    PR #181 — circuit-breaker cooldown or recent fetch timeout served
