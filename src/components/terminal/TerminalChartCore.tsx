@@ -861,6 +861,10 @@ export function TerminalChartCore({
     palette,
   ]);
 
+  // Pre-compute the formatted age once per render so both the badge
+  // body and its aria-label can reference the same string.
+  const ageStr = formatStaleAge(dataAgeSeconds);
+
   return (
     <div
       className="terminal-chart-canvas"
@@ -913,41 +917,33 @@ export function TerminalChartCore({
       {/* Stale-data badge. Flips on when the backend bars endpoint
           flags `stale=true` (intraday_eth slot is in circuit-breaker
           cooldown OR the most recent fetch timed out — backend task
-          #294). Sits absolutely positioned in the top-right so it's
-          visible without displacing the chart. Amber/yellow treatment
-          (not red — data is still usable as historical reference,
-          just not live), with a tooltip explaining the cause. */}
+          #294). Styled via `.terminal-chart-stale-badge` in
+          TerminalDashboard.css so it follows the project's
+          persimmon-red staleness convention and theme tokens.
+          Wording "CACHED" (not "STALE") so a touch-only user gets
+          the cause without needing the hover tooltip — data is in
+          the historical-fetcher cache because the live fetch failed.
+          a11y: role=status + aria-live=polite so screen readers get
+          a "chart data is delayed" announcement when the badge
+          appears, matching DCPositionsTab's stale-banner pattern. */}
       {stale && (
         <div
           className="terminal-chart-stale-badge"
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            zIndex: 2,
-            background: "rgba(245, 158, 11, 0.15)",   // amber-500 @ 15%
-            color: "#f59e0b",                          // amber-500
-            border: "1px solid rgba(245, 158, 11, 0.4)",
-            borderRadius: 4,
-            padding: "3px 8px",
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            pointerEvents: "auto",
-            cursor: "help",
-          }}
+          role="status"
+          aria-live="polite"
+          aria-label={
+            ageStr
+              ? `Chart data is cached; last live update ${ageStr} ago`
+              : "Chart data is cached; live IBKR fetch unavailable"
+          }
           title={
             "Bars served from cache — live IBKR fetch unavailable. "
             + "Chart is showing the most-recent successful data; "
             + "operator should expect resumption when the data feed recovers."
           }
         >
-          {(() => {
-            const ageStr = formatStaleAge(dataAgeSeconds);
-            return ageStr ? `Stale • ${ageStr}` : "Stale";
-          })()}
+          <span style={{ textTransform: "uppercase" }}>Cached</span>
+          {ageStr && <> • {ageStr}</>}
         </div>
       )}
       {tooltip && (
