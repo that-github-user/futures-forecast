@@ -9,6 +9,7 @@ import type {
   DCExitAlert,
   DCGreekSnapshotsResponse,
   DCHealthResponse,
+  DCPhantomPosition,
   DCPosition,
   DCRiskStatus,
   DCSignalEvent,
@@ -44,6 +45,13 @@ export const dcApi = {
   brokerState: () => dcGet<DCBrokerState>("/dc-api/v1/broker-state"),
   trades: (limit = 50, offset = 0) =>
     dcGet<DCTrade[]>(`/dc-api/v1/trades?limit=${limit}&offset=${offset}`),
+  // Phantom (would-have-entered) trades — rows the daemon recorded
+  // when every signal-side gate cleared but the broker-fill phase
+  // failed. The Tent tab surfaces these in a "missed entries" section
+  // so operators see the play they SHOULD have been holding even when
+  // automation couldn't fill. Default 30-day lookback.
+  phantoms: (days = 30) =>
+    dcGet<DCPhantomPosition[]>(`/dc-api/v1/phantoms?days=${days}`),
   strategies: () => dcGet<DCStrategyStats[]>("/dc-api/v1/strategies"),
   strategySpecs: () => dcGet<DCStrategySpec[]>("/dc-api/v1/strategies/specs"),
   signals: () => dcGet<DCSignalsResponse>("/dc-api/v1/signals"),

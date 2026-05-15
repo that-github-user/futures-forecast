@@ -25,7 +25,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { dcApi } from "../../api/dcClient";
-import type { DCPosition, DCTentResponse, DCTrade } from "../../api/dcTypes";
+import type {
+  DCPhantomPosition,
+  DCPosition,
+  DCTentResponse,
+  DCTrade,
+} from "../../api/dcTypes";
 import { TentChart } from "./TentChart";
 import { TentChartModal, type TentTarget } from "./TentChartModal";
 import { filterTradesByDays, isTentRenderable } from "./dcTentTab.helpers";
@@ -34,10 +39,12 @@ import { filterTradesByDays, isTentRenderable } from "./dcTentTab.helpers";
 interface Props {
   positions: DCPosition[];
   trades: DCTrade[];
+  phantoms: DCPhantomPosition[];
+  phantomsLoaded: boolean;
 }
 
 
-export function DCTentTab({ positions, trades }: Props) {
+export function DCTentTab({ positions, trades, phantoms, phantomsLoaded }: Props) {
   const [modalTarget, setModalTarget] = useState<{
     target: TentTarget;
     title: string;
@@ -51,6 +58,16 @@ export function DCTentTab({ positions, trades }: Props) {
           setModalTarget({
             target: { kind: "position", positionUid: p.position_uid! },
             title: p.strategy_name,
+          })
+        }
+      />
+      <MissedEntriesPanel
+        phantoms={phantoms}
+        loaded={phantomsLoaded}
+        onOpen={(ph) =>
+          setModalTarget({
+            target: { kind: "phantom", positionUid: ph.position_uid },
+            title: `${ph.strategy_name} (missed ${ph.entry_date})`,
           })
         }
       />
@@ -220,6 +237,261 @@ function PositionTentCard({
           {tent?.breakeven_low?.toFixed(0) ?? "—"} /{" "}
           {tent?.breakeven_high?.toFixed(0) ?? "—"}
         </span>
+      </div>
+    </button>
+  );
+}
+
+
+// ── Missed entries: phantom (would-have-entered) positions ───────
+
+
+/**
+ * Phantom rows are the daemon's record of plays it WOULD have entered
+ * had the broker-fill phase succeeded. Surfacing them in the Tent tab
+ * is operator-critical: without this panel, ladder-exhausted /
+ * parked-no-fill events vanish from the tracker, making it look like
+ * the play never existed. Operators want to see what they SHOULD have
+ * been holding even when automation couldn't fill — the daemon's
+ * incapability to enter is not an excuse to discard tracking.
+ *
+ * Each card opens the through-expiry phantom-tent modal (live + frozen
+ * IV overlays, same as a real position). The block_category badge tells
+ * the operator at a glance WHY the entry failed (ladder exhausted vs
+ * parked-no-fill vs other).
+ */
+function MissedEntriesPanel({
+  phantoms,
+  loaded,
+  onOpen,
+}: {
+  phantoms: DCPhantomPosition[];
+  loaded: boolean;
+  onOpen: (ph: DCPhantomPosition) => void;
+}) {
+  const [days, setDays] = useState(30);
+
+  const filtered = useMemo(() => {
+    if (days === 0) return phantoms;
+    // Date filter must be ET-anchored: backend `entry_date` is written
+    // from the daemon's ET wall-clock at entry time, and a PT trader
+    // at 9pm PT (= midnight ET) selecting "30d" must see today's ET-
+    // dated phantom. Naive `new Date().setDate(-N) → toISOString()` is
+    // a UTC/local hybrid that drops boundary days. Mirror the pattern
+    // used in DCEventsTab.tsx:todayET().
+    const cutoffInstant = new Date();
+    cutoffInstant.setDate(cutoffInstant.getDate() - days);
+    const iso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+    }).format(cutoffInstant);
+    return phantoms.filter((p) => p.entry_date >= iso);
+  }, [phantoms, days]);
+
+  return (
+    <div className="panel" style={{ padding: 12 }}>
+      <div
+        className="panel-header"
+        style={{
+          marginBottom: 8,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span className="panel-title">
+          Missed entries — automation couldn&rsquo;t fill (
+          {loaded ? filtered.length : "—"})
+        </span>
+        <DateRangePicker value={days} onChange={setDays} />
+      </div>
+      <div style={{
+        fontSize: 11,
+        color: colors.textMuted,
+        fontFamily: fonts.sans,
+        marginBottom: 8,
+        lineHeight: 1.4,
+      }}>
+        Plays the daemon recorded but couldn&rsquo;t fill — the entry
+        reprice ladder exhausted or parked-at-ask without a cross.
+        Followers may have entered manually; the through-expiry tent
+        still applies. Click a row for the full chart.
+      </div>
+      {/* Loading vs empty: until the first slow-tier poll settles,
+          show a loading placeholder rather than "No missed entries" —
+          the latter would re-create the perception bug this PR fixes
+          ("looks like nothing's tracked"). */}
+      {!loaded ? (
+        <div style={emptyStyle}>Loading missed entries…</div>
+      ) : filtered.length === 0 ? (
+        <div style={emptyStyle}>
+          {days > 0
+            ? `No missed entries in the last ${days} day${days === 1 ? "" : "s"}.`
+            : "No missed entries recorded yet."}
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 8,
+            maxHeight: "max(240px, calc(100vh - 400px))",
+            overflowY: "auto",
+          }}
+        >
+          {filtered.map((ph) => (
+            <PhantomChip key={ph.id} phantom={ph} onClick={() => onOpen(ph)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Format YYYYMMDD (the backend expiry format) as "May 21".
+ * Falls back to the raw string when the format doesn't match.
+ */
+function formatExpiry(yyyymmdd: string): string {
+  if (!/^\d{8}$/.test(yyyymmdd)) return yyyymmdd;
+  const y = Number(yyyymmdd.slice(0, 4));
+  const m = Number(yyyymmdd.slice(4, 6)) - 1;
+  const d = Number(yyyymmdd.slice(6, 8));
+  return new Date(y, m, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+
+/**
+ * Days between an ISO YYYY-MM-DD date and today (ET). Positive means
+ * the date is in the past. Used for the "Xd ago" affordance — operators
+ * need a quick at-a-glance "is this miss still relevant?" cue.
+ */
+function daysAgoET(isoDate: string): number {
+  const todayIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+  }).format(new Date());
+  // YYYY-MM-DD lexicographic subtraction won't work — actual day delta
+  // needs Date math. Pin both to UTC midnight to skirt DST entirely.
+  const a = new Date(`${isoDate}T00:00:00Z`);
+  const b = new Date(`${todayIso}T00:00:00Z`);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+
+function PhantomChip({
+  phantom,
+  onClick,
+}: {
+  phantom: DCPhantomPosition;
+  onClick: () => void;
+}) {
+  // Block category drives a small colored pill so the failure mode is
+  // visible at-a-glance without opening the modal. Falls back to "UNK"
+  // when the category is null — "MISS" reads too much like a positive-
+  // event term in trading slang.
+  const categoryLabel = (() => {
+    switch (phantom.block_category) {
+      case "ladder_exhausted": return "LADDER";
+      case "parked_no_fill": return "PARKED";
+      case "other": return "OTHER";
+      default: return "UNK";
+    }
+  })();
+  const daysAgo = daysAgoET(phantom.entry_date);
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`Open through-expiry tent for missed ${phantom.strategy_name} entry on ${phantom.entry_date}`}
+      style={{
+        textAlign: "left",
+        background: colors.bgInset,
+        // Dashed neutral-border + amber pill: the dashed stroke alone
+        // carries the "phantom / not held" semantic, so reserving the
+        // amber accent for the LADDER/PARKED pill (failure-mode
+        // information) keeps the dashboard's existing amber-as-warning
+        // vocabulary cleaner. PositionTentCard's dashed-amber is rare
+        // (only fires when an open position's tent reads phantom=true);
+        // this panel renders a whole grid of cards and shouldn't read
+        // as a wall of amber warnings.
+        border: `1px dashed ${colors.borderBright}`,
+        borderRadius: 4,
+        padding: "8px 10px",
+        cursor: "pointer",
+        fontFamily: fonts.sans,
+        color: colors.textPrimary,
+        fontSize: 11,
+      }}
+    >
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+        marginBottom: 2,
+        alignItems: "center",
+      }}>
+        <span style={{ fontWeight: 600, color: colors.textBright }}>
+          {phantom.strategy_name}
+        </span>
+        <span style={{
+          fontSize: 9,
+          fontFamily: fonts.mono,
+          color: colors.accentAmber,
+          background: withAlpha(colors.accentAmber, 0.12),
+          border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
+          borderRadius: 2,
+          padding: "1px 5px",
+          letterSpacing: 0.5,
+        }}>
+          {categoryLabel}
+        </span>
+      </div>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+        color: colors.textMuted,
+        fontFamily: fonts.mono,
+      }}>
+        <span>{phantom.put_strike}P / {phantom.call_strike}C</span>
+        <span>
+          {phantom.entry_date}
+          {daysAgo > 0 ? ` · ${daysAgo}d ago` : " · today"}
+        </span>
+      </div>
+      <div style={{
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
+        fontSize: 10,
+        marginTop: 2,
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+      }}>
+        <span>
+          intended ${phantom.intended_debit.toFixed(2)} × {phantom.intended_quantity}
+        </span>
+        <span>
+          {formatExpiry(phantom.front_exp)} / {formatExpiry(phantom.back_exp)}
+        </span>
+      </div>
+      {/* NOT HELD watermark: a small uppercase sub-label cementing
+          "this is tracking-only, not a real position" so a screenshot
+          or quick glance can't misread the card as an open position
+          with a colored pill. */}
+      <div style={{
+        marginTop: 4,
+        fontSize: 9,
+        fontFamily: fonts.mono,
+        color: colors.textMuted,
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+      }}>
+        NOT HELD · tracking only
       </div>
     </button>
   );

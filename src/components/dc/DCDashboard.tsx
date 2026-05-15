@@ -153,7 +153,12 @@ export function DCDashboard() {
         {tab === "events" && <DCEventsTab />}
         {tab === "capital" && <CapitalAllocationTab />}
         {tab === "tent" && (
-          <DCTentTab positions={data.positions} trades={data.trades} />
+          <DCTentTab
+            positions={data.positions}
+            trades={data.trades}
+            phantoms={data.phantoms}
+            phantomsLoaded={data.phantomsLoaded}
+          />
         )}
       </div>
     </div>

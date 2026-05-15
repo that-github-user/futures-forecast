@@ -113,6 +113,51 @@ export interface DCTrade {
   back_exp: string | null;
 }
 
+/**
+ * A would-have-entered trade. Every signal-side gate cleared but the
+ * broker-fill phase failed (`blocked_order` — typically the entry
+ * reprice ladder exhausted with zero fills, or parked-at-ask without
+ * a fill). The daemon never owned contracts, but the play is real and
+ * appears in the Tent tab's "missed entries" section so operators can
+ * track the position they SHOULD have been holding even when
+ * automation couldn't fill.
+ *
+ * `position_uid` always starts with `phantom_` — fan out to the
+ * existing `dcApi.phantomTentBundle(uid)` endpoint to render the
+ * through-expiry curve.
+ *
+ * `block_category` is the stable enum classifying why the fill failed:
+ *   - "ladder_exhausted" — entry reprice ladder ran through all rungs
+ *   - "parked_no_fill"   — held at ask for the configured park dwell
+ *   - "other"            — future broker-reject / mid-fill paths
+ */
+export interface DCPhantomPosition {
+  id: number;
+  position_uid: string;
+  strategy_name: string;
+  signal: string;
+  // ISO8601 with offset, ET-anchored (e.g. "2026-05-15T10:30:00-04:00")
+  entry_time: string;
+  // ISO date `YYYY-MM-DD`, ET-anchored (derived from entry_time's ET
+  // wall-clock date by the daemon at write time). Safe for lexicographic
+  // comparison against another `YYYY-MM-DD` string.
+  entry_date: string;
+  put_strike: number;
+  call_strike: number;
+  // YYYYMMDD (no separators), matching IBKR's contract expiry format.
+  front_exp: string;
+  back_exp: string;
+  intended_debit: number;
+  intended_quantity: number;
+  spx_at_intent: number | null;
+  block_reason: string | null;
+  block_category: string | null;
+  entry_front_put_iv: number | null;
+  entry_front_call_iv: number | null;
+  entry_back_put_iv: number | null;
+  entry_back_call_iv: number | null;
+}
+
 export interface DCStrategyStats {
   strategy_name: string;
   total_trades: number;
