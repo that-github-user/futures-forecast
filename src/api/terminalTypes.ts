@@ -24,6 +24,13 @@ export interface TerminalHealth {
   // backend hasn't deployed the watcher field yet (graceful
   // degradation during cross-repo deploy ordering).
   degraded_streams?: string[];
+  // Names of historical-fetch slots in circuit-breaker cooldown
+  // (backend PR #181). One of: "daily" / "intraday_rth" /
+  // "intraday_eth". Empty list = healthy. The chart's CACHED badge
+  // (PR #191) is the per-slot indicator for `intraday_eth`; this
+  // field is the broader "any historical-data slot is degraded"
+  // signal that drives the dashboard health-strip.
+  historical_degraded?: string[];
 }
 
 export interface RegimeData {
