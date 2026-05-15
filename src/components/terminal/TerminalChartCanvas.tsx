@@ -25,6 +25,7 @@ export type {
   VwapOverlayState,
   OrWindowKey,
   OrOverlayState,
+  PriorHlcOverlayState,
 } from "./chartTypes";
 export {
   VWAP_ANCHORS,

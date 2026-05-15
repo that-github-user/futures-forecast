@@ -483,6 +483,46 @@
   background: rgba(248, 250, 252, 0.06);
 }
 
+/* ── PDH/L/C popover (Current + Previous layer checklist) ────────
+   Mirrors AvwapPopover's chrome but with a simpler 2-row layout
+   (no per-column headers needed). Reuses .avwap-pop-check for the
+   checkbox visual so any future restyle stays in lockstep. */
+.priorhlc-pop-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.priorhlc-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  background: var(--bg-panel);
+  border: 1px solid var(--ink-40);
+  padding: 10px 14px 12px;
+  display: grid;
+  grid-template-columns: 84px 36px;
+  column-gap: 10px;
+  row-gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-80);
+  white-space: nowrap;
+  /* Reuse the avwap-pop fade keyframes — same visual rhythm so the
+     two popovers feel like siblings. */
+  animation: avwap-pop-fade 180ms ease-out;
+}
+.priorhlc-pop-row {
+  display: contents;
+}
+.priorhlc-pop-label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-100);
+  letter-spacing: 0.20em;
+}
+
 /* OR popover variant — single-window-per-row checklist (vs AVWAP's
    3-anchor × 3-treatment grid). Reuses the .avwap-pop chrome and
    overrides only the column template. */
