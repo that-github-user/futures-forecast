@@ -37,7 +37,7 @@ interface Props {
   setVwap: (next: VwapOverlayState) => void;
   setOpeningRange: (next: OrOverlayState) => void;
   togglePocVa: () => void;
-  togglePriorHlc: () => void;
+  togglePriorHlc: (field: "current" | "previous") => void;
 }
 
 export function OverlaysSheet({
@@ -205,20 +205,35 @@ export function OverlaysSheet({
               {/* Prior Session — fixed, static reference points from
                   yesterday's session. PDH, PDL, PDC don't move
                   during today's tape. Mental category: "did we take
-                  out yesterday's high/low yet." Separated from
-                  Volume Profile because traders reach for these at
-                  different moments — bias / breakout pivots vs
-                  intraday auction context. */}
+                  out yesterday's high/low yet." Two layers:
+                  - "PDH / PDL / PDC" = most-recent completed RTH
+                    session (the default; backend flips the underlying
+                    values at 16:00 ET so today's session becomes the
+                    reference once it completes — see vega-pilot #288).
+                  - "Prev PDH / PDL / PDC" = the session BEFORE that.
+                    Useful as an overnight reference layer when the
+                    prior-prior day's HLC is acting as visible
+                    support/resistance. Default OFF — traders opt-in
+                    when they want the secondary anchor. */}
               <section className="overlays-section">
                 <h3 className="overlays-section-title">Prior Session</h3>
                 <div className="overlays-pill-row">
                   <button
                     type="button"
-                    className={`pill${overlays.priorHlc ? " on" : ""}`}
-                    onClick={togglePriorHlc}
-                    aria-pressed={overlays.priorHlc}
+                    className={`pill${overlays.priorHlc.current ? " on" : ""}`}
+                    onClick={() => togglePriorHlc("current")}
+                    aria-pressed={overlays.priorHlc.current}
                   >
                     PDH / PDL / PDC
+                  </button>
+                  <button
+                    type="button"
+                    className={`pill${overlays.priorHlc.previous ? " on" : ""}`}
+                    onClick={() => togglePriorHlc("previous")}
+                    aria-pressed={overlays.priorHlc.previous}
+                    title="Prior-prior session HLC — overnight reference layer"
+                  >
+                    Prev PDH / PDL / PDC
                   </button>
                 </div>
               </section>
@@ -274,6 +289,7 @@ function countActive(overlays: OverlayState): number {
     if (overlays.openingRange[key]) n += 1;
   }
   if (overlays.pocVa) n += 1;
-  if (overlays.priorHlc) n += 1;
+  if (overlays.priorHlc.current) n += 1;
+  if (overlays.priorHlc.previous) n += 1;
   return n;
 }

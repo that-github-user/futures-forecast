@@ -318,8 +318,17 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   // PR 2 of the mobile-chart series (AVWAP multi-anchor, Opening
   // Range bands, ETH session shading) is now live, so the AVWAP
   // and OR popovers render on mobile too — no isMobile gate needed.
-  const toggleBool = (key: "pocVa" | "priorHlc") =>
-    setOverlays((prev) => ({ ...prev, [key]: !prev[key] }));
+  const togglePocVa = () =>
+    setOverlays((prev) => ({ ...prev, pocVa: !prev.pocVa }));
+  // priorHlc has two independently-toggleable fields: `current`
+  // (the new correct PDH/L/C) and `previous` (the prior-prior session
+  // reference layered on demand for overnight context). Single helper
+  // toggles one field at a time without losing the other's state.
+  const togglePriorHlc = (field: "current" | "previous") =>
+    setOverlays((prev) => ({
+      ...prev,
+      priorHlc: { ...prev.priorHlc, [field]: !prev.priorHlc[field] },
+    }));
   const setVwap = (next: VwapOverlayState) =>
     setOverlays((prev) => ({ ...prev, vwap: next }));
   const setOpeningRange = (next: OrOverlayState) =>
@@ -347,11 +356,24 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
             mobile via CSS — the OverlaysSheet below replaces it. */}
         <div className="terminal-chart-toggles terminal-chart-toggles-desktop">
           <AvwapPopover vwap={overlays.vwap} setVwap={setVwap} />
-          <ToggleButton active={overlays.pocVa} onClick={() => toggleBool("pocVa")}>
+          <ToggleButton active={overlays.pocVa} onClick={togglePocVa}>
             POC / VAH / VAL
           </ToggleButton>
-          <ToggleButton active={overlays.priorHlc} onClick={() => toggleBool("priorHlc")}>
+          <ToggleButton
+            active={overlays.priorHlc.current}
+            onClick={() => togglePriorHlc("current")}
+          >
             PDH / PDL / PDC
+          </ToggleButton>
+          <ToggleButton
+            active={overlays.priorHlc.previous}
+            onClick={() => togglePriorHlc("previous")}
+            // Title doubles as tooltip — explain the layer's purpose so
+            // a trader doesn't have to read the design doc to know what
+            // a second PDH/L/C set means.
+            title="Prior-prior session HLC — overnight reference layer"
+          >
+            Prev PDH / PDL / PDC
           </ToggleButton>
           <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}
@@ -365,8 +387,8 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
             overlays={overlays}
             setVwap={setVwap}
             setOpeningRange={setOpeningRange}
-            togglePocVa={() => toggleBool("pocVa")}
-            togglePriorHlc={() => toggleBool("priorHlc")}
+            togglePocVa={togglePocVa}
+            togglePriorHlc={togglePriorHlc}
           />
         </div>
         <TerminalChartCanvas
@@ -682,10 +704,12 @@ function ToggleButton({
   active,
   onClick,
   children,
+  title,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  title?: string;
 }) {
   return (
     <button
@@ -693,6 +717,7 @@ function ToggleButton({
       className={`pill${active ? " on" : ""}`}
       onClick={onClick}
       aria-pressed={active}
+      title={title}
     >
       {children}
     </button>

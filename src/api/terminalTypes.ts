@@ -59,6 +59,16 @@ export interface LevelsData {
   pd_high: number | null;
   pd_low: number | null;
   pd_close: number | null;
+  /** Previous-prior-session HLC — the RTH session BEFORE the one
+   *  carried in pd_*. Layered as a secondary overnight reference via
+   *  the OverlaysSheet "Prev session" toggle. Null when fewer than
+   *  two prior sessions are in the buffer (cold start). Backend
+   *  (PR #185) cuts over at 16:00 ET — pre-RTH-close pd_* = Friday's
+   *  and prev_pd_* = Thursday's; post-RTH-close pd_* = today's and
+   *  prev_pd_* = Friday's. */
+  prev_pd_high: number | null;
+  prev_pd_low: number | null;
+  prev_pd_close: number | null;
   /** Overnight High — extreme of the most-recent ETH overnight
    *  window: ETH session reopen (18:00 ET — AFTER the 17:00→18:00
    *  Globex maintenance break) through the next RTH open (09:30 ET).
