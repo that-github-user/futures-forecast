@@ -136,10 +136,15 @@ export interface DCPhantomPosition {
   position_uid: string;
   strategy_name: string;
   signal: string;
+  // ISO8601 with offset, ET-anchored (e.g. "2026-05-15T10:30:00-04:00")
   entry_time: string;
+  // ISO date `YYYY-MM-DD`, ET-anchored (derived from entry_time's ET
+  // wall-clock date by the daemon at write time). Safe for lexicographic
+  // comparison against another `YYYY-MM-DD` string.
   entry_date: string;
   put_strike: number;
   call_strike: number;
+  // YYYYMMDD (no separators), matching IBKR's contract expiry format.
   front_exp: string;
   back_exp: string;
   intended_debit: number;

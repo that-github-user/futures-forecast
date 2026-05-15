@@ -47,6 +47,15 @@ interface DCData {
   // couldn't fill. Polled on the slow tier (changes only on blocked
   // entries — a few per day at most).
   phantoms: DCPhantomPosition[];
+  // True after the first slow-tier poll completes. Distinguishes
+  // "empty list because no phantoms exist" from "empty list because
+  // we haven't loaded yet" — the Tent tab uses this to avoid flashing
+  // "No missed entries" during the slow-tier's first round-trip
+  // (up to 5 minutes). Without it, an operator opening the dashboard
+  // would briefly see "No missed entries" even when today's phantom
+  // exists — recreating the exact perception bug PR #194 was opened
+  // to fix.
+  phantomsLoaded: boolean;
   strategies: DCStrategyStats[];
   signals: DCSignalsResponse | null;
   risk: DCRiskStatus | null;
@@ -129,6 +138,7 @@ export function useDCData(): DCData {
   const [positions, setPositions] = useState<DCPosition[]>([]);
   const [trades, setTrades] = useState<DCTrade[]>([]);
   const [phantoms, setPhantoms] = useState<DCPhantomPosition[]>([]);
+  const [phantomsLoaded, setPhantomsLoaded] = useState(false);
   const [strategies, setStrategies] = useState<DCStrategyStats[]>([]);
   const [signals, setSignals] = useState<DCSignalsResponse | null>(null);
   const [risk, setRisk] = useState<DCRiskStatus | null>(null);
@@ -239,6 +249,15 @@ export function useDCData(): DCData {
     if (t) setTrades(t);
     if (st) setStrategies(st);
     if (ph) setPhantoms(ph);
+    // phantoms-loaded latches on the FIRST slow-tier completion that
+    // returned a non-null payload — even an empty array counts as
+    // "we asked the server and got an answer." Distinguishes the
+    // genuine empty case (operator had no missed entries) from the
+    // "haven't polled yet" case during dashboard mount. Once latched,
+    // a later poll returning null (transient API failure) doesn't
+    // flicker the flag back to false — last-known state is more
+    // useful than blanking out the panel.
+    if (ph !== null) setPhantomsLoaded(true);
   }, []);
 
   // Adaptive fast-tier cadence (Phase 4 follow-up). When any
@@ -281,7 +300,8 @@ export function useDCData(): DCData {
   }, [fetchSlow]);
 
   return {
-    summary, positions, trades, phantoms, strategies, signals, risk,
+    summary, positions, trades, phantoms, phantomsLoaded,
+    strategies, signals, risk,
     brokerState, exitAlerts, apiOnline, loading,
   };
 }

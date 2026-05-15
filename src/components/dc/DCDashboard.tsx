@@ -157,6 +157,7 @@ export function DCDashboard() {
             positions={data.positions}
             trades={data.trades}
             phantoms={data.phantoms}
+            phantomsLoaded={data.phantomsLoaded}
           />
         )}
       </div>
