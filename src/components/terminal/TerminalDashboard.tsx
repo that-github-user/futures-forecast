@@ -28,6 +28,7 @@ import {
   type VwapOverlayState,
   type OrOverlayState,
   type OrWindowKey,
+  type PriorHlcOverlayState,
   DEFAULT_OVERLAYS,
   DEFAULT_TIMEFRAME,
 } from "./TerminalChartCanvas";
@@ -366,22 +367,10 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           <ToggleButton active={overlays.pocVa} onClick={togglePocVa}>
             POC / VAH / VAL
           </ToggleButton>
-          <ToggleButton
-            active={overlays.priorHlc.current}
-            onClick={() => togglePriorHlc("current")}
-          >
-            PDH / PDL / PDC
-          </ToggleButton>
-          <ToggleButton
-            active={overlays.priorHlc.previous}
-            onClick={() => togglePriorHlc("previous")}
-            // Title doubles as tooltip — explain the layer's purpose so
-            // a trader doesn't have to read the design doc to know what
-            // a second PDH/L/C set means.
-            title="Prior-prior session HLC — overnight reference layer"
-          >
-            Prev PDH / PDL / PDC
-          </ToggleButton>
+          <PriorHlcPopover
+            priorHlc={overlays.priorHlc}
+            togglePriorHlc={togglePriorHlc}
+          />
           <OpeningRangePopover or={overlays.openingRange} setOr={setOpeningRange} />
           {/* ML Fan: PR η scope; kept disabled. */}
           <span className="pill disabled">ML Fan</span>
@@ -623,6 +612,88 @@ function AvwapCheck({
     >
       {checked ? "✓" : ""}
     </button>
+  );
+}
+
+/* ── Prior-day HLC popover (Current + Previous layer checklist) ─────
+ *
+ * Mirrors the AvwapPopover pattern: one trigger pill consolidates
+ * what was previously two inline pills. Lets the operator toggle
+ * the canonical PDH/PDL/PDC overlay AND the prior-prior session
+ * reference layer (PR #185 backend exposes prev_pd_*) without
+ * cluttering the toolbar with two separate buttons. Pill reads
+ * "PDH/L/C · n" where n counts active layers (0 / 1 / 2).
+ */
+function PriorHlcPopover({
+  priorHlc,
+  togglePriorHlc,
+}: {
+  priorHlc: PriorHlcOverlayState;
+  togglePriorHlc: (field: "current" | "previous") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const activeCount =
+    (priorHlc.current ? 1 : 0) + (priorHlc.previous ? 1 : 0);
+  const anyOn = activeCount > 0;
+
+  return (
+    <div className="priorhlc-pop-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`pill${anyOn ? " on" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="priorhlc-pop-panel"
+      >
+        PDH/L/C{anyOn ? ` · ${activeCount}` : ""}
+      </button>
+      {open && (
+        <div
+          className="priorhlc-pop"
+          id="priorhlc-pop-panel"
+          role="dialog"
+          aria-label="Prior-session HLC overlays"
+        >
+          <div className="priorhlc-pop-row">
+            <span className="priorhlc-pop-label">Current</span>
+            <AvwapCheck
+              checked={priorHlc.current}
+              onChange={() => togglePriorHlc("current")}
+              ariaLabel="Most-recent completed RTH session PDH / PDL / PDC"
+            />
+          </div>
+          <div className="priorhlc-pop-row">
+            <span className="priorhlc-pop-label">Previous</span>
+            <AvwapCheck
+              checked={priorHlc.previous}
+              onChange={() => togglePriorHlc("previous")}
+              ariaLabel="Prior-prior session PDH / PDL / PDC (overnight reference)"
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

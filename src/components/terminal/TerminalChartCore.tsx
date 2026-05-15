@@ -615,8 +615,29 @@ export function TerminalChartCore({
     const levels = snapshot?.levels;
     const priceLines = priceLinesRef.current;
 
+    // Axis-label proximity threshold for prev-PDH/L/C (#306). When
+    // prev_pd_* is within this many ES points of its current
+    // counterpart, the right-axis price chip would render two
+    // visually-identical numbers stacked on each other — operators
+    // can't tell which chip is current vs prev. Suppress the prev
+    // chip in that case; the in-chart line title ("PDH (-1)") plus
+    // the dashed line style still differentiate the layers visually
+    // mid-plot. $1.00 ≈ noise floor for ES at current price levels.
+    const PREV_AXIS_OVERLAP_THRESHOLD = 1.0;
+    const isPrevHighOverlap =
+      levels?.pd_high != null && levels?.prev_pd_high != null
+      && Math.abs(levels.pd_high - levels.prev_pd_high) <= PREV_AXIS_OVERLAP_THRESHOLD;
+    const isPrevLowOverlap =
+      levels?.pd_low != null && levels?.prev_pd_low != null
+      && Math.abs(levels.pd_low - levels.prev_pd_low) <= PREV_AXIS_OVERLAP_THRESHOLD;
+    const isPrevCloseOverlap =
+      levels?.pd_close != null && levels?.prev_pd_close != null
+      && Math.abs(levels.pd_close - levels.prev_pd_close) <= PREV_AXIS_OVERLAP_THRESHOLD;
+
     // Spec for each level: which overlay-state gate enables it,
     // its display label, color, and line style.
+    // `axisLabelVisible` defaults to true; set explicitly only
+    // when a line needs to suppress its right-axis chip (#306).
     const targetLines: Array<{
       key: string;
       enabled: boolean;
@@ -625,6 +646,7 @@ export function TerminalChartCore({
       color: string;
       style: LineStyle;
       width: 1 | 2;
+      axisLabelVisible?: boolean;
     }> = [
       // POC / Value Area — gated by overlays.pocVa
       {
@@ -678,14 +700,22 @@ export function TerminalChartCore({
       {
         key: "PDH-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_high,
         label: "PDH (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
+        // Suppress the right-axis chip when current+prev would render
+        // indistinguishable numbers (#306). In-chart label keeps the
+        // "(-1)" disambiguation. Only suppress when the CURRENT layer
+        // is also on — if the user only has prev enabled, the axis
+        // chip is the only place to read the value.
+        axisLabelVisible: !(overlays.priorHlc.current && isPrevHighOverlap),
       },
       {
         key: "PDL-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_low,
         label: "PDL (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
+        axisLabelVisible: !(overlays.priorHlc.current && isPrevLowOverlap),
       },
       {
         key: "PDC-prev", enabled: overlays.priorHlc.previous, value: levels?.prev_pd_close,
         label: "PDC (-1)", color: palette.ink60, style: LineStyle.Dashed, width: 1,
+        axisLabelVisible: !(overlays.priorHlc.current && isPrevCloseOverlap),
       },
       // ORH / ORL chips — one per active OR window (1m / 5m / 15m).
       // Rendered via createPriceLine like the rest of the level
@@ -729,7 +759,9 @@ export function TerminalChartCore({
         color: spec.color,
         lineWidth: spec.width,
         lineStyle: spec.style,
-        axisLabelVisible: true,
+        // Per-spec override; default true for backward compatibility
+        // with every spec that doesn't set it.
+        axisLabelVisible: spec.axisLabelVisible ?? true,
         title: spec.label,
       };
       if (existing) {
