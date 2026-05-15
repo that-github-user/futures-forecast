@@ -25,7 +25,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import { dcApi } from "../../api/dcClient";
-import type { DCPosition, DCTentResponse, DCTrade } from "../../api/dcTypes";
+import type {
+  DCPhantomPosition,
+  DCPosition,
+  DCTentResponse,
+  DCTrade,
+} from "../../api/dcTypes";
 import { TentChart } from "./TentChart";
 import { TentChartModal, type TentTarget } from "./TentChartModal";
 import { filterTradesByDays, isTentRenderable } from "./dcTentTab.helpers";
@@ -34,10 +39,11 @@ import { filterTradesByDays, isTentRenderable } from "./dcTentTab.helpers";
 interface Props {
   positions: DCPosition[];
   trades: DCTrade[];
+  phantoms: DCPhantomPosition[];
 }
 
 
-export function DCTentTab({ positions, trades }: Props) {
+export function DCTentTab({ positions, trades, phantoms }: Props) {
   const [modalTarget, setModalTarget] = useState<{
     target: TentTarget;
     title: string;
@@ -51,6 +57,15 @@ export function DCTentTab({ positions, trades }: Props) {
           setModalTarget({
             target: { kind: "position", positionUid: p.position_uid! },
             title: p.strategy_name,
+          })
+        }
+      />
+      <MissedEntriesPanel
+        phantoms={phantoms}
+        onOpen={(ph) =>
+          setModalTarget({
+            target: { kind: "phantom", positionUid: ph.position_uid },
+            title: `${ph.strategy_name} (missed ${ph.entry_date})`,
           })
         }
       />
@@ -220,6 +235,171 @@ function PositionTentCard({
           {tent?.breakeven_low?.toFixed(0) ?? "—"} /{" "}
           {tent?.breakeven_high?.toFixed(0) ?? "—"}
         </span>
+      </div>
+    </button>
+  );
+}
+
+
+// ── Missed entries: phantom (would-have-entered) positions ───────
+
+
+/**
+ * Phantom rows are the daemon's record of plays it WOULD have entered
+ * had the broker-fill phase succeeded. Surfacing them in the Tent tab
+ * is operator-critical: without this panel, ladder-exhausted /
+ * parked-no-fill events vanish from the tracker, making it look like
+ * the play never existed. Operators want to see what they SHOULD have
+ * been holding even when automation couldn't fill — the daemon's
+ * incapability to enter is not an excuse to discard tracking.
+ *
+ * Each card opens the through-expiry phantom-tent modal (live + frozen
+ * IV overlays, same as a real position). The block_category badge tells
+ * the operator at a glance WHY the entry failed (ladder exhausted vs
+ * parked-no-fill vs other).
+ */
+function MissedEntriesPanel({
+  phantoms,
+  onOpen,
+}: {
+  phantoms: DCPhantomPosition[];
+  onOpen: (ph: DCPhantomPosition) => void;
+}) {
+  const [days, setDays] = useState(30);
+
+  const filtered = useMemo(() => {
+    if (days === 0) return phantoms;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const iso = cutoff.toISOString().slice(0, 10);
+    return phantoms.filter((p) => p.entry_date >= iso);
+  }, [phantoms, days]);
+
+  return (
+    <div className="panel" style={{ padding: 12 }}>
+      <div
+        className="panel-header"
+        style={{
+          marginBottom: 8,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span className="panel-title">
+          Missed entries — automation couldn&rsquo;t fill ({filtered.length})
+        </span>
+        <DateRangePicker value={days} onChange={setDays} />
+      </div>
+      <div style={{
+        fontSize: 11,
+        color: colors.textMuted,
+        fontFamily: fonts.sans,
+        marginBottom: 8,
+        lineHeight: 1.4,
+      }}>
+        Plays the daemon recorded but couldn&rsquo;t fill — the entry
+        reprice ladder exhausted or parked-at-ask without a cross.
+        Followers may have entered manually; the through-expiry tent
+        still applies. Click a row for the full chart.
+      </div>
+      {filtered.length === 0 ? (
+        <div style={emptyStyle}>
+          {days > 0
+            ? `No missed entries in the last ${days} day${days === 1 ? "" : "s"}.`
+            : "No missed entries on record."}
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 8,
+            maxHeight: "max(240px, calc(100vh - 400px))",
+            overflowY: "auto",
+          }}
+        >
+          {filtered.map((ph) => (
+            <PhantomChip key={ph.id} phantom={ph} onClick={() => onOpen(ph)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function PhantomChip({
+  phantom,
+  onClick,
+}: {
+  phantom: DCPhantomPosition;
+  onClick: () => void;
+}) {
+  // Block category drives a small colored pill so the failure mode is
+  // visible at-a-glance without opening the modal.
+  const categoryLabel = (() => {
+    switch (phantom.block_category) {
+      case "ladder_exhausted": return "LADDER";
+      case "parked_no_fill": return "PARKED";
+      case "other": return "OTHER";
+      default: return "MISS";
+    }
+  })();
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`Open through-expiry tent for missed ${phantom.strategy_name} entry on ${phantom.entry_date}`}
+      style={{
+        textAlign: "left",
+        background: colors.bgInset,
+        // Dashed amber border mirrors the phantom-rendering convention
+        // used by PositionTentCard when the active tent is_phantom.
+        border: `1px dashed ${colors.accentAmber}`,
+        borderRadius: 4,
+        padding: "8px 10px",
+        cursor: "pointer",
+        fontFamily: fonts.sans,
+        color: colors.textPrimary,
+        fontSize: 11,
+      }}
+    >
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+        marginBottom: 2,
+        alignItems: "center",
+      }}>
+        <span style={{ fontWeight: 600, color: colors.textBright }}>
+          {phantom.strategy_name}
+        </span>
+        <span style={{
+          fontSize: 9,
+          fontFamily: fonts.mono,
+          color: colors.accentAmber,
+          background: withAlpha(colors.accentAmber, 0.12),
+          border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
+          borderRadius: 2,
+          padding: "1px 5px",
+          letterSpacing: 0.5,
+        }}>
+          {categoryLabel}
+        </span>
+      </div>
+      <div style={{ color: colors.textMuted, fontFamily: fonts.mono }}>
+        {phantom.entry_date} ·{" "}
+        {phantom.put_strike}P / {phantom.call_strike}C
+      </div>
+      <div style={{
+        color: colors.textSecondary,
+        fontFamily: fonts.mono,
+        fontSize: 10,
+        marginTop: 2,
+      }}>
+        intended ${phantom.intended_debit.toFixed(2)} × {phantom.intended_quantity}
       </div>
     </button>
   );

@@ -3,6 +3,7 @@ import { dcApi } from "../api/dcClient";
 import type {
   DCBrokerState,
   DCExitAlert,
+  DCPhantomPosition,
   DCPosition,
   DCRiskStatus,
   DCSignalsResponse,
@@ -40,6 +41,12 @@ interface DCData {
   summary: DCSummary | null;
   positions: DCPosition[];
   trades: DCTrade[];
+  // Would-have-entered positions — the daemon's blocked_order rows.
+  // Surfaced in the Tent tab's "missed entries" section so operators
+  // see plays they SHOULD have been holding even when automation
+  // couldn't fill. Polled on the slow tier (changes only on blocked
+  // entries — a few per day at most).
+  phantoms: DCPhantomPosition[];
   strategies: DCStrategyStats[];
   signals: DCSignalsResponse | null;
   risk: DCRiskStatus | null;
@@ -121,6 +128,7 @@ export function useDCData(): DCData {
   const [summary, setSummary] = useState<DCSummary | null>(null);
   const [positions, setPositions] = useState<DCPosition[]>([]);
   const [trades, setTrades] = useState<DCTrade[]>([]);
+  const [phantoms, setPhantoms] = useState<DCPhantomPosition[]>([]);
   const [strategies, setStrategies] = useState<DCStrategyStats[]>([]);
   const [signals, setSignals] = useState<DCSignalsResponse | null>(null);
   const [risk, setRisk] = useState<DCRiskStatus | null>(null);
@@ -216,15 +224,21 @@ export function useDCData(): DCData {
 
   // Slow tier. Independent timer from fast tier so a trades(100) round
   // trip doesn't delay the next summary/signals/brokerState refresh.
+  // Phantoms ride this tier — blocked_order events fire at most a
+  // handful of times per day on vol-spike sessions; 5min latency to
+  // the dashboard is well inside the operator's awareness budget.
   const fetchSlow = useCallback(async () => {
     const results = await Promise.allSettled([
       dcApi.trades(100),   // [0]
       dcApi.strategies(),  // [1]
+      dcApi.phantoms(30),  // [2]
     ]);
     const t = pickSettled(results[0] as PromiseSettledResult<DCTrade[] | null>);
     const st = pickSettled(results[1] as PromiseSettledResult<DCStrategyStats[] | null>);
+    const ph = pickSettled(results[2] as PromiseSettledResult<DCPhantomPosition[] | null>);
     if (t) setTrades(t);
     if (st) setStrategies(st);
+    if (ph) setPhantoms(ph);
   }, []);
 
   // Adaptive fast-tier cadence (Phase 4 follow-up). When any
@@ -267,7 +281,7 @@ export function useDCData(): DCData {
   }, [fetchSlow]);
 
   return {
-    summary, positions, trades, strategies, signals, risk,
+    summary, positions, trades, phantoms, strategies, signals, risk,
     brokerState, exitAlerts, apiOnline, loading,
   };
 }
