@@ -615,5 +615,98 @@ export function mockStraddleSnapshot(): StraddleChainResponse {
     },
     stale: false,
     data_age_seconds: 30,
+    velocity_tape: mockVelocityTape(atmStrike, spot, todayET),
+  };
+}
+
+/** Synthetic frozen velocity-tape payload for demo mode. Builds an
+ *  ATM-cluster of 11 strikes (ATM ±5 on a 5pt grid), with 15 1-min
+ *  buckets per (strike, side). Volumes peak near ATM (where 0DTE
+ *  flow lives) and on the call side (matching the Friday-close
+ *  pattern the real replay captured). A few minutes near the close
+ *  carry synthetic 3σ spike flags so the operator can see the spike
+ *  glyph rendering on the call-side ATM cluster. */
+function mockVelocityTape(
+  atmStrike: number,
+  spot: number,
+  todayET: string,
+) {
+  const rand = seededRandom(27182);
+  // 11 strikes: ATM ±5 on the same 5pt grid the real replay uses.
+  const cluster: number[] = [];
+  for (let i = -5; i <= 5; i++) cluster.push(atmStrike + i * 5);
+  // 15 1-min buckets spanning 15:30-15:44 ET (a 15-min slice of the
+  // Friday last-30 window — the demo doesn't need the full 30 to
+  // demonstrate the visual). The replay-page time strings use the
+  // same `${todayET}` prefix so the demo's "session date" lines up
+  // with the page's current ET clock.
+  const minutes: string[] = [];
+  for (let m = 0; m < 15; m++) {
+    const mm = (30 + m).toString().padStart(2, "0");
+    minutes.push(`${todayET}T15:${mm}:00-04:00`);
+  }
+
+  // Distance from ATM drives both base volume + spike likelihood:
+  // closer-to-ATM strikes carry more volume and host the only
+  // spikes. Calls dominate puts ~3:1 (mirrors the real Friday data
+  // captured during the smoke run — 5,583 vs 54 contracts at ATM).
+  const strikes = cluster.map((strike) => {
+    const dist = Math.abs(strike - atmStrike);
+    const callBase = Math.max(5, 60 * Math.exp(-Math.pow(dist / 15, 2)));
+    const putBase = Math.max(1, 20 * Math.exp(-Math.pow(dist / 12, 2)));
+    const callMinutes = minutes.map((ts, i) => {
+      const noise = (rand() - 0.5) * callBase * 0.6;
+      const vol = Math.max(1, Math.floor(callBase + noise));
+      const tradeCount = Math.max(1, Math.floor(vol / 4));
+      return { ts, volume: vol, trade_count: tradeCount, avg_price: 2.5 - i * 0.04 };
+    });
+    const putMinutes = minutes.map((ts, i) => {
+      // Only 60% of minutes have put prints — puts are sparser than
+      // calls on a call-skewed close (matches real Friday tape).
+      if (rand() > 0.6) {
+        const noise = (rand() - 0.5) * putBase * 0.6;
+        const vol = Math.max(1, Math.floor(putBase + noise));
+        return { ts, volume: vol, trade_count: Math.max(1, Math.floor(vol / 3)), avg_price: 4.2 + i * 0.05 };
+      }
+      return null;
+    }).filter((m): m is { ts: string; volume: number; trade_count: number; avg_price: number } => m !== null);
+
+    // Inject a single spike near the end of the window on the
+    // call side for strikes within ±10pts of ATM (so the spike
+    // glyph renders on the ATM cluster). The spike multiplies the
+    // baseline volume by ~6x so the >3σ threshold trips reliably.
+    const callSpikeMinutes: string[] = [];
+    if (dist <= 10) {
+      const spikeIdx = 11 + Math.floor(rand() * 3); // minutes[11..13]
+      callMinutes[spikeIdx] = {
+        ...callMinutes[spikeIdx],
+        volume: Math.floor(callMinutes[spikeIdx].volume * 6 + 80),
+        trade_count: callMinutes[spikeIdx].trade_count + 20,
+      };
+      callSpikeMinutes.push(callMinutes[spikeIdx].ts);
+    }
+
+    return {
+      strike,
+      call_minutes: callMinutes,
+      put_minutes: putMinutes,
+      call_spike_minutes: callSpikeMinutes,
+      put_spike_minutes: [],
+    };
+  });
+
+  // SPX spot path: a 15-bar slow drift downward, mirroring the real
+  // Friday-close 7424 → 7409 pattern.
+  const spotPath = minutes.map((ts, i) => ({
+    ts,
+    price: +(spot - i * 0.4 - rand() * 0.3).toFixed(2),
+  }));
+
+  return {
+    replay_session_date: todayET.replace(/-/g, ""),
+    window_start: `${todayET}T15:30:00-04:00`,
+    window_end: `${todayET}T15:45:00-04:00`,
+    spot_path: spotPath,
+    strikes,
   };
 }
