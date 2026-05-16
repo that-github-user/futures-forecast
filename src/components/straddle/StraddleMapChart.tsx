@@ -82,7 +82,9 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         role="img"
         aria-label={
           "Net open interest per strike. Bar right = calls dominant, " +
-          "left = puts dominant. EM band drawn as dashed horizontal lines."
+          "left = puts dominant. EM band drawn as dashed horizontal " +
+          "lines. Triangle glyphs mark strikes with significant net " +
+          "opening (up) or closing (down) flow."
         }
         style={{ width: "100%", height: "100%" }}
       />

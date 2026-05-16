@@ -122,7 +122,13 @@ export function buildStraddleMapOption(
             // the bar's interior tip so it tracks the bar end rather
             // than sitting off-canvas on the opposite side.
             position: net >= 0 ? ("insideRight" as const) : ("insideLeft" as const),
-            color: netFlow > 0 ? colors.accentGreen : colors.accentRed,
+            // Defensive: `netFlow >= 0` rather than `> 0`. The label
+            // is gated by `glyph` being non-empty above, which already
+            // requires |netFlow| > NET_FRESH_FLOW_GLYPH_MIN, so the
+            // exact-zero case can't actually render today. The `>= 0`
+            // form survives any future relaxation of that threshold
+            // without flipping zero-flow glyphs to red.
+            color: netFlow >= 0 ? colors.accentGreen : colors.accentRed,
             fontFamily: fonts.mono,
             fontSize: 10,
             fontWeight: 700,
@@ -227,7 +233,9 @@ export function buildStraddleMapOption(
           v == null ? "—" : v.toFixed(digits);
         const net = netOi(row.call_oi, row.put_oi);
         const netFlow = netFreshFlow(row.fresh_flow_call, row.fresh_flow_put);
-        const netColor = net > 0 ? colors.accentBlue : net < 0 ? colors.accentAmber : colors.textPrimary;
+        // Match netOiTint's muted-neutral for exact-tie strikes
+        // (net===0) so the tooltip header agrees with the bar color.
+        const netColor = net > 0 ? colors.accentBlue : net < 0 ? colors.accentAmber : colors.textMuted;
         return [
           `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}</div>`,
           `<div style="margin-top:4px;color:${netColor}">`,
