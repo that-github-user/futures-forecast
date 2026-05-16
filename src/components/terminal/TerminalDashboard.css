@@ -129,6 +129,36 @@
   font-size: 14px;
   color: var(--ink-80);
 }
+/* Per-name spans inside the body — needed so we can attach a freshness
+   cue to individual override names instead of joining them into a flat
+   string. The wrap span carries the name + the trailing separator
+   together so wrapping breaks happen between names, not mid-pair. */
+.terminal-overrides-name-wrap {
+  display: inline;
+  white-space: nowrap;
+}
+.terminal-overrides-name {
+  display: inline;
+}
+.terminal-overrides-sep {
+  color: var(--ink-60);
+}
+/* Frozen-state cue (#264): the override is still firing, but its state
+   machine is paused against stale source data. Dim the name + render a
+   ❄ glyph so the operator can tell live evaluation apart from frozen
+   visibility-preservation. Dotted under-stroke reinforces the
+   "evaluated against last-known" semantic. */
+.terminal-overrides-name.frozen {
+  color: var(--ink-60);
+  text-decoration: underline dotted var(--ink-40);
+  text-underline-offset: 3px;
+}
+.terminal-overrides-frozen-glyph {
+  font-size: 11px;
+  color: var(--ink-60);
+  margin-left: 1px;
+  vertical-align: 1px;
+}
 /* Help affordance — ⓘ glyph next to the "Overrides" label, tappable
    on mobile (native `title` doesn't fire on tap). Inline-flex with
    the label keeps the small-caps tracking grammar intact. */

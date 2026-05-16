@@ -130,6 +130,15 @@ export interface SynthesizerData {
   /** Hard-stop override names — non-empty list desaturates the
    *  headline score chip per spec §4.1.1 ("the score is a lie"). */
   overrides: string[];
+  /** Subset of `overrides` whose state-machine evaluation is currently
+   *  FROZEN against stale source data (out-of-CBOE for backwardation,
+   *  out-of-NYSE-extended-hours for credit-divergence). The override is
+   *  still surfaced (visibility preserved through the data gap) but its
+   *  confirm/clear timer is paused. Render a freshness cue (e.g. ❄
+   *  glyph + tooltip) for each name in this list so operators can tell
+   *  live-firing apart from frozen-state. Optional: backend may omit
+   *  this field on pre-#264 deploys. */
+  frozen_overrides?: string[];
   /** Tier 2 advisory event names — namespaced by source system
    *  (e.g. "levels.gap_failed.rth", "micro.range_expansion"). Surfaced
    *  on the System Feed as a separate event class (medium importance,
