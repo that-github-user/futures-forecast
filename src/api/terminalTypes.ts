@@ -264,3 +264,104 @@ export interface TerminalSnapshot {
   // Backend handles all diff detection now — frontend just renders.
   events: FeedEvent[];
 }
+
+// ── 0DTE straddle-chain endpoint (frontend /straddle page) ──────────
+// TS mirror of vega-pilot/futures_terminal/api/schemas.py shapes
+// (StraddleStrikeRow / PinCandidate / ProgramFlowEvent / ProgramFlowState
+// / StraddleChainResponse). Keep in lockstep — any backend schema change
+// requires updating these.
+
+/** One strike's call+put microstructure from the 0DTE chain snapshot.
+ *  OI/volume fields are null when IBKR didn't deliver them for that
+ *  side. `fresh_flow_call` / `fresh_flow_put` are signed integers —
+ *  positive = new contracts opened today (Δ OI > 0 from prior-day EOD
+ *  baseline), negative = contracts closed. They're null when the prior
+ *  session's 16:14 ET EOD baseline never fired (half-day Friday close),
+ *  when the strike was absent from the baseline, or when the current
+ *  snapshot has null OI for the side. */
+export interface StraddleStrikeRow {
+  strike: number;
+  call_oi: number | null;
+  call_volume: number | null;
+  call_iv: number | null;
+  call_delta: number | null;
+  call_bid: number | null;
+  call_ask: number | null;
+  fresh_flow_call: number | null;
+  put_oi: number | null;
+  put_volume: number | null;
+  put_iv: number | null;
+  put_delta: number | null;
+  put_bid: number | null;
+  put_ask: number | null;
+  fresh_flow_put: number | null;
+}
+
+/** A strike with elevated OI+volume density that's a pin candidate for
+ *  end-of-day. `density_score` is 0..1 normalized within the current
+ *  snapshot. `within_em` flags strikes inside [em_lower, em_upper] —
+ *  the actionable pin candidates for today's session. */
+export interface PinCandidate {
+  strike: number;
+  density_score: number;
+  within_em: boolean;
+}
+
+export type ProgramFlowName =
+  | "xyld_monthly_roll"
+  | "jepi_continuous"
+  | "jepq_continuous"
+  | "jheqx_quarterly_roll";
+
+export type ProgramFlowIntensity = "windowed" | "continuous";
+
+/** A program-flow window for a covered-call/collar/PutWrite ETF.
+ *  `window_start` / `window_end` are ISO8601 ET. For continuous flows
+ *  these are the cash-session bounds for the active session. */
+export interface ProgramFlowEvent {
+  name: ProgramFlowName;
+  intensity: ProgramFlowIntensity;
+  window_start: string;
+  window_end: string;
+}
+
+/** Active + upcoming ETF program-flow windows.
+ *  `active_windowed` — programs with a discrete time window currently in
+ *  progress (XYLD's 11:30-13:30, JHEQX's quarter-end full session) —
+ *  the actionable events operators need to see.
+ *  `active_continuous` — programs that run continuously during RTH
+ *  (JEPI/JEPQ daily call writing). Lower visual hierarchy.
+ *  `upcoming` — both kinds, sorted by window_start, next 14 days. */
+export interface ProgramFlowState {
+  active_windowed: ProgramFlowEvent[];
+  active_continuous: ProgramFlowEvent[];
+  upcoming: ProgramFlowEvent[];
+}
+
+/** 0DTE SPX strike-positioning snapshot for the /straddle page.
+ *  `stale=true` when no snapshot has been written in the past 5 minutes
+ *  (snapshotter cadence is 60s; 5min gives 4 cycles of headroom).
+ *  Headline metric fields (`spot`, `atm_strike`, `atm_straddle_mid`,
+ *  `em_upper`, `em_lower`, `expiry`, `snapshot_time`) are null when
+ *  `stale=true` AND the snapshotter has not yet written its first row
+ *  for the session (cold-start). Frontend renders a single freshness
+ *  contract: when `stale=true`, treat null headline fields as "warming
+ *  up". `program_flow` is always computed independently of the snapshot. */
+export interface StraddleChainResponse {
+  snapshot_time: string | null;
+  expiry: string | null;
+  spot: number | null;
+  atm_strike: number | null;
+  atm_straddle_mid: number | null;
+  em_upper: number | null;
+  em_lower: number | null;
+  session_open_spot: number | null;
+  session_open_straddle: number | null;
+  realized_range_pts: number | null;
+  realized_vs_implied_pct: number | null;
+  strikes: StraddleStrikeRow[];
+  pin_candidates: PinCandidate[];
+  program_flow: ProgramFlowState;
+  stale: boolean;
+  data_age_seconds: number | null;
+}

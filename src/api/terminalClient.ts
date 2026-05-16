@@ -14,6 +14,7 @@ import type {
   GexData,
   LevelsData,
   RegimeData,
+  StraddleChainResponse,
   SynthesizerData,
   TerminalHealth,
   TerminalIntradayBarsResponse,
@@ -52,6 +53,7 @@ export const terminal = {
   synthesizer: () => get<SynthesizerData>("/terminal/v1/synthesizer"),
   intradayBars: () =>
     get<TerminalIntradayBarsResponse>("/terminal/v1/bars/es-intraday"),
+  straddle0dte: () => get<StraddleChainResponse>("/terminal/v1/straddle/0dte"),
 };
 
 /** Convenience wrapper for the chart canvas — returns the bars array
