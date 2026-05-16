@@ -12,13 +12,21 @@
 import { colors, fonts } from "../../styles/tokens";
 import type { ProgramFlowEvent, ProgramFlowName } from "../../api/terminalTypes";
 import {
+  eventsOnDate,
   filterWindowed,
   formatWindowDate,
   formatWindowTime,
+  nextSessionDate,
 } from "./programFlowFormatters";
 
 interface Props {
   upcoming: ProgramFlowEvent[];
+  /** When true, the page is in cold-start mode (snapshotter idle —
+   *  weekend, holiday, or pre-first-snapshot). The panel pivots from
+   *  "next-14-days windowed-only" to "the next trading day's full
+   *  schedule including continuous flows" so a Saturday viewer sees
+   *  Monday's anticipated activity instead of an empty list. */
+  coldStart?: boolean;
 }
 
 const PROGRAM_LABEL: Record<ProgramFlowName, string> = {
@@ -28,8 +36,19 @@ const PROGRAM_LABEL: Record<ProgramFlowName, string> = {
   jepq_continuous: "JEPQ",
 };
 
-export function UpcomingProgramFlow({ upcoming }: Props) {
-  const filtered = filterWindowed(upcoming);
+export function UpcomingProgramFlow({ upcoming, coldStart = false }: Props) {
+  const nextDate = coldStart ? nextSessionDate(upcoming) : null;
+  // Cold-start: surface the FULL next-session schedule (continuous
+  // included) so an idle-day viewer has something actionable to read.
+  // Live mode: keep the long horizon but filter continuous out — the
+  // 20+ JEPI/JEPQ entries per 14 days would otherwise drown XYLD/JHEQX.
+  const filtered = nextDate
+    ? eventsOnDate(upcoming, nextDate)
+    : filterWindowed(upcoming);
+  const heading = nextDate ? "Next Session Preview" : "Upcoming Program Flow";
+  const emptyMessage = nextDate
+    ? "No program-flow events on the next trading day"
+    : "No windowed events in the next 14 days";
   return (
     <div
       style={{
@@ -52,7 +71,7 @@ export function UpcomingProgramFlow({ upcoming }: Props) {
           textTransform: "uppercase",
         }}
       >
-        Upcoming Program Flow
+        {heading}
       </div>
       {filtered.length === 0 ? (
         <div
@@ -63,7 +82,7 @@ export function UpcomingProgramFlow({ upcoming }: Props) {
             padding: "6px 0",
           }}
         >
-          No windowed events in the next 14 days
+          {emptyMessage}
         </div>
       ) : (
         filtered.map((event) => (
