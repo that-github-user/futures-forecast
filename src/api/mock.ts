@@ -449,19 +449,35 @@ export function mockStraddleSnapshot(): StraddleChainResponse {
   const emLower = +(spot - atmStraddleMid).toFixed(2);
 
   // 40 strikes on a 5pt grid centered on ATM (covers ~±100pts).
+  //
+  // Distribution is tuned for the single-bar net-OI chart (#314): above
+  // spot, calls dominate (net > 0 → blue bars right); below spot, puts
+  // dominate (net < 0 → amber bars left). Per-side OI still has a
+  // realistic mix of both option types at every strike — net is just
+  // the visual representation, the underlying values back the tooltip.
   const strikes: StraddleStrikeRow[] = [];
   for (let i = -20; i < 20; i++) {
     const strike = atmStrike + i * 5;
     const distance = strike - atmStrike;
-    // Call OI peaks above spot in the 5200-5220 cluster.
+    // Call OI peaks above spot in the 5200-5220 cluster (large).
     const callPeakFactor = Math.exp(-Math.pow((distance - 25) / 30, 2));
-    const callOi = Math.floor(800 + callPeakFactor * 9000 + rand() * 600);
-    // Put OI peaks below spot in the 5100-5140 cluster.
+    // Smaller call OI cluster below spot (puts dominate there).
+    const callBelow = distance < 0 ? Math.exp(-Math.pow(distance / 60, 2)) * 0.25 : 0;
+    const callOi = Math.floor(
+      400 + callPeakFactor * 9000 + callBelow * 3000 + rand() * 500,
+    );
+    // Put OI peaks below spot in the 5100-5140 cluster (large).
     const putPeakFactor = Math.exp(-Math.pow((distance + 50) / 35, 2));
-    const putOi = Math.floor(700 + putPeakFactor * 8500 + rand() * 600);
+    // Smaller put OI cluster above spot (calls dominate there).
+    const putAbove = distance > 0 ? Math.exp(-Math.pow(distance / 60, 2)) * 0.22 : 0;
+    const putOi = Math.floor(
+      350 + putPeakFactor * 8500 + putAbove * 2800 + rand() * 500,
+    );
     // Fresh flow signed: positive (opening) on the side closer to ATM,
     // negative (closing) on the far side — produces a plausible
-    // dealers-hedging-up posture.
+    // dealers-hedging-up posture. The chart's net-flow glyph fires when
+    // |fresh_flow_call - fresh_flow_put| > 50 contracts, so these
+    // magnitudes (hundreds-to-thousands) reliably trip the threshold.
     const freshFlowCall = distance > 0 && distance < 30
       ? Math.floor(200 + rand() * 1400)
       : Math.floor(-300 + (rand() - 0.5) * 400);

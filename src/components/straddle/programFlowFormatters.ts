@@ -80,6 +80,24 @@ export function formatNextSessionLabel(yyyymmdd: string): string {
   return `${weekday}, ${month} ${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
+/** Format the time column for an event in the upcoming-flow list.
+ *
+ *  JHEQX (`jheqx_quarterly_roll`) is a daily-NAV mutual fund whose
+ *  collar roll is a CALENDAR-DATE event — there is no intraday auction
+ *  window. Surfacing "09:30 ET" as the start time misled operators
+ *  into anticipating an opening-bell flow they shouldn't sit on; for
+ *  JHEQX the time column collapses to a dash and the date column
+ *  carries the whole signal.
+ *
+ *  XYLD (`xyld_monthly_roll`) is a real ETF auction in the 11:30-13:30
+ *  ET window and continues to surface its start time. JEPI / JEPQ
+ *  continuous events also pass through their start time when the
+ *  cold-start "next session preview" path renders them. */
+export function formatUpcomingTime(event: ProgramFlowEvent): string {
+  if (event.name === "jheqx_quarterly_roll") return "—";
+  return formatWindowTime(event.window_start);
+}
+
 /** Restrict an upcoming list to events on a specific yyyy-mm-dd date.
  *  Used in cold-start mode to show ONLY the next trading day's events
  *  (including JEPI/JEPQ continuous, which the live-mode filter strips).

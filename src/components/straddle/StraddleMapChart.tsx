@@ -3,16 +3,17 @@
  * `/straddle` page.
  *
  * Layout (per spec):
- *   - x-axis is the OI count, range symmetric +/-: positive = call side,
- *     negative = put side. Each strike row becomes two horizontal bars
- *     pointing outward from x=0.
+ *   - x-axis is signed NET OI (call_oi - put_oi), symmetric range
+ *     derived from `max(|net|)` padded ~10%. One bar per strike,
+ *     extending right when calls dominate, left when puts dominate.
  *   - y-axis is the strike price. Range derived from rendered strikes,
  *     padded to ensure both EM bounds and spot are visible.
  *   - Dashed yAxis `markLine`s at em_upper / em_lower.
  *   - Solid yAxis `markLine` at spot.
- *   - Bar color is tinted by fresh-flow signal: positive (opening
- *     longs) → saturated green; negative (closing) → grey-on-red;
- *     null/zero → muted slate.
+ *   - Bar color follows hemisphere convention: call-dominant
+ *     (right) → accentBlue, put-dominant (left) → accentAmber.
+ *   - Net fresh-flow glyph (▲ green opening / ▼ red closing) overlaid
+ *     on bars whose |net fresh flow| exceeds a visibility threshold.
  *
  * Chart-lifecycle rules:
  *   - Init once with `[]` dep — the chart instance is held in a ref.
@@ -80,8 +81,8 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         ref={containerRef}
         role="img"
         aria-label={
-          "0DTE SPX strike open interest map. Calls at right, puts at left. " +
-          "EM band drawn as dashed horizontal lines."
+          "Net open interest per strike. Bar right = calls dominant, " +
+          "left = puts dominant. EM band drawn as dashed horizontal lines."
         }
         style={{ width: "100%", height: "100%" }}
       />
@@ -109,11 +110,12 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
 }
 
 /** Compact single-row legend overlaid in the chart's top-left corner.
- *  Covers four symbols the chart uses:
- *    - Call OI (blue square)
- *    - Put OI (amber square)
- *    - Opening flow (▲ green glyph)
- *    - Closing flow (▼ red glyph)
+ *  Covers the four symbols the chart uses under the single-bar net-OI
+ *  layout:
+ *    - Calls dominant (blue square) — bar extends right
+ *    - Puts dominant (amber square) — bar extends left
+ *    - Net opening flow (▲ green glyph)
+ *    - Net closing flow (▼ red glyph)
  *  Positioned absolutely so it doesn't push the chart canvas down. */
 function StraddleMapLegend() {
   return (
@@ -134,17 +136,23 @@ function StraddleMapLegend() {
         pointerEvents: "none",
       }}
     >
-      <LegendSwatch color={withAlpha(colors.accentBlue, 0.55)} label="Call OI" />
-      <LegendSwatch color={withAlpha(colors.accentAmber, 0.55)} label="Put OI" />
+      <LegendSwatch
+        color={withAlpha(colors.accentBlue, 0.55)}
+        label="Calls dominant"
+      />
+      <LegendSwatch
+        color={withAlpha(colors.accentAmber, 0.55)}
+        label="Puts dominant"
+      />
       <LegendGlyph
         glyph="▲"
         color={colors.accentGreen}
-        label="Opening flow"
+        label="Net opening flow"
       />
       <LegendGlyph
         glyph="▼"
         color={withAlpha(colors.accentRed, 0.85)}
-        label="Closing flow"
+        label="Net closing flow"
       />
     </div>
   );

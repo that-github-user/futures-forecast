@@ -1,54 +1,66 @@
 /**
  * Pure builder for the StraddleMapChart ECharts option object.
  *
+ * Single-bar net-OI layout: each strike is represented by ONE bar whose
+ * signed length is `call_oi - put_oi`. Positive values extend right
+ * (call-dominant); negative values extend left (put-dominant). Bar
+ * color follows the hemisphere convention shared with
+ * `PinCandidatesPanel`: call-side → accentBlue, put-side → accentAmber.
+ *
+ * A net-fresh-flow glyph (▲/▼) is overlaid on bars whose
+ * |fresh_flow_call - fresh_flow_put| exceeds the visibility threshold.
+ * Green ▲ = net new openings, red ▼ = net closings — the glyphs map
+ * sign of net flow, NOT side of the bar.
+ *
  * Extracted from the React component so the markLine/series shape can
  * be pinned by tests without rendering a chart (echarts requires a DOM
- * canvas which happy-dom doesn't fully simulate). Tests assert that
- * the option has the expected markLines (em_upper / em_lower / spot)
- * and that call/put series carry their respective signed OI data.
+ * canvas which happy-dom doesn't fully simulate).
  */
 
 import type { EChartsOption } from "echarts";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { StraddleChainResponse } from "../../api/terminalTypes";
 
-/** Alpha applied to BOTH opening (green) and closing (red) fresh-flow
- *  tints. Keeping these symmetric (rather than saturated-vs-alpha)
- *  prevents the chart from over-emphasizing opening flow at the
- *  expense of closing flow — both signals are equally informative. */
-export const FRESH_FLOW_ALPHA = 0.55;
+/** Bar fill alpha for the net-OI hemispheres. Matches the original
+ *  two-bar version so the visual density of the chart is unchanged. */
+export const NET_OI_ALPHA = 0.55;
 
-/** Map a strike's fresh-flow value to a bar color tint.
- *
- *  - Positive flow (new contracts opened today) → alpha-blended green
- *    — indicates new participants taking exposure at that strike.
- *  - Negative flow (contracts closed) → alpha-blended red — positions
- *    are being unwound.
- *  - Null / zero → neutral base color. The bar is still rendered so
- *    the static OI distribution remains visible.
- *
- *  Returned color is layered onto a soft border-dim background bar
- *  per side so the chart still reads visually when fresh-flow is
- *  null across the board (common in the first minutes after the
- *  daily baseline trigger).
- */
-export function freshFlowTint(
-  freshFlow: number | null,
-  base: string,
-): string {
-  if (freshFlow == null) return base;
-  if (freshFlow > 0) return withAlpha(colors.accentGreen, FRESH_FLOW_ALPHA);
-  if (freshFlow < 0) return withAlpha(colors.accentRed, FRESH_FLOW_ALPHA);
-  return base;
+/** Net fresh flow magnitude threshold (in contracts) below which the
+ *  glyph is suppressed. Keeps the chart quiet during the first few
+ *  minutes after the daily baseline trigger when fresh flow is small
+ *  and noisy on both sides. */
+export const NET_FRESH_FLOW_GLYPH_MIN = 50;
+
+/** Compute net OI for a strike row, treating null sides as zero. */
+export function netOi(call_oi: number | null, put_oi: number | null): number {
+  return (call_oi ?? 0) - (put_oi ?? 0);
 }
 
-/** Map a strike's fresh-flow value to a colorblind-friendly glyph.
- *  Opening flow → ▲ (up triangle), closing → ▼ (down triangle),
- *  null/zero → empty string (no label). Used as the bar's label
- *  formatter so the cue surfaces in addition to the color tint. */
-export function freshFlowGlyph(freshFlow: number | null): string {
-  if (freshFlow == null || freshFlow === 0) return "";
-  return freshFlow > 0 ? "▲" : "▼";
+/** Compute net fresh flow for a strike row, treating null sides as zero.
+ *  Positive = net openings, negative = net closings. */
+export function netFreshFlow(
+  fresh_flow_call: number | null,
+  fresh_flow_put: number | null,
+): number {
+  return (fresh_flow_call ?? 0) - (fresh_flow_put ?? 0);
+}
+
+/** Map sign of net OI to a hemisphere tint. Call-dominant → blue, put-
+ *  dominant → amber. Zero net falls back to a neutral muted tone so the
+ *  bar remains visible (rare in practice — exact-tie strikes are
+ *  uncommon at 5pt spacing). */
+export function netOiTint(net: number): string {
+  if (net > 0) return withAlpha(colors.accentBlue, NET_OI_ALPHA);
+  if (net < 0) return withAlpha(colors.accentAmber, NET_OI_ALPHA);
+  return withAlpha(colors.textMuted, NET_OI_ALPHA);
+}
+
+/** Map net fresh flow to a colorblind-friendly glyph. Net openings →
+ *  ▲, net closings → ▼. Empty string when |net| is below the visibility
+ *  threshold so the chart isn't peppered with noise glyphs. */
+export function netFreshFlowGlyph(net: number): string {
+  if (Math.abs(net) <= NET_FRESH_FLOW_GLYPH_MIN) return "";
+  return net > 0 ? "▲" : "▼";
 }
 
 /** Build the ECharts option for the strike-map chart.
@@ -80,58 +92,37 @@ export function buildStraddleMapOption(
   yMin = Math.floor(yMin - padding);
   yMax = Math.ceil(yMax + padding);
 
-  // x-axis symmetric range: max(call_oi, put_oi).
-  let maxOi = 0;
+  // x-axis symmetric range: max(|net_oi|) across strikes, padded ~10%.
+  let maxAbsNet = 0;
   for (const row of data.strikes) {
-    if (row.call_oi != null) maxOi = Math.max(maxOi, row.call_oi);
-    if (row.put_oi != null) maxOi = Math.max(maxOi, row.put_oi);
+    const net = netOi(row.call_oi, row.put_oi);
+    if (Math.abs(net) > maxAbsNet) maxAbsNet = Math.abs(net);
   }
-  const xExtent = Math.max(1, Math.ceil(maxOi * 1.05));
+  const xExtent = Math.max(1, Math.ceil(maxAbsNet * 1.1));
 
-  // Call series — positive x, color tinted by fresh_flow_call.
-  // Each bar carries a per-point label glyph (▲ open / ▼ close) so
-  // colorblind operators (and screen-readers) get the fresh-flow
-  // signal independent of hue.
-  const callData = data.strikes.map((s) => {
-    const glyph = freshFlowGlyph(s.fresh_flow_call);
+  // Single net-OI series. Bar value sign drives both length (positive
+  // right, negative left) and tint (blue / amber). Net fresh-flow glyph
+  // is overlaid on bars whose |net flow| exceeds the threshold; glyph
+  // color reflects the SIGN of net flow (green opening / red closing),
+  // independent of which hemisphere the bar lives in.
+  const netData = data.strikes.map((s) => {
+    const net = netOi(s.call_oi, s.put_oi);
+    const netFlow = netFreshFlow(s.fresh_flow_call, s.fresh_flow_put);
+    const glyph = netFreshFlowGlyph(netFlow);
     return {
-      value: [s.call_oi ?? 0, s.strike],
+      value: [net, s.strike],
       itemStyle: {
-        color: freshFlowTint(s.fresh_flow_call, withAlpha(colors.accentBlue, 0.55)),
+        color: netOiTint(net),
       },
       label: glyph
         ? {
             show: true,
             formatter: glyph,
-            position: "insideRight" as const,
-            color:
-              s.fresh_flow_call! > 0 ? colors.accentGreen : colors.accentRed,
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            fontWeight: 700,
-          }
-        : { show: false },
-    };
-  });
-
-  // Put series — negative x, color tinted by fresh_flow_put.
-  const putData = data.strikes.map((s) => {
-    const glyph = freshFlowGlyph(s.fresh_flow_put);
-    return {
-      value: [-(s.put_oi ?? 0), s.strike],
-      itemStyle: {
-        color: freshFlowTint(s.fresh_flow_put, withAlpha(colors.accentAmber, 0.55)),
-      },
-      label: glyph
-        ? {
-            show: true,
-            formatter: glyph,
-            // Put-side bars extend leftward (negative x), so the
-            // glyph sits on the inside-left edge to read alongside
-            // the bar tip rather than off-canvas.
-            position: "insideLeft" as const,
-            color:
-              s.fresh_flow_put! > 0 ? colors.accentGreen : colors.accentRed,
+            // Bars extend toward the dominant side; show the glyph on
+            // the bar's interior tip so it tracks the bar end rather
+            // than sitting off-canvas on the opposite side.
+            position: net >= 0 ? ("insideRight" as const) : ("insideLeft" as const),
+            color: netFlow > 0 ? colors.accentGreen : colors.accentRed,
             fontFamily: fonts.mono,
             fontSize: 10,
             fontWeight: 700,
@@ -223,7 +214,9 @@ export function buildStraddleMapOption(
         // ECharts passes an array on axis-trigger. Each entry holds
         // `data.value = [x, strike]`. We use the strike from the
         // first entry and look up the original row to render both
-        // sides' microstructure in the tooltip body.
+        // sides' microstructure in the tooltip body — the visual
+        // bar is net-OI, but operators still need to see the
+        // per-side call/put detail to act on it.
         if (!Array.isArray(params) || params.length === 0) return "";
         const first = params[0] as { data?: { value?: [number, number] } };
         const strike = first?.data?.value?.[1];
@@ -232,8 +225,15 @@ export function buildStraddleMapOption(
         if (!row) return "";
         const fmt = (v: number | null, digits = 0): string =>
           v == null ? "—" : v.toFixed(digits);
+        const net = netOi(row.call_oi, row.put_oi);
+        const netFlow = netFreshFlow(row.fresh_flow_call, row.fresh_flow_put);
+        const netColor = net > 0 ? colors.accentBlue : net < 0 ? colors.accentAmber : colors.textPrimary;
         return [
           `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}</div>`,
+          `<div style="margin-top:4px;color:${netColor}">`,
+          `NET OI ${net >= 0 ? "+" : ""}${net.toFixed(0)} · `,
+          `NET flow ${netFlow >= 0 ? "+" : ""}${netFlow.toFixed(0)}`,
+          `</div>`,
           `<div style="margin-top:4px;">`,
           `<span style="color:${colors.accentBlue}">CALL</span> `,
           `OI ${fmt(row.call_oi)} · Vol ${fmt(row.call_volume)} · `,
@@ -277,23 +277,15 @@ export function buildStraddleMapOption(
     },
     series: [
       {
-        name: "calls",
+        name: "net_oi",
         type: "bar",
-        data: callData,
+        data: netData,
         barWidth: "70%",
-        // markLine on the first series so the lines render with the
-        // chart's axes. Multiple-series markLines stack; one is enough.
         markLine: {
           symbol: "none",
           silent: true,
           data: markLineData as never,
         },
-      },
-      {
-        name: "puts",
-        type: "bar",
-        data: putData,
-        barWidth: "70%",
       },
     ],
   };
