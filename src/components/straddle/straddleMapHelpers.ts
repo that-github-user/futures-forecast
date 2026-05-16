@@ -75,42 +75,69 @@ export function buildStraddleMapOption(
 ): EChartsOption | null {
   if (!data || data.strikes.length === 0) return null;
 
-  // Strike-axis bounds: derive from rendered strikes but extend to fit
-  // EM band + spot (so dashed markLines never sit off-canvas).
-  const strikeValues = data.strikes.map((s) => s.strike);
-  let yMin = Math.min(...strikeValues);
-  let yMax = Math.max(...strikeValues);
-  if (data.em_lower != null) yMin = Math.min(yMin, data.em_lower);
-  if (data.em_upper != null) yMax = Math.max(yMax, data.em_upper);
-  if (data.spot != null) {
-    yMin = Math.min(yMin, data.spot);
-    yMax = Math.max(yMax, data.spot);
-  }
-  // Pad y-axis by 5 strike-units so EM dashed lines aren't flush with
-  // the chart edge — operators expect a small visual gutter.
-  const padding = 5;
-  yMin = Math.floor(yMin - padding);
-  yMax = Math.ceil(yMax + padding);
+  // Diverging horizontal bars require yAxis=category (strikes as
+  // labels) + xAxis=value (net-OI signed magnitude). With value-value
+  // axes ECharts renders bars VERTICALLY at the x-coordinate of value[0]
+  // — the previous shape's bug. Category yAxis pins each bar to its
+  // strike row, value xAxis lets the bar extend left (negative) or
+  // right (positive) from the central x=0 baseline.
+  //
+  // Sort strikes descending so highest strike sits at the top of the
+  // chart — matches how operators read option chains (calls above,
+  // puts below the ATM spot line in the middle).
+  const sortedRows = [...data.strikes].sort((a, b) => b.strike - a.strike);
+  const strikeCategories: string[] = sortedRows.map((s) =>
+    s.strike.toFixed(0),
+  );
 
   // x-axis symmetric range: max(|net_oi|) across strikes, padded ~10%.
   let maxAbsNet = 0;
-  for (const row of data.strikes) {
+  for (const row of sortedRows) {
     const net = netOi(row.call_oi, row.put_oi);
     if (Math.abs(net) > maxAbsNet) maxAbsNet = Math.abs(net);
   }
   const xExtent = Math.max(1, Math.ceil(maxAbsNet * 1.1));
 
-  // Single net-OI series. Bar value sign drives both length (positive
+  // Helper: given a numeric strike, return its fractional category
+  // index along the (descending) strike axis. Used to position the
+  // spot / EM-band markLines between strikes when the value doesn't
+  // line up with an exact strike row. Out-of-range values clamp to
+  // the nearest edge; missing values return null (caller skips line).
+  function categoryIndex(value: number | null): number | null {
+    if (value == null) return null;
+    if (sortedRows.length === 0) return null;
+    // Strikes are sorted descending so index 0 = highest strike.
+    // Walk down to find the first strike <= value, then interpolate.
+    const topStrike = sortedRows[0].strike;
+    const bottomStrike = sortedRows[sortedRows.length - 1].strike;
+    if (value >= topStrike) return 0;
+    if (value <= bottomStrike) return sortedRows.length - 1;
+    for (let i = 0; i < sortedRows.length - 1; i++) {
+      const hi = sortedRows[i].strike;
+      const lo = sortedRows[i + 1].strike;
+      if (value <= hi && value >= lo) {
+        const span = hi - lo;
+        if (span === 0) return i;
+        // Descending order: index increases as strike decreases. So
+        // a value at hi is index i; at lo is index i+1.
+        const frac = (hi - value) / span;
+        return i + frac;
+      }
+    }
+    return null;
+  }
+
+  // Single net-OI series. Each bar's value sign drives length (positive
   // right, negative left) and tint (blue / amber). Net fresh-flow glyph
   // is overlaid on bars whose |net flow| exceeds the threshold; glyph
   // color reflects the SIGN of net flow (green opening / red closing),
   // independent of which hemisphere the bar lives in.
-  const netData = data.strikes.map((s) => {
+  const netData = sortedRows.map((s) => {
     const net = netOi(s.call_oi, s.put_oi);
     const netFlow = netFreshFlow(s.fresh_flow_call, s.fresh_flow_put);
     const glyph = netFreshFlowGlyph(netFlow);
     return {
-      value: [net, s.strike],
+      value: net,
       itemStyle: {
         color: netOiTint(net),
       },
@@ -138,11 +165,19 @@ export function buildStraddleMapOption(
   });
 
   // markLine entries. Spec: dashed for em_upper/em_lower, solid for
-  // spot. yAxis-anchored so they span horizontally across the plot.
+  // spot. yAxis is now a category axis (strikes as labels), so we
+  // position markLines by FRACTIONAL category index — letting ECharts
+  // interpolate between strike rows when the value (e.g. spot=7501.24)
+  // falls between two strikes. Each entry sets `yAxis` to the index;
+  // the label still shows the underlying numeric value.
   const markLineData: Array<Record<string, unknown>> = [];
-  if (data.em_upper != null) {
+  const emUpperIdx = categoryIndex(data.em_upper);
+  const emLowerIdx = categoryIndex(data.em_lower);
+  const spotIdx = categoryIndex(data.spot);
+
+  if (emUpperIdx != null && data.em_upper != null) {
     markLineData.push({
-      yAxis: data.em_upper,
+      yAxis: emUpperIdx,
       name: "em_upper",
       lineStyle: {
         type: "dashed",
@@ -158,9 +193,9 @@ export function buildStraddleMapOption(
       },
     });
   }
-  if (data.em_lower != null) {
+  if (emLowerIdx != null && data.em_lower != null) {
     markLineData.push({
-      yAxis: data.em_lower,
+      yAxis: emLowerIdx,
       name: "em_lower",
       lineStyle: {
         type: "dashed",
@@ -176,9 +211,9 @@ export function buildStraddleMapOption(
       },
     });
   }
-  if (data.spot != null) {
+  if (spotIdx != null && data.spot != null) {
     markLineData.push({
-      yAxis: data.spot,
+      yAxis: spotIdx,
       name: "spot",
       lineStyle: {
         type: "solid",
@@ -217,18 +252,20 @@ export function buildStraddleMapOption(
       borderWidth: 1,
       textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
       formatter: (params: unknown) => {
-        // ECharts passes an array on axis-trigger. Each entry holds
-        // `data.value = [x, strike]`. We use the strike from the
-        // first entry and look up the original row to render both
-        // sides' microstructure in the tooltip body — the visual
-        // bar is net-OI, but operators still need to see the
-        // per-side call/put detail to act on it.
+        // ECharts passes an array on axis-trigger. With yAxis as
+        // category, each entry's `axisValue` is the strike label
+        // (string). We parse it back to numeric and look up the
+        // original row to render per-side call+put detail — the
+        // visual bar is net-OI, but operators still need both sides
+        // to act on it.
         if (!Array.isArray(params) || params.length === 0) return "";
-        const first = params[0] as { data?: { value?: [number, number] } };
-        const strike = first?.data?.value?.[1];
-        if (typeof strike !== "number") return "";
-        const row = data.strikes.find((s) => s.strike === strike);
+        const first = params[0] as { axisValue?: string | number };
+        const axisLabel = first?.axisValue;
+        const strikeNum = typeof axisLabel === "string" ? Number(axisLabel) : axisLabel;
+        if (typeof strikeNum !== "number" || !Number.isFinite(strikeNum)) return "";
+        const row = data.strikes.find((s) => s.strike === strikeNum);
         if (!row) return "";
+        const strike = strikeNum;
         const fmt = (v: number | null, digits = 0): string =>
           v == null ? "—" : v.toFixed(digits);
         const net = netOi(row.call_oi, row.put_oi);
@@ -262,6 +299,8 @@ export function buildStraddleMapOption(
       min: -xExtent,
       max: xExtent,
       axisLabel: {
+        // Show absolute contract count — direction is conveyed by the
+        // bar's hemisphere (right=calls dominant, left=puts dominant).
         formatter: (v: number) => `${Math.abs(v).toFixed(0)}`,
         color: colors.textMuted,
         fontFamily: fonts.mono,
@@ -271,23 +310,40 @@ export function buildStraddleMapOption(
       splitLine: { lineStyle: { color: withAlpha(colors.borderDim, 0.5) } },
     },
     yAxis: {
-      type: "value",
-      min: yMin,
-      max: yMax,
+      // Category axis with strikes as labels lets the bar series extend
+      // horizontally from the x=0 baseline. Each bar sits on its
+      // strike's row; positive net values reach right, negative reach
+      // left. This is the canonical ECharts diverging-bar pattern.
+      type: "category",
+      data: strikeCategories,
+      // Reverse so the highest strike is at the TOP of the chart
+      // (matches how operators read option chains, with calls/upside
+      // strikes visually above the ATM line).
+      inverse: false,
       axisLabel: {
-        formatter: (v: number) => `${v.toFixed(0)}`,
         color: colors.textMuted,
         fontFamily: fonts.mono,
         fontSize: 10,
+        // Thin out the labels on dense strike grids — every 5th tick
+        // is enough at 5pt spacing, otherwise the axis gets cluttered.
+        interval: Math.max(0, Math.floor(strikeCategories.length / 12)),
       },
       axisLine: { lineStyle: { color: colors.borderDim } },
+      // Subtle horizontal gridlines on alternating rows would be too
+      // busy; keep them off and let the bars + markLines carry the
+      // visual rhythm.
       splitLine: { show: false },
+      axisTick: { show: false },
     },
     series: [
       {
         name: "net_oi",
         type: "bar",
         data: netData,
+        // Bars extend along the value-x axis from the x=0 baseline
+        // (the center of the chart, where the category yAxis sits).
+        // Bar thickness (height of each row) is auto-sized by ECharts
+        // based on category count.
         barWidth: "70%",
         markLine: {
           symbol: "none",
