@@ -18,6 +18,7 @@
  *     doesn't mistake synthetic data for live SPX positioning.
  */
 
+import type { ProgramFlowEvent } from "../../api/terminalTypes";
 import { useStraddleData } from "../../hooks/useStraddleData";
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import { RouteNav } from "../nav/RouteNav";
@@ -126,11 +127,7 @@ export function StraddlePage() {
   );
 }
 
-function ColdStartBanner({
-  upcoming,
-}: {
-  upcoming: import("../../api/terminalTypes").ProgramFlowEvent[];
-}) {
+function ColdStartBanner({ upcoming }: { upcoming: ProgramFlowEvent[] }) {
   // Cold-start covers three operationally distinct cases: weekend,
   // holiday, and pre-first-snapshot during a live session (rare). In
   // all three the snapshotter is producing no rows. Rather than the
