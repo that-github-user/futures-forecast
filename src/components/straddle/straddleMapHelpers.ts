@@ -12,14 +12,20 @@ import type { EChartsOption } from "echarts";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { StraddleChainResponse } from "../../api/terminalTypes";
 
+/** Alpha applied to BOTH opening (green) and closing (red) fresh-flow
+ *  tints. Keeping these symmetric (rather than saturated-vs-alpha)
+ *  prevents the chart from over-emphasizing opening flow at the
+ *  expense of closing flow — both signals are equally informative. */
+export const FRESH_FLOW_ALPHA = 0.55;
+
 /** Map a strike's fresh-flow value to a bar color tint.
  *
- *  - Positive flow (new contracts opened today) → saturated green —
- *    indicates new participants taking exposure at that strike.
- *  - Negative flow (contracts closed) → muted red — positions are
- *    being unwound.
- *  - Null / zero → neutral slate. The bar is still rendered so the
- *    static OI distribution remains visible.
+ *  - Positive flow (new contracts opened today) → alpha-blended green
+ *    — indicates new participants taking exposure at that strike.
+ *  - Negative flow (contracts closed) → alpha-blended red — positions
+ *    are being unwound.
+ *  - Null / zero → neutral base color. The bar is still rendered so
+ *    the static OI distribution remains visible.
  *
  *  Returned color is layered onto a soft border-dim background bar
  *  per side so the chart still reads visually when fresh-flow is
@@ -31,9 +37,18 @@ export function freshFlowTint(
   base: string,
 ): string {
   if (freshFlow == null) return base;
-  if (freshFlow > 0) return colors.accentGreen;
-  if (freshFlow < 0) return withAlpha(colors.accentRed, 0.55);
+  if (freshFlow > 0) return withAlpha(colors.accentGreen, FRESH_FLOW_ALPHA);
+  if (freshFlow < 0) return withAlpha(colors.accentRed, FRESH_FLOW_ALPHA);
   return base;
+}
+
+/** Map a strike's fresh-flow value to a colorblind-friendly glyph.
+ *  Opening flow → ▲ (up triangle), closing → ▼ (down triangle),
+ *  null/zero → empty string (no label). Used as the bar's label
+ *  formatter so the cue surfaces in addition to the color tint. */
+export function freshFlowGlyph(freshFlow: number | null): string {
+  if (freshFlow == null || freshFlow === 0) return "";
+  return freshFlow > 0 ? "▲" : "▼";
 }
 
 /** Build the ECharts option for the strike-map chart.
@@ -74,20 +89,56 @@ export function buildStraddleMapOption(
   const xExtent = Math.max(1, Math.ceil(maxOi * 1.05));
 
   // Call series — positive x, color tinted by fresh_flow_call.
-  const callData = data.strikes.map((s) => ({
-    value: [s.call_oi ?? 0, s.strike],
-    itemStyle: {
-      color: freshFlowTint(s.fresh_flow_call, withAlpha(colors.accentBlue, 0.55)),
-    },
-  }));
+  // Each bar carries a per-point label glyph (▲ open / ▼ close) so
+  // colorblind operators (and screen-readers) get the fresh-flow
+  // signal independent of hue.
+  const callData = data.strikes.map((s) => {
+    const glyph = freshFlowGlyph(s.fresh_flow_call);
+    return {
+      value: [s.call_oi ?? 0, s.strike],
+      itemStyle: {
+        color: freshFlowTint(s.fresh_flow_call, withAlpha(colors.accentBlue, 0.55)),
+      },
+      label: glyph
+        ? {
+            show: true,
+            formatter: glyph,
+            position: "insideRight" as const,
+            color:
+              s.fresh_flow_call! > 0 ? colors.accentGreen : colors.accentRed,
+            fontFamily: fonts.mono,
+            fontSize: 10,
+            fontWeight: 700,
+          }
+        : { show: false },
+    };
+  });
 
   // Put series — negative x, color tinted by fresh_flow_put.
-  const putData = data.strikes.map((s) => ({
-    value: [-(s.put_oi ?? 0), s.strike],
-    itemStyle: {
-      color: freshFlowTint(s.fresh_flow_put, withAlpha(colors.accentAmber, 0.45)),
-    },
-  }));
+  const putData = data.strikes.map((s) => {
+    const glyph = freshFlowGlyph(s.fresh_flow_put);
+    return {
+      value: [-(s.put_oi ?? 0), s.strike],
+      itemStyle: {
+        color: freshFlowTint(s.fresh_flow_put, withAlpha(colors.accentAmber, 0.45)),
+      },
+      label: glyph
+        ? {
+            show: true,
+            formatter: glyph,
+            // Put-side bars extend leftward (negative x), so the
+            // glyph sits on the inside-left edge to read alongside
+            // the bar tip rather than off-canvas.
+            position: "insideLeft" as const,
+            color:
+              s.fresh_flow_put! > 0 ? colors.accentGreen : colors.accentRed,
+            fontFamily: fonts.mono,
+            fontSize: 10,
+            fontWeight: 700,
+          }
+        : { show: false },
+    };
+  });
 
   // markLine entries. Spec: dashed for em_upper/em_lower, solid for
   // spot. yAxis-anchored so they span horizontally across the plot.
@@ -154,7 +205,10 @@ export function buildStraddleMapOption(
     grid: {
       left: 60,
       right: 60,
-      top: 28,
+      // Top padding leaves room for both the legend strip (overlaid in
+      // the upper-left at y≈12) and the EM-band labels rendered at
+      // `insideEndTop` near the plot's right edge.
+      top: 36,
       bottom: 36,
       containLabel: false,
     },

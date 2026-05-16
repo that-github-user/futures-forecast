@@ -75,7 +75,16 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         width: "100%",
       }}
     >
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+      <StraddleMapLegend />
+      <div
+        ref={containerRef}
+        role="img"
+        aria-label={
+          "0DTE SPX strike open interest map. Calls at right, puts at left. " +
+          "EM band drawn as dashed horizontal lines."
+        }
+        style={{ width: "100%", height: "100%" }}
+      />
       {!hasStrikes && (
         <div
           style={{
@@ -96,6 +105,92 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Compact single-row legend overlaid in the chart's top-left corner.
+ *  Covers four symbols the chart uses:
+ *    - Call OI (blue square)
+ *    - Put OI (amber square)
+ *    - Opening flow (▲ green glyph)
+ *    - Closing flow (▼ red glyph)
+ *  Positioned absolutely so it doesn't push the chart canvas down. */
+function StraddleMapLegend() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        left: 14,
+        zIndex: 2,
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 12,
+        fontFamily: fonts.sans,
+        fontSize: 10,
+        letterSpacing: "0.04em",
+        color: colors.textSecondary,
+        pointerEvents: "none",
+      }}
+    >
+      <LegendSwatch color={withAlpha(colors.accentBlue, 0.55)} label="Call OI" />
+      <LegendSwatch color={withAlpha(colors.accentAmber, 0.55)} label="Put OI" />
+      <LegendGlyph
+        glyph="▲"
+        color={colors.accentGreen}
+        label="Opening flow"
+      />
+      <LegendGlyph
+        glyph="▼"
+        color={withAlpha(colors.accentRed, 0.85)}
+        label="Closing flow"
+      />
+    </div>
+  );
+}
+
+function LegendSwatch({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          display: "inline-block",
+          width: 10,
+          height: 10,
+          background: color,
+          borderRadius: 2,
+        }}
+      />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function LegendGlyph({
+  glyph,
+  color,
+  label,
+}: {
+  glyph: string;
+  color: string;
+  label: string;
+}) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color,
+          lineHeight: 1,
+        }}
+        aria-hidden
+      >
+        {glyph}
+      </span>
+      <span>{label}</span>
+    </span>
   );
 }
 

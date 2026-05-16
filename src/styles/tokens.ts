@@ -38,6 +38,12 @@ export const colors = {
   accentRed: "#ef4444",        // saturated red
   accentRedLight: "#fca5a5",   // light red for error text on dark bg
   accentAmber: "#f59e0b",      // saturated amber
+  // Indigo / magenta — secondary accent slots for program-flow chips
+  // (XYLD monthly = indigo, JHEQX quarterly = magenta). Tokenized so
+  // any future surface reusing program-family color coding has one
+  // source of truth rather than redeclaring hex literals inline.
+  accentIndigo: "#6366f1",
+  accentMagenta: "#d946ef",
   // Backwards-compat token names — chart components reference these by
   // semantic role ("warm distinct accent", "muted secondary text").
   // Repointed to cool-palette equivalents so the four consumer files

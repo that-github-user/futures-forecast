@@ -29,10 +29,10 @@ interface Props {
 const PROGRAM_COLOR: Record<ProgramFlowName, string> = {
   // Indigo — derived from accentBlue but shifted purple-ward so it
   // doesn't conflict with the chart's call-side blue tint.
-  xyld_monthly_roll: "#6366f1",
+  xyld_monthly_roll: colors.accentIndigo,
   // Magenta — quarter-end JHEQX rolls are rare and dramatic; warm
   // hue calls attention without burning the high-alert red slot.
-  jheqx_quarterly_roll: "#d946ef",
+  jheqx_quarterly_roll: colors.accentMagenta,
   // Defensive fallbacks for continuous flows in case the banner is
   // ever re-purposed to render them. Still passed through here so
   // exhaustive `ProgramFlowName` coverage doesn't break tsc.

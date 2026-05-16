@@ -62,6 +62,17 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
         const distanceLabel = distance == null
           ? "—"
           : `${distance >= 0 ? "+" : ""}${distance.toFixed(1)}`;
+        // Color the distance by side so it matches the chart's call /
+        // put hue convention: call-side (above spot) → blue, put-side
+        // (below spot) → amber, ATM (===0) → primary text.
+        const distanceColor =
+          distance == null
+            ? colors.textSecondary
+            : distance > 0
+              ? colors.accentBlue
+              : distance < 0
+                ? colors.accentAmber
+                : colors.textPrimary;
         return (
           <div
             key={c.strike}
@@ -117,7 +128,7 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
                 style={{
                   fontFamily: fonts.mono,
                   fontSize: 11,
-                  color: colors.textSecondary,
+                  color: distanceColor,
                 }}
               >
                 {distanceLabel}

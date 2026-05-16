@@ -11,9 +11,9 @@
  *
  * States:
  *   - Loading: centered "Loading…" placeholder for first render.
- *   - Cold-start (stale=true AND spot===null): yellow warming-up banner
- *     replacing the chart. Program flow still surfaces since it's
- *     computed independently of the snapshotter.
+ *   - Cold-start (stale=true AND spot===null): amber "still loading"
+ *     banner replacing the chart. Program flow still surfaces since
+ *     it's computed independently of the snapshotter.
  *   - Demo mode: small "DEMO" watermark in the corner so the operator
  *     doesn't mistake synthetic data for live SPX positioning.
  */
@@ -26,9 +26,10 @@ import { ProgramFlowBanner } from "./ProgramFlowBanner";
 import { RealizedImpliedHeader } from "./RealizedImpliedHeader";
 import { StraddleMapChart } from "./StraddleMapChart";
 import { UpcomingProgramFlow } from "./UpcomingProgramFlow";
+import "./StraddlePage.css";
 
 export function StraddlePage() {
-  const { data, loading, demoMode } = useStraddleData();
+  const { data, loading, demoMode, refetch, refreshing } = useStraddleData();
 
   // Cold-start: snapshotter hasn't yet written a row today. Headline
   // metric fields are null but `program_flow` is still populated, so
@@ -74,7 +75,11 @@ export function StraddlePage() {
           </div>
         ) : (
           <>
-            <RealizedImpliedHeader data={data} />
+            <RealizedImpliedHeader
+              data={data}
+              onRefresh={refetch}
+              refreshing={refreshing}
+            />
 
             {data && data.program_flow.active_windowed.length > 0 && (
               <ProgramFlowBanner events={data.program_flow.active_windowed} />
@@ -82,14 +87,7 @@ export function StraddlePage() {
 
             {isColdStart && <ColdStartBanner />}
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 7fr) minmax(280px, 3fr)",
-                gap: 12,
-                alignItems: "start",
-              }}
-            >
+            <div className="straddle-body-grid">
               <div>
                 {!isColdStart && <StraddleMapChart data={data} height={540} />}
               </div>
@@ -119,6 +117,10 @@ export function StraddlePage() {
 }
 
 function ColdStartBanner() {
+  // Friendlier phrasing — frames the state as "still loading" rather
+  // than internal-jargon "snapshotter hasn't completed". The
+  // program-flow availability hint stays so operators know the page
+  // isn't entirely useless during the warm-up window.
   return (
     <div
       style={{
@@ -132,10 +134,9 @@ function ColdStartBanner() {
         lineHeight: 1.5,
       }}
     >
-      <span style={{ fontWeight: 700, marginRight: 8 }}>Data is warming up</span>
       <span style={{ color: colors.textSecondary }}>
-        — straddle snapshotter has not yet completed a snapshot for today's
-        session. Program-flow calendar is still available below.
+        Today&rsquo;s 0DTE chain snapshot is still loading. Program-flow
+        calendar is available below.
       </span>
     </div>
   );

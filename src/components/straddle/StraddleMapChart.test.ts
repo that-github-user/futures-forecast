@@ -24,6 +24,8 @@ import type {
 import { colors, withAlpha } from "../../styles/tokens";
 import {
   buildStraddleMapOption,
+  FRESH_FLOW_ALPHA,
+  freshFlowGlyph,
   freshFlowTint,
 } from "./straddleMapHelpers";
 
@@ -184,13 +186,83 @@ describe("freshFlowTint", () => {
     expect(freshFlowTint(0, base)).toBe(base);
   });
 
-  it("returns saturated green for positive flow (opening)", () => {
-    expect(freshFlowTint(500, base)).toBe(colors.accentGreen);
+  it("returns an alpha-blended green for positive flow (opening)", () => {
+    // Symmetric-alpha contract (R2 NIT 1): opening + closing tints
+    // both use the shared FRESH_FLOW_ALPHA so the chart doesn't
+    // shout one direction louder than the other.
+    expect(freshFlowTint(500, base)).toBe(
+      withAlpha(colors.accentGreen, FRESH_FLOW_ALPHA),
+    );
   });
 
-  it("returns a translucent red for negative flow (closing)", () => {
-    // We don't pin the exact alpha (visual tweak), just that it
-    // contains the accentRed hex prefix so the rule's intent stays.
-    expect(freshFlowTint(-500, base)).toContain(colors.accentRed.slice(1));
+  it("returns an alpha-blended red for negative flow (closing)", () => {
+    expect(freshFlowTint(-500, base)).toBe(
+      withAlpha(colors.accentRed, FRESH_FLOW_ALPHA),
+    );
+  });
+
+  it("opening and closing tints share the same alpha byte", () => {
+    // Symmetry invariant — the last two hex digits (alpha byte) on
+    // open vs close should match. Catches a future drift that
+    // re-introduces the saturated-green asymmetry the review flagged.
+    const open = freshFlowTint(500, base);
+    const close = freshFlowTint(-500, base);
+    expect(open.slice(-2)).toBe(close.slice(-2));
+  });
+});
+
+
+describe("freshFlowGlyph (colorblind cue)", () => {
+  it("returns an empty string for null flow", () => {
+    expect(freshFlowGlyph(null)).toBe("");
+  });
+
+  it("returns an empty string for zero flow", () => {
+    expect(freshFlowGlyph(0)).toBe("");
+  });
+
+  it("returns the up-triangle glyph for opening flow", () => {
+    expect(freshFlowGlyph(100)).toBe("▲");
+  });
+
+  it("returns the down-triangle glyph for closing flow", () => {
+    expect(freshFlowGlyph(-100)).toBe("▼");
+  });
+});
+
+
+describe("buildStraddleMapOption — fresh-flow labels", () => {
+  it("emits a per-point label glyph on bars with non-null fresh-flow", () => {
+    // Strikes carrying opening / closing flow should surface a label
+    // glyph on the bar; strikes with null flow should not.
+    const option = buildStraddleMapOption(
+      snapshot({
+        strikes: [
+          // Open call-side flow: expect ▲ on the call bar.
+          strike({ strike: 5180, fresh_flow_call: 250, fresh_flow_put: null }),
+          // Close put-side flow: expect ▼ on the put bar.
+          strike({ strike: 5160, fresh_flow_call: null, fresh_flow_put: -120 }),
+          // No flow either side: both bars should suppress the label.
+          strike({ strike: 5200, fresh_flow_call: null, fresh_flow_put: null }),
+        ],
+      }),
+    );
+    const series = option!.series as Array<{
+      data?: Array<{
+        label?: { show?: boolean; formatter?: string };
+      }>;
+    }>;
+    const callLabels = series[0].data!.map((d) => d.label);
+    const putLabels = series[1].data!.map((d) => d.label);
+
+    // Call bar at 5180 — opening flow, ▲.
+    expect(callLabels[0]?.show).toBe(true);
+    expect(callLabels[0]?.formatter).toBe("▲");
+    // Put bar at 5160 — closing flow, ▼.
+    expect(putLabels[1]?.show).toBe(true);
+    expect(putLabels[1]?.formatter).toBe("▼");
+    // The null-flow strike's labels must be suppressed (show=false).
+    expect(callLabels[2]?.show).toBe(false);
+    expect(putLabels[2]?.show).toBe(false);
   });
 });
