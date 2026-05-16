@@ -114,9 +114,25 @@ describe("buildStraddleMapOption", () => {
     expect(names).toContain("em_upper");
     expect(names).toContain("em_lower");
     expect(names).toContain("spot");
-    expect(markLines.find((m) => m.name === "em_upper")?.yAxis).toBe(5202);
-    expect(markLines.find((m) => m.name === "em_lower")?.yAxis).toBe(5158);
-    expect(markLines.find((m) => m.name === "spot")?.yAxis).toBe(5180);
+    // With yAxis=category, markLines are positioned by fractional
+    // category INDEX (strikes sorted descending: 0=5200, 1=5180, 2=5160).
+    // spot=5180 lines up exactly with index 1.
+    // em_upper=5202 is above the top strike (5200) → clamps to 0.
+    // em_lower=5158 is below the bottom strike (5160) → clamps to 2.
+    expect(markLines.find((m) => m.name === "spot")?.yAxis).toBe(1);
+    expect(markLines.find((m) => m.name === "em_upper")?.yAxis).toBe(0);
+    expect(markLines.find((m) => m.name === "em_lower")?.yAxis).toBe(2);
+  });
+
+  it("interpolates markLine yAxis index for values between strikes", () => {
+    // Spot 5170 falls exactly halfway between strike rows index 1 (5180)
+    // and index 2 (5160). categoryIndex should return 1.5 — ECharts
+    // accepts fractional indices on category axes.
+    const option = buildStraddleMapOption(snapshot({ spot: 5170 }));
+    const markLines = (option!.series as Array<{
+      markLine?: { data?: Array<{ name?: string; yAxis?: number }> };
+    }>)[0].markLine!.data!;
+    expect(markLines.find((m) => m.name === "spot")?.yAxis).toBeCloseTo(1.5, 3);
   });
 
   it("renders em markLines as dashed and spot markLine as solid", () => {
@@ -150,33 +166,34 @@ describe("buildStraddleMapOption", () => {
     expect(names).not.toContain("spot");
   });
 
-  it("emits a single net-OI bar series with signed [call_oi - put_oi, strike] tuples", () => {
+  it("renders a category yAxis with strike labels in descending order", () => {
+    // Horizontal diverging chart requires yAxis=category so bars extend
+    // along xAxis from the x=0 baseline. Strikes are sorted descending
+    // so highest strikes sit at the top of the chart (matches how
+    // operators read option chains, calls/upside above the ATM line).
+    const option = buildStraddleMapOption(snapshot());
+    const yAxis = option!.yAxis as { type?: string; data?: string[] };
+    expect(yAxis.type).toBe("category");
+    expect(yAxis.data).toEqual(["5200", "5180", "5160"]);
+  });
+
+  it("emits a single net-OI bar series with scalar signed values in descending-strike order", () => {
     const option = buildStraddleMapOption(snapshot());
     const series = option!.series as Array<{
       name?: string;
-      data?: Array<{ value?: [number, number] }>;
+      data?: Array<{ value?: number }>;
     }>;
     // Single-bar layout: exactly one bar series, no separate puts series.
     expect(series).toHaveLength(1);
     expect(series[0].name).toBe("net_oi");
+    // Scalar values (NOT [x, y] tuples) align 1:1 with yAxis.data order.
+    // Order matches the descending-strike yAxis: 5200, 5180, 5160.
     const values = series[0].data!.map((d) => d.value);
     expect(values).toEqual([
-      [-700, 5160], // 500 - 1200 → put-dominant
-      [400, 5180], //  1500 - 1100 → call-dominant
-      [700, 5200], //  1300 - 600 → call-dominant
+      700, //  5200: 1300 - 600  → call-dominant
+      400, //  5180: 1500 - 1100 → call-dominant
+      -700, // 5160:  500 - 1200 → put-dominant
     ]);
-  });
-
-  it("packs the strike value into the second slot of each data tuple", () => {
-    // Tooltip lookup pulls the strike out of `data.value[1]` — if a
-    // refactor swaps the slot order the tooltip looks up nonsense.
-    const option = buildStraddleMapOption(snapshot());
-    const data = (option!.series as Array<{
-      data?: Array<{ value?: [number, number] }>;
-    }>)[0].data!;
-    expect(data[0].value![1]).toBe(5160);
-    expect(data[1].value![1]).toBe(5180);
-    expect(data[2].value![1]).toBe(5200);
   });
 
   it("tints call-dominant bars accentBlue and put-dominant bars accentAmber", () => {
@@ -184,15 +201,16 @@ describe("buildStraddleMapOption", () => {
     const data = (option!.series as Array<{
       data?: Array<{ itemStyle?: { color?: string } }>;
     }>)[0].data!;
-    // 5160 net=-700 → amber, 5180 net=+400 → blue, 5200 net=+700 → blue.
+    // Descending-strike order: data[0]=5200(+700 blue), [1]=5180(+400 blue),
+    // [2]=5160(-700 amber).
     expect(data[0].itemStyle?.color).toBe(
-      withAlpha(colors.accentAmber, NET_OI_ALPHA),
+      withAlpha(colors.accentBlue, NET_OI_ALPHA),
     );
     expect(data[1].itemStyle?.color).toBe(
       withAlpha(colors.accentBlue, NET_OI_ALPHA),
     );
     expect(data[2].itemStyle?.color).toBe(
-      withAlpha(colors.accentBlue, NET_OI_ALPHA),
+      withAlpha(colors.accentAmber, NET_OI_ALPHA),
     );
   });
 
@@ -292,16 +310,18 @@ describe("buildStraddleMapOption — net fresh-flow labels", () => {
     const data = (option!.series as Array<{
       data?: Array<{ label?: { show?: boolean; formatter?: string; color?: string } }>;
     }>)[0].data!;
-    // 5180 → ▲ green opening.
-    expect(data[0].label?.show).toBe(true);
-    expect(data[0].label?.formatter).toBe("▲");
-    expect(data[0].label?.color).toBe(colors.accentGreen);
-    // 5160 → ▼ red closing.
+    // Strikes are sorted descending in the chart, so data order is
+    // [5200, 5180, 5160] regardless of fixture input order.
+    // data[0]=5200 → below-threshold → no glyph.
+    expect(data[0].label?.show).toBe(false);
+    // data[1]=5180 → ▲ green opening.
     expect(data[1].label?.show).toBe(true);
-    expect(data[1].label?.formatter).toBe("▼");
-    expect(data[1].label?.color).toBe(colors.accentRed);
-    // 5200 → no glyph (below threshold).
-    expect(data[2].label?.show).toBe(false);
+    expect(data[1].label?.formatter).toBe("▲");
+    expect(data[1].label?.color).toBe(colors.accentGreen);
+    // data[2]=5160 → ▼ red closing.
+    expect(data[2].label?.show).toBe(true);
+    expect(data[2].label?.formatter).toBe("▼");
+    expect(data[2].label?.color).toBe(colors.accentRed);
   });
 
   it("fires the glyph at exactly threshold+1 contracts (boundary)", () => {
