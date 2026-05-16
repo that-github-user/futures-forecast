@@ -297,8 +297,14 @@ function OverridesSection({
           ? "clear"
           : overrides.map((name, i) => {
               const isFrozen = frozenSet.has(name);
+              // Composite key — defensive against the theoretical case
+              // where the backend emits duplicate override names. The
+              // schema doesn't disallow it, and a React duplicate-key
+              // warning would mask reconciliation bugs in the dimmed
+              // children. Bare name key was fine in practice; this is
+              // belt-and-suspenders per R1 review.
               return (
-                <span key={name} className="terminal-overrides-name-wrap">
+                <span key={`${name}-${i}`} className="terminal-overrides-name-wrap">
                   <span
                     className={`terminal-overrides-name${isFrozen ? " frozen" : ""}`}
                     title={
@@ -346,11 +352,12 @@ function OverridesSection({
             single-snapshot grazes don't dim the score.
           </p>
           <p className="terminal-overrides-help-list">
-            <strong>❄ frozen</strong> = the override&rsquo;s state machine
-            is paused because its source data (VIX for backwardation,
-            HYG/LQD for credit divergence) is out-of-session.
-            Visibility is preserved through the gap; the confirm/clear
-            timer resumes when live data returns.
+            <strong>❄ frozen</strong> — treat as a last-known reading.
+            Don&rsquo;t expect the override to clear until its source
+            session reopens (CBOE for backwardation, NYSE for credit
+            divergence). The state machine is paused while data is
+            out-of-session, then resumes with a fresh confirm/clear
+            timer when ticks return.
           </p>
         </div>
       )}
