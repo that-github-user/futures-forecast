@@ -315,11 +315,11 @@ function MissedEntriesPanel({
         marginBottom: 8,
         lineHeight: 1.4,
       }}>
-        Additional plays to study — strikes the strategy resolved,
-        sized, and submitted to the broker, where the fill failed
-        (ladder exhausted or parked-at-ask with no cross). The through-
-        expiry tent renders the same as a real entry. Click a row to
-        analyze the play.
+        Real strikes the daemon resolved, sized, and submitted to the
+        broker — fill failed (ladder exhausted or parked-at-ask with no
+        cross), so no position was held. Additional plays to study; the
+        through-expiry tent renders the same as a real entry. Click a
+        row to analyze.
       </div>
       {/* Loading vs empty: until the first slow-tier poll settles,
           show a loading placeholder rather than "No missed entries" —
@@ -330,8 +330,8 @@ function MissedEntriesPanel({
       ) : filtered.length === 0 ? (
         <div style={emptyStyle}>
           {days > 0
-            ? `No no-fill plays in the last ${days} day${days === 1 ? "" : "s"}.`
-            : "No no-fill plays recorded yet."}
+            ? `No unfilled plays in the last ${days} day${days === 1 ? "" : "s"}.`
+            : "No broker no-fills recorded yet."}
         </div>
       ) : (
         <div
