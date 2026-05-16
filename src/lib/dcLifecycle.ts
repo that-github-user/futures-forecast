@@ -150,13 +150,35 @@ function isGoSignal(signal: string | null): boolean {
   return signal === "GO" || signal === "GO_PLUS";
 }
 
-/** Was today's entry actually filled? Source-of-truth is the daemon's
- *  signal_events.outcome surfaced via DCSignalStatus.today_outcome
- *  (#277). Blacklist `entered` — anything else (blocked_*, skipped_*,
- *  future enum values) is "didn't enter," so a daemon that grows a
- *  new skip path doesn't need a frontend update. */
-function enteredToday(todayOutcome: string | null): boolean {
-  return todayOutcome === "entered";
+/** Did the daemon actually ATTEMPT to enter today? The operator's
+ *  signals-tab card should stay highlighted (FIRING / recently_fired)
+ *  for the full 10min post-entry window whenever the daemon got far
+ *  enough to fire an order — even if the broker rejected the fill.
+ *
+ *  Two outcomes count as "attempted":
+ *    - "entered"       — every gate cleared AND the broker filled
+ *    - "blocked_order" — every signal-side gate cleared AND the daemon
+ *                        submitted the reprice ladder; the broker side
+ *                        failed (no cross / parked-no-fill exhausted).
+ *                        From the operator's anticipation standpoint
+ *                        the strategy FIRED — graying out the card
+ *                        the instant the ladder gave up penalizes
+ *                        viewing for an automation-side failure that
+ *                        the trader's mental model considers a real
+ *                        play. The phantom row tracks the would-have-
+ *                        entered position; the card stays highlighted
+ *                        in parallel.
+ *
+ *  All OTHER blocked_* outcomes (blocked_sl_gate, blocked_vix,
+ *  blocked_margin, blocked_strike, blocked_legs, blocked_data,
+ *  blocked_deconflict, skipped_*, future enum values) are signal-
+ *  side gates — the daemon correctly chose NOT to fire. Those render
+ *  as passed_skipped. The rule keeps forward-compat: a future
+ *  "blocked_capital_xyz" defaults to passed_skipped without a
+ *  frontend change.
+ */
+function attemptedEntryToday(todayOutcome: string | null): boolean {
+  return todayOutcome === "entered" || todayOutcome === "blocked_order";
 }
 
 /** Decide whether to treat post-window state as "fired" (will render
@@ -170,7 +192,7 @@ function shouldRenderAsFired(
   signal: string | null,
   todayOutcome: string | null,
 ): boolean {
-  if (todayOutcome != null) return enteredToday(todayOutcome);
+  if (todayOutcome != null) return attemptedEntryToday(todayOutcome);
   return isGoSignal(signal);
 }
 

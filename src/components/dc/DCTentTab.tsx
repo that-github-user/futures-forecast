@@ -243,22 +243,24 @@ function PositionTentCard({
 }
 
 
-// ── Missed entries: phantom (would-have-entered) positions ───────
+// ── Alpha-tracking dashboard for phantom (would-have-entered) plays ──
 
 
 /**
- * Phantom rows are the daemon's record of plays it WOULD have entered
- * had the broker-fill phase succeeded. Surfacing them in the Tent tab
- * is operator-critical: without this panel, ladder-exhausted /
- * parked-no-fill events vanish from the tracker, making it look like
- * the play never existed. Operators want to see what they SHOULD have
- * been holding even when automation couldn't fill — the daemon's
- * incapability to enter is not an excuse to discard tracking.
+ * The Tent tab is operator-facing alpha research. This panel surfaces
+ * plays the daemon recorded but couldn't fill at the broker — strikes
+ * the strategy resolved, sized, gated, and submitted to the ladder,
+ * where the broker side failed (no cross / parked-no-fill exhausted).
+ *
+ * Framing is deliberately neutral. These are NOT "misses" to be flagged;
+ * they're additional alpha exposure the operator can study alongside
+ * real entries. The through-expiry tent renders identically to a real
+ * position so the analysis surface is the same.
  *
  * Each card opens the through-expiry phantom-tent modal (live + frozen
  * IV overlays, same as a real position). The block_category badge tells
- * the operator at a glance WHY the entry failed (ladder exhausted vs
- * parked-no-fill vs other).
+ * the operator at a glance HOW the fill failed (LADDER exhausted vs
+ * PARKED with no cross vs OTHER).
  */
 function MissedEntriesPanel({
   phantoms,
@@ -301,7 +303,7 @@ function MissedEntriesPanel({
         }}
       >
         <span className="panel-title">
-          Missed entries — automation couldn&rsquo;t fill (
+          Alpha plays — recorded entries the bot didn&rsquo;t fill (
           {loaded ? filtered.length : "—"})
         </span>
         <DateRangePicker value={days} onChange={setDays} />
@@ -313,22 +315,23 @@ function MissedEntriesPanel({
         marginBottom: 8,
         lineHeight: 1.4,
       }}>
-        Plays the daemon recorded but couldn&rsquo;t fill — the entry
-        reprice ladder exhausted or parked-at-ask without a cross.
-        Followers may have entered manually; the through-expiry tent
-        still applies. Click a row for the full chart.
+        Real strikes the daemon resolved, sized, and submitted to the
+        broker — fill failed (ladder exhausted or parked-at-ask with no
+        cross), so no position was held. Additional plays to study; the
+        through-expiry tent renders the same as a real entry. Click a
+        row to analyze.
       </div>
       {/* Loading vs empty: until the first slow-tier poll settles,
           show a loading placeholder rather than "No missed entries" —
           the latter would re-create the perception bug this PR fixes
           ("looks like nothing's tracked"). */}
       {!loaded ? (
-        <div style={emptyStyle}>Loading missed entries…</div>
+        <div style={emptyStyle}>Loading recorded plays…</div>
       ) : filtered.length === 0 ? (
         <div style={emptyStyle}>
           {days > 0
-            ? `No missed entries in the last ${days} day${days === 1 ? "" : "s"}.`
-            : "No missed entries recorded yet."}
+            ? `No unfilled plays in the last ${days} day${days === 1 ? "" : "s"}.`
+            : "No broker no-fills recorded yet."}
         </div>
       ) : (
         <div
@@ -406,7 +409,7 @@ function PhantomChip({
   return (
     <button
       onClick={onClick}
-      aria-label={`Open through-expiry tent for missed ${phantom.strategy_name} entry on ${phantom.entry_date}`}
+      aria-label={`Open through-expiry tent for ${phantom.strategy_name} no-fill play on ${phantom.entry_date}`}
       style={{
         textAlign: "left",
         background: colors.bgInset,
@@ -479,10 +482,10 @@ function PhantomChip({
           {formatExpiry(phantom.front_exp)} / {formatExpiry(phantom.back_exp)}
         </span>
       </div>
-      {/* NOT HELD watermark: a small uppercase sub-label cementing
-          "this is tracking-only, not a real position" so a screenshot
-          or quick glance can't misread the card as an open position
-          with a colored pill. */}
+      {/* "NOT HELD · alpha track" watermark — cements that this is
+          analysis-only, not a real position, so a screenshot or quick
+          glance can't misread the card. "alpha track" frames the panel
+          as additional study material rather than a failure log. */}
       <div style={{
         marginTop: 4,
         fontSize: 9,
@@ -491,7 +494,7 @@ function PhantomChip({
         letterSpacing: 0.8,
         textTransform: "uppercase",
       }}>
-        NOT HELD · tracking only
+        NOT HELD · alpha track
       </div>
     </button>
   );

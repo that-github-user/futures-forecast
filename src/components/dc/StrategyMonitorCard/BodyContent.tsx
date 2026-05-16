@@ -30,6 +30,18 @@ interface Props {
  *  default entered/firing copy, so viewers don't think the daemon
  *  entered when it actually bailed. */
 export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipped }: Props) {
+  // Broker-side fill failure: every signal-side gate cleared and the
+  // daemon submitted the reprice ladder, but the broker didn't cross
+  // (ladder exhausted / parked-no-fill). Lifecycle classifier still
+  // routes this through firing / recently_fired / passed_will_fire
+  // so the card stays highlighted for the 10-min post-entry window
+  // — but the body copy must distinguish it from a real fill so the
+  // operator isn't misled into thinking they hold a position.
+  // Reason text comes from signal_events.outcome_reason via #277.
+  const brokerNoFill = info.todayOutcome === "blocked_order";
+  const noFillReason = info.todayOutcomeReason
+    ?? "entry ladder exhausted with zero fills";
+
   switch (info.state) {
     case "inactive":
       return (
@@ -67,7 +79,18 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
         />
       );
     case "firing":
-      return <Body headline="FIRING NOW" subline={formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)} accent={colors.accentGreen} large />;
+      return (
+        <Body
+          headline="FIRING NOW"
+          subline={
+            brokerNoFill
+              ? <NoFillLine reason={noFillReason} />
+              : formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)
+          }
+          accent={colors.accentGreen}
+          large
+        />
+      );
     case "recently_fired":
       return gateSkipped ? (
         <Body
@@ -80,10 +103,17 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
           headline={
             info.lastEntryHHMM ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Just fired"
           }
+          // Broker-no-fill override: keep the green "fired" accent
+          // (per operator request — don't gray out for an automation-
+          // side failure), but replace the cheerful "signal was GO+"
+          // subline with the no-fill reason so the operator can tell
+          // a real fill apart from a ladder-exhausted attempt.
           subline={
-            info.lastEntryHHMM
-              ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
-              : ""
+            brokerNoFill
+              ? <NoFillLine reason={noFillReason} />
+              : info.lastEntryHHMM
+                ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
+                : ""
           }
           accent={colors.accentGreen}
         />
@@ -101,11 +131,17 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
         />
       ) : (
         <Body
-          headline="Should have entered earlier"
+          headline={
+            brokerNoFill
+              ? "Fired — broker did not fill"
+              : "Should have entered earlier"
+          }
           subline={
-            info.lastEntryHHMM
-              ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
-              : `Signal was ${formatSignal(signal)} at fire time`
+            brokerNoFill
+              ? <NoFillLine reason={noFillReason} />
+              : info.lastEntryHHMM
+                ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
+                : `Signal was ${formatSignal(signal)} at fire time`
           }
           accent={colors.accentGreen}
         />
@@ -152,6 +188,36 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
       return <Body headline="Closed for the day" subline="Resumes tomorrow if it's an entry day" />;
   }
 }
+
+/** Subline override for broker-no-fill (blocked_order). Renders an
+ *  amber "NO FILL" pill inline with the daemon-authoritative reason
+ *  text so the operator drilling into a still-highlighted card can
+ *  immediately tell a real fill apart from a ladder-exhausted attempt.
+ *  Amber accent is reserved for the pill — the surrounding card stays
+ *  green so the card itself remains visually "fired" per the operator
+ *  feedback that automation-side failures should not gray out viewing.
+ */
+function NoFillLine({ reason }: { reason: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{
+        fontSize: 9,
+        fontFamily: fonts.mono,
+        color: colors.accentAmber,
+        background: "rgba(245, 158, 11, 0.12)",
+        border: "1px solid rgba(245, 158, 11, 0.4)",
+        borderRadius: 2,
+        padding: "1px 5px",
+        letterSpacing: 0.6,
+        fontWeight: 600,
+      }}>
+        NO FILL
+      </span>
+      <span>{reason}</span>
+    </span>
+  );
+}
+
 
 function Body({
   headline,
