@@ -86,9 +86,14 @@ export function buildStraddleMapOption(
   // chart — matches how operators read option chains (calls above,
   // puts below the ATM spot line in the middle).
   const sortedRows = [...data.strikes].sort((a, b) => b.strike - a.strike);
-  const strikeCategories: string[] = sortedRows.map((s) =>
-    s.strike.toFixed(0),
-  );
+  // Use `String(s.strike)` rather than `.toFixed(0)` so fractional
+  // strikes (e.g., 5180.5 from a future weekly SPX widening or SPY
+  // chain) round-trip cleanly through the tooltip's `Number(label)`
+  // lookup. The previous `.toFixed(0)` rendered 5180.5 as "5181",
+  // which the tooltip parsed back to 5181 → no matching strike row →
+  // silent empty tooltip. Integer SPX strikes are unaffected
+  // (`String(5180) === "5180"`).
+  const strikeCategories: string[] = sortedRows.map((s) => String(s.strike));
 
   // x-axis symmetric range: max(|net_oi|) across strikes, padded ~10%.
   let maxAbsNet = 0;
