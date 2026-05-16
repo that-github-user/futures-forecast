@@ -26,6 +26,7 @@ import { PinCandidatesPanel } from "./PinCandidatesPanel";
 import { ProgramFlowBanner } from "./ProgramFlowBanner";
 import { RealizedImpliedHeader } from "./RealizedImpliedHeader";
 import { StraddleMapChart } from "./StraddleMapChart";
+import { StrikeVelocityTape } from "./StrikeVelocityTape";
 import { UpcomingProgramFlow } from "./UpcomingProgramFlow";
 import {
   formatNextSessionLabel,
@@ -98,8 +99,33 @@ export function StraddlePage() {
             )}
 
             <div className="straddle-body-grid">
-              <div>
-                {!isColdStart && <StraddleMapChart data={data} height={540} />}
+              <div className="straddle-chart-row">
+                {!isColdStart && (
+                  <div className="straddle-chart-cell">
+                    <StraddleMapChart data={data} height={540} />
+                  </div>
+                )}
+                {/* Strike Velocity Tape — frozen Friday-close trade-tick
+                    replay. Renders independently of the live snapshot
+                    so it surfaces even during cold-start when the
+                    chart is hidden. The component renders its own
+                    "(no replay available)" placeholder when the
+                    backend hasn't run the replay script yet. */}
+                {data?.velocity_tape !== undefined && (
+                  <div className="straddle-velocity-cell">
+                    <StrikeVelocityTape
+                      tape={data?.velocity_tape ?? null}
+                      strikeOrder={
+                        data?.strikes
+                          ? [...data.strikes]
+                              .map((s) => s.strike)
+                              .sort((a, b) => b - a)
+                          : undefined
+                      }
+                      height={540}
+                    />
+                  </div>
+                )}
               </div>
               <div
                 style={{

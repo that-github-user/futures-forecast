@@ -86,6 +86,7 @@ function snapshot(overrides: Partial<StraddleChainResponse> = {}): StraddleChain
     program_flow: emptyProgramFlow(),
     stale: false,
     data_age_seconds: 30,
+    velocity_tape: null,
     ...overrides,
   };
 }

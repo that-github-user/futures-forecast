@@ -338,6 +338,55 @@ export interface ProgramFlowState {
   upcoming: ProgramFlowEvent[];
 }
 
+/** One 1-minute trade-velocity bucket for a single strike/side. The
+ *  shape matches vega-pilot's `VelocityMinute` schema. `avg_price` is
+ *  the size-weighted average trade price for the minute (null when
+ *  volume==0, which never happens in practice because empty minutes
+ *  are simply omitted from the array). */
+export interface VelocityMinute {
+  ts: string;        // ISO8601 ET, minute-aligned
+  volume: number;    // total contract size across all trades this minute
+  trade_count: number;
+  avg_price: number | null;
+}
+
+/** Per-strike per-side trade velocity for the replay window.
+ *  `call_spike_minutes` / `put_spike_minutes` carry the ISO timestamps
+ *  where the corresponding minute's volume exceeded `mean + 3*stdev`
+ *  of the 15-min volume distribution. The frontend highlights those
+ *  bars in the sparkline with an amber glyph so operators can scan for
+ *  unusual flow visually. */
+export interface VelocityStrike {
+  strike: number;
+  call_minutes: VelocityMinute[];
+  put_minutes: VelocityMinute[];
+  call_spike_minutes: string[];
+  put_spike_minutes: string[];
+}
+
+/** One SPX spot-price datapoint within the velocity replay window.
+ *  Used by the frontend to render a thin price overlay above the
+ *  velocity rows so operators can correlate strike-level bursts with
+ *  the underlying spot move. */
+export interface VelocitySpotPoint {
+  ts: string;
+  price: number;
+}
+
+/** Frozen replay of strike-level trade velocity for the most recent
+ *  past session. Surfaces when the StrikeVelocityTape component on
+ *  /straddle needs visual data on weekends/holidays before live tick
+ *  streaming is wired up. Backend null = no replay run yet; frontend
+ *  hides the velocity column when null. Future-proof slot for live
+ *  tick streaming on Monday. */
+export interface VelocityTape {
+  replay_session_date: string;  // yyyymmdd
+  window_start: string;         // ISO8601 ET
+  window_end: string;           // ISO8601 ET
+  spot_path: VelocitySpotPoint[] | null;
+  strikes: VelocityStrike[];
+}
+
 /** 0DTE SPX strike-positioning snapshot for the /straddle page.
  *  `stale=true` when no snapshot has been written in the past 5 minutes
  *  (snapshotter cadence is 60s; 5min gives 4 cycles of headroom).
@@ -346,7 +395,9 @@ export interface ProgramFlowState {
  *  `stale=true` AND the snapshotter has not yet written its first row
  *  for the session (cold-start). Frontend renders a single freshness
  *  contract: when `stale=true`, treat null headline fields as "warming
- *  up". `program_flow` is always computed independently of the snapshot. */
+ *  up". `program_flow` is always computed independently of the snapshot.
+ *  `velocity_tape` is the optional frozen Friday-close strike-velocity
+ *  replay — null when no replay row exists yet. */
 export interface StraddleChainResponse {
   snapshot_time: string | null;
   expiry: string | null;
@@ -364,4 +415,5 @@ export interface StraddleChainResponse {
   program_flow: ProgramFlowState;
   stale: boolean;
   data_age_seconds: number | null;
+  velocity_tape: VelocityTape | null;
 }

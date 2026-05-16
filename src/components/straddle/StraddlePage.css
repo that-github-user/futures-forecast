@@ -18,8 +18,34 @@
   align-items: start;
 }
 
+/* The chart cell now contains a horizontal flex: StraddleMapChart on
+ * the left, StrikeVelocityTape on the right. The velocity column has
+ * a fixed ~280px reservation; the chart takes the remaining space. */
+.straddle-chart-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0; /* let the chart shrink rather than overflow the grid */
+}
+
+.straddle-chart-cell {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.straddle-velocity-cell {
+  flex: 0 0 280px;
+}
+
 @media (max-width: 900px) {
   .straddle-body-grid {
     grid-template-columns: 1fr;
+  }
+  /* Below 900px the velocity tape would crowd the chart out — hide
+   * it entirely (the chart already collapses to single-column at this
+   * breakpoint). The replay column is non-essential on narrow widths.
+   */
+  .straddle-velocity-cell {
+    display: none;
   }
 }
