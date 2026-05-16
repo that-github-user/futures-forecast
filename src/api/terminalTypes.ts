@@ -352,16 +352,28 @@ export interface VelocityMinute {
 
 /** Per-strike per-side trade velocity for the replay window.
  *  `call_spike_minutes` / `put_spike_minutes` carry the ISO timestamps
- *  where the corresponding minute's volume exceeded `mean + 3*stdev`
- *  of the 15-min volume distribution. The frontend highlights those
- *  bars in the sparkline with an amber glyph so operators can scan for
- *  unusual flow visually. */
+ *  where the corresponding minute's volume exceeded a MAD-based robust
+ *  3σ-equivalent threshold (median + 3 * 1.4826 * MAD) of the 15-min
+ *  volume distribution. The frontend highlights those bars in the
+ *  sparkline with an amber glyph so operators can scan for unusual
+ *  flow visually.
+ *
+ *  `call_undercount` / `put_undercount` flag (strike, side) pairs
+ *  where the backend's `reqHistoricalTicksAsync` hit IBKR's 1000-tick
+ *  server cap before reaching `window_start` — the EARLIEST minutes
+ *  near `window_start` were silently dropped from the persisted tape.
+ *  Frontend renders a "data truncated" badge on those rows so operators
+ *  can distinguish a quiet minute from a censored one. Optional in the
+ *  type so older payloads (pre-PR-#193 round-2) parse without error;
+ *  the StrikeVelocityTape rendering treats `undefined` as `false`. */
 export interface VelocityStrike {
   strike: number;
   call_minutes: VelocityMinute[];
   put_minutes: VelocityMinute[];
   call_spike_minutes: string[];
   put_spike_minutes: string[];
+  call_undercount?: boolean;
+  put_undercount?: boolean;
 }
 
 /** One SPX spot-price datapoint within the velocity replay window.
