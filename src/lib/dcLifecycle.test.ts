@@ -167,11 +167,37 @@ describe("deriveLifecycle: today_outcome blacklist-on-entered semantics (#277)",
   });
 
   it("outcome=blocked_margin → passed_skipped", () => {
-    // Daemon-side block, not a signal/SL miss. Frontend doesn't
-    // need to know what blocked_margin specifically means — just
-    // that anything-not-entered is "didn't enter."
+    // Signal-side gate. The daemon DECIDED not to enter — passed_skipped
+    // is correct. (Contrast with blocked_order below, which is the
+    // broker-side failure case where the daemon DID attempt to enter.)
     const info = deriveLifecycle(s, "GO", false, POST_WINDOW, "blocked_margin");
     expect(info.state).toBe("passed_skipped");
+  });
+
+  it("outcome=blocked_order → passed_will_fire (broker fill failed)", () => {
+    // The 2026-05-15 case: every signal-side gate cleared, the daemon
+    // submitted the reprice ladder, but the broker side didn't cross
+    // (or parked-at-ask exhausted). From the operator's anticipation
+    // standpoint the strategy fired — graying out the card the
+    // instant the ladder gave up penalizes viewing for an automation-
+    // side failure that the trader's mental model treats as a real
+    // play. Keep the card highlighted for the full 10min window
+    // post-entry; the phantom row tracks the would-have-entered
+    // position in parallel.
+    const info = deriveLifecycle(s, "GO", false, POST_WINDOW, "blocked_order");
+    expect(info.state).toBe("passed_will_fire");
+    expect(info.todayOutcome).toBe("blocked_order");
+  });
+
+  it("outcome=blocked_order at T+30s → recently_fired (10min highlight window)", () => {
+    // Within the 10-min recently_fired window, blocked_order must
+    // render the same as `entered` would — the operator wants the
+    // card highlighted for 10 minutes regardless of which side of
+    // the broker fence the daemon ended up on.
+    const info = deriveLifecycle(
+      s, "GO", false, atET("09:46", 30), "blocked_order",
+    );
+    expect(info.state).toBe("recently_fired");
   });
 
   it("future unknown outcome (e.g. blocked_capital) → passed_skipped (forward-compat)", () => {
