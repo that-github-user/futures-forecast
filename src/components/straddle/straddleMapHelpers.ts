@@ -316,10 +316,15 @@ export function buildStraddleMapOption(
       // left. This is the canonical ECharts diverging-bar pattern.
       type: "category",
       data: strikeCategories,
-      // Reverse so the highest strike is at the TOP of the chart
-      // (matches how operators read option chains, with calls/upside
-      // strikes visually above the ATM line).
-      inverse: false,
+      // ECharts category yAxis default places data[0] at the BOTTOM
+      // (axis index 0 = origin = bottom for cartesian2d). Our
+      // `strikeCategories` is sorted DESCENDING (highest strike first),
+      // so without `inverse: true` we'd render 7585 at the bottom and
+      // 7405 at the top — the opposite of the operator's option-chain
+      // mental model (calls/upside ABOVE the ATM line, puts/downside
+      // BELOW). `inverse: true` flips the axis so data[0] sits at the
+      // TOP, putting the highest strike there.
+      inverse: true,
       axisLabel: {
         color: colors.textMuted,
         fontFamily: fonts.mono,

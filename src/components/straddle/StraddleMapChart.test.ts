@@ -178,6 +178,19 @@ describe("buildStraddleMapOption", () => {
     expect(yAxis.data).toEqual(["5200", "5180", "5160"]);
   });
 
+  it("sets yAxis.inverse=true so descending data renders highest-at-top", () => {
+    // ECharts cartesian2d category yAxis defaults to data[0]-at-bottom
+    // (origin at bottom). Our `strikeCategories` is sorted descending,
+    // so without inverse=true the chart renders FLIPPED — operators
+    // would see 7405 at the top and 7585 at the bottom, opposite their
+    // option-chain mental model. This test locks the orientation so a
+    // future refactor (e.g., switching the sort to ascending) doesn't
+    // silently re-introduce the flip without also flipping `inverse`.
+    const option = buildStraddleMapOption(snapshot());
+    const yAxis = option!.yAxis as { inverse?: boolean };
+    expect(yAxis.inverse).toBe(true);
+  });
+
   it("emits a single net-OI bar series with scalar signed values in descending-strike order", () => {
     const option = buildStraddleMapOption(snapshot());
     const series = option!.series as Array<{
