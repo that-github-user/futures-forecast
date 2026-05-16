@@ -120,7 +120,7 @@ export function buildStraddleMapOption(
     return {
       value: [-(s.put_oi ?? 0), s.strike],
       itemStyle: {
-        color: freshFlowTint(s.fresh_flow_put, withAlpha(colors.accentAmber, 0.45)),
+        color: freshFlowTint(s.fresh_flow_put, withAlpha(colors.accentAmber, 0.55)),
       },
       label: glyph
         ? {
