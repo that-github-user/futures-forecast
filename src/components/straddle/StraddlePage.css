@@ -1,0 +1,25 @@
+/* StraddlePage — responsive layout rules.
+ *
+ * Most of the page is built from inline-styled component primitives
+ * (the project's house pattern), but the body's 2-column 7fr/3fr grid
+ * needs a media query to collapse on narrow viewports. Inline styles
+ * can't express `@media`, so the grid class lives here while the rest
+ * of the visual style stays inline next to the component.
+ *
+ * Single rule: at ≤ 900px the body collapses to a single column so
+ * the chart isn't squeezed to unreadable widths on tablets / split
+ * windows.
+ */
+
+.straddle-body-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .straddle-body-grid {
+    grid-template-columns: 1fr;
+  }
+}

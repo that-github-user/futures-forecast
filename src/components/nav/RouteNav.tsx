@@ -15,11 +15,12 @@
 import { useEffect, useRef, useState } from "react";
 import "./RouteNav.css";
 
-export type GatedRoute = "terminal" | "forecast" | "dc";
+export type GatedRoute = "terminal" | "forecast" | "dc" | "straddle";
 
 const ROUTES: { key: GatedRoute; label: string; href: string }[] = [
   { key: "terminal", label: "Terminal", href: "#/app" },
   { key: "forecast", label: "Forecast", href: "#/forecast" },
+  { key: "straddle", label: "Straddle", href: "#/straddle" },
   { key: "dc", label: "DC", href: "#/dc" },
 ];
 

@@ -5,6 +5,11 @@
  */
 
 import type { DailySummary, HindcastResponse, HistoryResponse, PredictionResponse } from "./types";
+import type {
+  ProgramFlowEvent,
+  StraddleChainResponse,
+  StraddleStrikeRow,
+} from "./terminalTypes";
 
 const BASE_PRICE = 5850;
 const TICK = 0.25;
@@ -422,4 +427,177 @@ export function generateMockDailySummaries(): DailySummary[] {
   }
 
   return summaries;
+}
+
+/** Synthetic 0DTE straddle-chain snapshot for the `/straddle` page in
+ *  demo mode (or when the terminal API is unreachable).
+ *
+ *  Mirrors a plausible mid-session SPX state: spot ≈ 5180, ATM straddle
+ *  ≈ 22 pts, 40 strikes on a 5pt grid centered on ATM, OI skewed toward
+ *  call-side (5200-5220) and put-side (5100-5140). Fresh-flow is signed
+ *  so the chart can show opening (positive tint) vs closing (negative
+ *  tint) flow per side. The XYLD monthly-roll window appears as an
+ *  active windowed event when current ET time sits in 11:30-13:30 —
+ *  otherwise it's surfaced in `upcoming`. Two upcoming JHEQX-quarterly
+ *  events are seeded so `UpcomingProgramFlow` has content to render. */
+export function mockStraddleSnapshot(): StraddleChainResponse {
+  const rand = seededRandom(31415);
+  const spot = 5180 + (rand() - 0.5) * 4;
+  const atmStrike = Math.round(spot / 5) * 5;
+  const atmStraddleMid = 22 + (rand() - 0.5) * 2;
+  const emUpper = +(spot + atmStraddleMid).toFixed(2);
+  const emLower = +(spot - atmStraddleMid).toFixed(2);
+
+  // 40 strikes on a 5pt grid centered on ATM (covers ~±100pts).
+  const strikes: StraddleStrikeRow[] = [];
+  for (let i = -20; i < 20; i++) {
+    const strike = atmStrike + i * 5;
+    const distance = strike - atmStrike;
+    // Call OI peaks above spot in the 5200-5220 cluster.
+    const callPeakFactor = Math.exp(-Math.pow((distance - 25) / 30, 2));
+    const callOi = Math.floor(800 + callPeakFactor * 9000 + rand() * 600);
+    // Put OI peaks below spot in the 5100-5140 cluster.
+    const putPeakFactor = Math.exp(-Math.pow((distance + 50) / 35, 2));
+    const putOi = Math.floor(700 + putPeakFactor * 8500 + rand() * 600);
+    // Fresh flow signed: positive (opening) on the side closer to ATM,
+    // negative (closing) on the far side — produces a plausible
+    // dealers-hedging-up posture.
+    const freshFlowCall = distance > 0 && distance < 30
+      ? Math.floor(200 + rand() * 1400)
+      : Math.floor(-300 + (rand() - 0.5) * 400);
+    const freshFlowPut = distance < 0 && distance > -40
+      ? Math.floor(150 + rand() * 1200)
+      : Math.floor(-250 + (rand() - 0.5) * 400);
+    strikes.push({
+      strike,
+      call_oi: callOi,
+      call_volume: Math.floor(callOi * (0.1 + rand() * 0.4)),
+      call_iv: +(0.10 + rand() * 0.08).toFixed(4),
+      call_delta: +Math.min(0.95, Math.max(0.05,
+        0.5 + (spot - strike) / 60,
+      )).toFixed(3),
+      call_bid: +Math.max(0.05, atmStraddleMid / 2 - distance * 0.4).toFixed(2),
+      call_ask: +Math.max(0.05, atmStraddleMid / 2 - distance * 0.4 + 0.3).toFixed(2),
+      fresh_flow_call: freshFlowCall,
+      put_oi: putOi,
+      put_volume: Math.floor(putOi * (0.1 + rand() * 0.4)),
+      put_iv: +(0.11 + rand() * 0.08).toFixed(4),
+      put_delta: +Math.max(-0.95, Math.min(-0.05,
+        -0.5 + (spot - strike) / 60,
+      )).toFixed(3),
+      put_bid: +Math.max(0.05, atmStraddleMid / 2 + distance * 0.4).toFixed(2),
+      put_ask: +Math.max(0.05, atmStraddleMid / 2 + distance * 0.4 + 0.3).toFixed(2),
+      fresh_flow_put: freshFlowPut,
+    });
+  }
+
+  // Pin candidates — top 5 OI+volume strikes within EM band.
+  const withinEm = strikes.filter((s) => s.strike >= emLower && s.strike <= emUpper);
+  const sortedByDensity = [...withinEm].sort(
+    (a, b) =>
+      ((b.call_oi ?? 0) + (b.put_oi ?? 0)) -
+      ((a.call_oi ?? 0) + (a.put_oi ?? 0)),
+  );
+  const topDensity = ((sortedByDensity[0]?.call_oi ?? 0) +
+    (sortedByDensity[0]?.put_oi ?? 0)) || 1;
+  const pinCandidates = sortedByDensity.slice(0, 5).map((s) => ({
+    strike: s.strike,
+    density_score: +(
+      ((s.call_oi ?? 0) + (s.put_oi ?? 0)) / topDensity
+    ).toFixed(3),
+    within_em: true,
+  }));
+
+  // Program flow: synthesize XYLD active window if current ET time is
+  // in the 11:30-13:30 ET roll window; otherwise surface as upcoming.
+  const now = new Date();
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+  );
+  const xyldActive = etHour >= 11 && etHour < 14;
+  const todayET = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const xyldEvent: ProgramFlowEvent = {
+    name: "xyld_monthly_roll",
+    intensity: "windowed",
+    window_start: `${todayET}T11:30:00-04:00`,
+    window_end: `${todayET}T13:30:00-04:00`,
+  };
+
+  // Upcoming events — 2 JHEQX quarterly rolls + 2 future XYLD rolls.
+  const futureDays = (offset: number): string => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + offset);
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  };
+  const upcoming: ProgramFlowEvent[] = [
+    {
+      name: "jheqx_quarterly_roll",
+      intensity: "windowed",
+      window_start: `${futureDays(4)}T09:30:00-04:00`,
+      window_end: `${futureDays(4)}T16:00:00-04:00`,
+    },
+    {
+      name: "xyld_monthly_roll",
+      intensity: "windowed",
+      window_start: `${futureDays(11)}T11:30:00-04:00`,
+      window_end: `${futureDays(11)}T13:30:00-04:00`,
+    },
+    {
+      name: "jheqx_quarterly_roll",
+      intensity: "windowed",
+      window_start: `${futureDays(13)}T09:30:00-04:00`,
+      window_end: `${futureDays(13)}T16:00:00-04:00`,
+    },
+  ];
+  if (!xyldActive) {
+    upcoming.unshift(xyldEvent);
+  }
+
+  const sessionOpenSpot = spot - 6;
+  const realizedRangePts = 12 + rand() * 6;
+  const realizedVsImpliedPct = +((realizedRangePts / atmStraddleMid) * 100).toFixed(1);
+
+  return {
+    snapshot_time: now.toISOString(),
+    expiry: todayET.replace(/-/g, ""),
+    spot: +spot.toFixed(2),
+    atm_strike: atmStrike,
+    atm_straddle_mid: +atmStraddleMid.toFixed(2),
+    em_upper: emUpper,
+    em_lower: emLower,
+    session_open_spot: +sessionOpenSpot.toFixed(2),
+    session_open_straddle: +(atmStraddleMid + 1).toFixed(2),
+    realized_range_pts: +realizedRangePts.toFixed(2),
+    realized_vs_implied_pct: realizedVsImpliedPct,
+    strikes,
+    pin_candidates: pinCandidates,
+    program_flow: {
+      active_windowed: xyldActive ? [xyldEvent] : [],
+      active_continuous: [
+        {
+          name: "jepi_continuous",
+          intensity: "continuous",
+          window_start: `${todayET}T09:30:00-04:00`,
+          window_end: `${todayET}T16:00:00-04:00`,
+        },
+      ],
+      upcoming,
+    },
+    stale: false,
+    data_age_seconds: 30,
+  };
 }

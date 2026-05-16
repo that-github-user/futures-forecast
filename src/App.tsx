@@ -1,9 +1,10 @@
 /**
- * App router — hash-based, four routes:
+ * App router — hash-based, five routes:
  *   #/         → LumenLander (auth gate)
  *   #/forecast → Dashboard (ES prediction; pulls FanChart + EquityCurve + echarts)
  *   #/dc       → DCDashboard (DC trading)
  *   #/app      → TerminalDashboard (six-system trading terminal)
+ *   #/straddle → StraddlePage (0DTE SPX strike-positioning map)
  *
  * Every route component is lazy-loaded so the bundle a user fetches
  * is scoped to the routes they actually visit. Pre-PR (eager
@@ -42,6 +43,11 @@ const TerminalDashboard = lazy(() =>
     default: m.TerminalDashboard,
   })),
 );
+const StraddlePage = lazy(() =>
+  import("./components/straddle/StraddlePage").then((m) => ({
+    default: m.StraddlePage,
+  })),
+);
 
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 
@@ -50,6 +56,7 @@ function App() {
   const isDC = hash === "#/dc" || hash.startsWith("#/dc/");
   const isForecast = hash === "#/forecast" || hash.startsWith("#/forecast/");
   const isTerminal = hash === "#/app" || hash.startsWith("#/app/");
+  const isStraddle = hash === "#/straddle" || hash.startsWith("#/straddle/");
 
   let content: React.ReactNode;
   if (isDC) {
@@ -64,6 +71,12 @@ function App() {
     content = (
       <RequireAuth>
         <Dashboard />
+      </RequireAuth>
+    );
+  } else if (isStraddle) {
+    content = (
+      <RequireAuth>
+        <StraddlePage />
       </RequireAuth>
     );
   } else if (isTerminal) {
