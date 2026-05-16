@@ -12,6 +12,7 @@ import {
   eventsOnDate,
   filterWindowed,
   formatNextSessionLabel,
+  formatUpcomingTime,
   formatWindowDate,
   formatWindowTime,
   nextSessionDate,
@@ -104,6 +105,27 @@ describe("formatNextSessionLabel", () => {
 
   test("returns input unchanged on malformed date", () => {
     expect(formatNextSessionLabel("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("formatUpcomingTime (JHEQX date-only carve-out)", () => {
+  test("returns em-dash for JHEQX quarterly rolls (date-only display)", () => {
+    // JHEQX collar roll is a calendar-date event on a daily-NAV mutual
+    // fund — no intraday auction. The previous "09:30 ET" rendering
+    // misled operators into expecting an opening-bell flow.
+    expect(formatUpcomingTime(jheqxQuarter)).toBe("—");
+  });
+
+  test("returns the wall-clock start time for XYLD monthly rolls", () => {
+    // XYLD is a real ETF auction in 11:30-13:30 ET — keep showing it.
+    expect(formatUpcomingTime(xyldFriday)).toBe("11:30 ET");
+  });
+
+  test("returns the wall-clock start time for continuous flows (JEPI/JEPQ)", () => {
+    // Continuous flows render through this path in the cold-start
+    // "next session preview" mode — they keep their 09:30 ET start.
+    expect(formatUpcomingTime(monday)).toBe("09:30 ET");
+    expect(formatUpcomingTime(mondayJepq)).toBe("09:30 ET");
   });
 });
 

@@ -85,7 +85,14 @@ export function ProgramFlowBanner({ events }: Props) {
             <span style={{ fontSize: 9, opacity: 0.8 }}>ACTIVE</span>
             <span>{label}</span>
             <span style={{ color: colors.textSecondary, fontFamily: fonts.mono, fontSize: 10 }}>
-              {formatWindowTime(event.window_start)} – {formatWindowTime(event.window_end)}
+              {/* JHEQX is a daily-NAV mutual fund — its quarterly roll
+                  is a calendar-date event, NOT an intraday auction.
+                  Omit the time range so the banner doesn't imply a
+                  9:30-16:00 ET window when in fact the entire trading
+                  day counts. XYLD keeps its real 11:30-13:30 ET range. */}
+              {event.name === "jheqx_quarterly_roll"
+                ? "all session"
+                : `${formatWindowTime(event.window_start)} – ${formatWindowTime(event.window_end)}`}
             </span>
           </div>
         );

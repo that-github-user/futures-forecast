@@ -14,8 +14,8 @@ import type { ProgramFlowEvent, ProgramFlowName } from "../../api/terminalTypes"
 import {
   eventsOnDate,
   filterWindowed,
+  formatUpcomingTime,
   formatWindowDate,
-  formatWindowTime,
   nextSessionDate,
 } from "./programFlowFormatters";
 
@@ -106,7 +106,9 @@ export function UpcomingProgramFlow({ upcoming, coldStart = false }: Props) {
               {formatWindowDate(event.window_start)}
             </span>
             <span style={{ color: colors.textMuted }}>
-              {formatWindowTime(event.window_start)}
+              {/* JHEQX rolls have no intraday window — see
+                  `formatUpcomingTime` for the carve-out rationale. */}
+              {formatUpcomingTime(event)}
             </span>
           </div>
         ))
