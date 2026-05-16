@@ -86,9 +86,14 @@ export function buildStraddleMapOption(
   // chart — matches how operators read option chains (calls above,
   // puts below the ATM spot line in the middle).
   const sortedRows = [...data.strikes].sort((a, b) => b.strike - a.strike);
-  const strikeCategories: string[] = sortedRows.map((s) =>
-    s.strike.toFixed(0),
-  );
+  // Use `String(s.strike)` rather than `.toFixed(0)` so fractional
+  // strikes (e.g., 5180.5 from a future weekly SPX widening or SPY
+  // chain) round-trip cleanly through the tooltip's `Number(label)`
+  // lookup. The previous `.toFixed(0)` rendered 5180.5 as "5181",
+  // which the tooltip parsed back to 5181 → no matching strike row →
+  // silent empty tooltip. Integer SPX strikes are unaffected
+  // (`String(5180) === "5180"`).
+  const strikeCategories: string[] = sortedRows.map((s) => String(s.strike));
 
   // x-axis symmetric range: max(|net_oi|) across strikes, padded ~10%.
   let maxAbsNet = 0;
@@ -316,10 +321,15 @@ export function buildStraddleMapOption(
       // left. This is the canonical ECharts diverging-bar pattern.
       type: "category",
       data: strikeCategories,
-      // Reverse so the highest strike is at the TOP of the chart
-      // (matches how operators read option chains, with calls/upside
-      // strikes visually above the ATM line).
-      inverse: false,
+      // ECharts category yAxis default places data[0] at the BOTTOM
+      // (axis index 0 = origin = bottom for cartesian2d). Our
+      // `strikeCategories` is sorted DESCENDING (highest strike first),
+      // so without `inverse: true` we'd render 7585 at the bottom and
+      // 7405 at the top — the opposite of the operator's option-chain
+      // mental model (calls/upside ABOVE the ATM line, puts/downside
+      // BELOW). `inverse: true` flips the axis so data[0] sits at the
+      // TOP, putting the highest strike there.
+      inverse: true,
       axisLabel: {
         color: colors.textMuted,
         fontFamily: fonts.mono,

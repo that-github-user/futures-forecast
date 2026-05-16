@@ -178,6 +178,41 @@ describe("buildStraddleMapOption", () => {
     expect(yAxis.data).toEqual(["5200", "5180", "5160"]);
   });
 
+  it("preserves fractional strike precision in yAxis category labels", () => {
+    // Tooltip lookup parses the axis label string back to a number to
+    // find the matching strike row (`data.strikes.find(s.strike === n)`).
+    // `.toFixed(0)` would render 5180.5 as "5181" → Number("5181") =
+    // 5181 → no match → empty tooltip. Use String(s.strike) so the
+    // round-trip is lossless for any future fractional strikes (e.g.,
+    // SPY 1pt grid with half-strikes, weekly SPX widenings).
+    const option = buildStraddleMapOption(
+      snapshot({
+        strikes: [
+          strike({ strike: 5180.5, call_oi: 500, put_oi: 200 }),
+          strike({ strike: 5180, call_oi: 300, put_oi: 700 }),
+        ],
+      }),
+    );
+    const yAxis = option!.yAxis as { data?: string[] };
+    expect(yAxis.data).toEqual(["5180.5", "5180"]);
+    // Round-trip: Number(label) recovers the original strike.
+    expect(Number(yAxis.data![0])).toBe(5180.5);
+    expect(Number(yAxis.data![1])).toBe(5180);
+  });
+
+  it("sets yAxis.inverse=true so descending data renders highest-at-top", () => {
+    // ECharts cartesian2d category yAxis defaults to data[0]-at-bottom
+    // (origin at bottom). Our `strikeCategories` is sorted descending,
+    // so without inverse=true the chart renders FLIPPED — operators
+    // would see 7405 at the top and 7585 at the bottom, opposite their
+    // option-chain mental model. This test locks the orientation so a
+    // future refactor (e.g., switching the sort to ascending) doesn't
+    // silently re-introduce the flip without also flipping `inverse`.
+    const option = buildStraddleMapOption(snapshot());
+    const yAxis = option!.yAxis as { inverse?: boolean };
+    expect(yAxis.inverse).toBe(true);
+  });
+
   it("emits a single net-OI bar series with scalar signed values in descending-strike order", () => {
     const option = buildStraddleMapOption(snapshot());
     const series = option!.series as Array<{

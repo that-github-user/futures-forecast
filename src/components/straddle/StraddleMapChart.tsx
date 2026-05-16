@@ -1,15 +1,20 @@
 /**
- * StraddleMapChart — vertical-strikes ECharts bar chart for the
- * `/straddle` page.
+ * StraddleMapChart — horizontal-bar diverging chart for the
+ * `/straddle` page. Strikes on the vertical (category) y-axis, bars
+ * emanating left/right from the central x=0 baseline (the y-axis
+ * line itself).
  *
  * Layout (per spec):
  *   - x-axis is signed NET OI (call_oi - put_oi), symmetric range
  *     derived from `max(|net|)` padded ~10%. One bar per strike,
- *     extending right when calls dominate, left when puts dominate.
- *   - y-axis is the strike price. Range derived from rendered strikes,
- *     padded to ensure both EM bounds and spot are visible.
- *   - Dashed yAxis `markLine`s at em_upper / em_lower.
- *   - Solid yAxis `markLine` at spot.
+ *     extending RIGHT when calls dominate, LEFT when puts dominate.
+ *   - y-axis is the strike price as a CATEGORY axis (strings), sorted
+ *     descending with `inverse: true` so the highest strike sits at
+ *     the TOP of the chart — matching how operators read option
+ *     chains (calls/upside above, puts/downside below the ATM line).
+ *   - Dashed yAxis `markLine`s at em_upper / em_lower; solid at spot.
+ *     Positioned by fractional category index so they interpolate
+ *     correctly when the value falls between two rendered strikes.
  *   - Bar color follows hemisphere convention: call-dominant
  *     (right) → accentBlue, put-dominant (left) → accentAmber.
  *   - Net fresh-flow glyph (▲ green opening / ▼ red closing) overlaid
