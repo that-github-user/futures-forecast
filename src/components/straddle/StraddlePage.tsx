@@ -26,6 +26,11 @@ import { ProgramFlowBanner } from "./ProgramFlowBanner";
 import { RealizedImpliedHeader } from "./RealizedImpliedHeader";
 import { StraddleMapChart } from "./StraddleMapChart";
 import { UpcomingProgramFlow } from "./UpcomingProgramFlow";
+import {
+  formatNextSessionLabel,
+  formatWindowTime,
+  nextSessionDate,
+} from "./programFlowFormatters";
 import "./StraddlePage.css";
 
 export function StraddlePage() {
@@ -85,7 +90,11 @@ export function StraddlePage() {
               <ProgramFlowBanner events={data.program_flow.active_windowed} />
             )}
 
-            {isColdStart && <ColdStartBanner />}
+            {isColdStart && (
+              <ColdStartBanner
+                upcoming={data?.program_flow.upcoming ?? []}
+              />
+            )}
 
             <div className="straddle-body-grid">
               <div>
@@ -104,6 +113,7 @@ export function StraddlePage() {
                 />
                 <UpcomingProgramFlow
                   upcoming={data?.program_flow.upcoming ?? []}
+                  coldStart={isColdStart}
                 />
               </div>
             </div>
@@ -116,11 +126,27 @@ export function StraddlePage() {
   );
 }
 
-function ColdStartBanner() {
-  // Friendlier phrasing — frames the state as "still loading" rather
-  // than internal-jargon "snapshotter hasn't completed". The
-  // program-flow availability hint stays so operators know the page
-  // isn't entirely useless during the warm-up window.
+function ColdStartBanner({
+  upcoming,
+}: {
+  upcoming: import("../../api/terminalTypes").ProgramFlowEvent[];
+}) {
+  // Cold-start covers three operationally distinct cases: weekend,
+  // holiday, and pre-first-snapshot during a live session (rare). In
+  // all three the snapshotter is producing no rows. Rather than the
+  // generic "still loading" copy (misleading on a Saturday), pivot to
+  // a next-session preview by reading the first entry off the sorted
+  // upcoming list — that's the date the snapshotter will resume.
+  const nextDate = nextSessionDate(upcoming);
+  const sessionLabel = nextDate ? formatNextSessionLabel(nextDate) : null;
+  const sessionOpen = upcoming.length > 0
+    ? formatWindowTime(upcoming[0].window_start)
+    : null;
+
+  const message = sessionLabel && sessionOpen
+    ? `Market closed. Showing next-session preview for ${sessionLabel}. Chain data populates at ${sessionOpen}.`
+    : "Today's 0DTE chain snapshot is still loading. Program-flow calendar is available below.";
+
   return (
     <div
       style={{
@@ -134,10 +160,7 @@ function ColdStartBanner() {
         lineHeight: 1.5,
       }}
     >
-      <span style={{ color: colors.textSecondary }}>
-        Today&rsquo;s 0DTE chain snapshot is still loading. Program-flow
-        calendar is available below.
-      </span>
+      <span style={{ color: colors.textSecondary }}>{message}</span>
     </div>
   );
 }
