@@ -129,6 +129,39 @@
   font-size: 14px;
   color: var(--ink-80);
 }
+/* Per-name spans inside the body — needed so we can attach a freshness
+   cue to individual override names instead of joining them into a flat
+   string. The wrap span carries the name + the trailing separator
+   together so wrapping breaks happen between names, not mid-pair. */
+.terminal-overrides-name-wrap {
+  display: inline;
+  white-space: nowrap;
+}
+.terminal-overrides-name {
+  display: inline;
+}
+.terminal-overrides-sep {
+  color: var(--ink-60);
+}
+/* Frozen-state cue (#264): the override is still firing, but its state
+   machine is paused against stale source data. We DON'T dim the name —
+   `ink-60` overlaps with the dashboard's "placeholder / no data" idiom
+   (.terminal-regime.placeholder, .terminal-price-num.placeholder), and
+   frozen is the opposite: an active, load-bearing reading the operator
+   should still trust. Signal the freshness state via the ❄ glyph +
+   dotted under-stroke only — name color stays at full ink-80. The
+   dotted underline reinforces the "evaluated against last-known"
+   semantic AND echoes the browser convention for has-tooltip text. */
+.terminal-overrides-name.frozen {
+  text-decoration: underline dotted var(--ink-40);
+  text-underline-offset: 3px;
+}
+.terminal-overrides-frozen-glyph {
+  font-size: 11px;
+  color: var(--ink-60);
+  margin-left: 1px;
+  vertical-align: 1px;
+}
 /* Help affordance — ⓘ glyph next to the "Overrides" label, tappable
    on mobile (native `title` doesn't fire on tap). Inline-flex with
    the label keeps the small-caps tracking grammar intact. */

@@ -103,7 +103,7 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
   const hasRegime = regimeLabel !== "unknown";
 
   const overrides = data?.synthesizer?.overrides ?? [];
-  const overridesBody = overrides.length === 0 ? "clear" : overrides.join(" · ");
+  const frozenOverrides = data?.synthesizer?.frozen_overrides ?? [];
 
   const price = data?.es_price;
   const change = data?.es_change ?? 0;
@@ -167,7 +167,7 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
       <div className={`terminal-regime${hasRegime ? "" : " placeholder"}`}>
         {hasRegime ? formatRegime(regimeLabel) : "—"}
       </div>
-      <OverridesSection overrides={overrides} overridesBody={overridesBody} />
+      <OverridesSection overrides={overrides} frozenOverrides={frozenOverrides} />
       <div className="terminal-price-block">
         <div className="terminal-price">
           <span className={`terminal-price-num${price == null ? " placeholder" : ""}`}>
@@ -197,11 +197,16 @@ function HeadlineStrip({ data }: { data: TerminalSnapshot | null }) {
  */
 function OverridesSection({
   overrides,
-  overridesBody,
+  frozenOverrides,
 }: {
   overrides: string[];
-  overridesBody: string;
+  /** Subset of `overrides` whose state machine is frozen against
+   *  stale source data. Each frozen name renders with a ❄ cue +
+   *  tooltip explaining the freeze (#264). Empty = all live. */
+  frozenOverrides: string[];
 }) {
+  const frozenSet = new Set(frozenOverrides);
+  const hasAnyFrozen = frozenOverrides.length > 0;
   const [open, setOpen] = useState(false);
   const [popPos, setPopPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -263,7 +268,12 @@ function OverridesSection({
     setOpen((o) => !o);
   };
 
-  const stateAria = overrides.length === 0 ? "clear" : `${overrides.length} firing`;
+  const stateAria =
+    overrides.length === 0
+      ? "clear"
+      : hasAnyFrozen
+        ? `${overrides.length} firing, ${frozenOverrides.length} on frozen data`
+        : `${overrides.length} firing`;
 
   return (
     <div className="terminal-overrides" ref={wrapRef}>
@@ -282,7 +292,44 @@ function OverridesSection({
           ⓘ
         </button>
       </span>
-      <span className="terminal-overrides-body">{overridesBody}</span>
+      <span className="terminal-overrides-body">
+        {overrides.length === 0
+          ? "clear"
+          : overrides.map((name, i) => {
+              const isFrozen = frozenSet.has(name);
+              // Composite key — defensive against the theoretical case
+              // where the backend emits duplicate override names. The
+              // schema doesn't disallow it, and a React duplicate-key
+              // warning would mask reconciliation bugs in the dimmed
+              // children. Bare name key was fine in practice; this is
+              // belt-and-suspenders per R1 review.
+              return (
+                <span key={`${name}-${i}`} className="terminal-overrides-name-wrap">
+                  <span
+                    className={`terminal-overrides-name${isFrozen ? " frozen" : ""}`}
+                    title={
+                      isFrozen
+                        ? `${name}: evaluated against last-known data — source ticks are stale (out-of-session). State machine paused; override visibility preserved through the data gap.`
+                        : undefined
+                    }
+                  >
+                    {name}
+                    {isFrozen && (
+                      <span
+                        className="terminal-overrides-frozen-glyph"
+                        aria-label="frozen evaluation"
+                      >
+                        {" "}❄
+                      </span>
+                    )}
+                  </span>
+                  {i < overrides.length - 1 && (
+                    <span className="terminal-overrides-sep"> · </span>
+                  )}
+                </span>
+              );
+            })}
+      </span>
       {open && (
         <div
           id="overrides-help-panel"
@@ -303,6 +350,14 @@ function OverridesSection({
             feed lands — currently deferred.) Each condition requires
             sustained breach (multi-minute confirm) before firing —
             single-snapshot grazes don't dim the score.
+          </p>
+          <p className="terminal-overrides-help-list">
+            <strong>❄ frozen</strong> — treat as a last-known reading.
+            Don&rsquo;t expect the override to clear until its source
+            session reopens (CBOE for backwardation, NYSE for credit
+            divergence). The state machine is paused while data is
+            out-of-session, then resumes with a fresh confirm/clear
+            timer when ticks return.
           </p>
         </div>
       )}
