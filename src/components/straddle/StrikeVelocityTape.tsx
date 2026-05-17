@@ -34,12 +34,21 @@
  * `StrikeVelocityTape.css`.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import type { VelocityTape } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import {
   buildMinuteAxis,
   buildXLabelMask,
+  cellIndexFromX,
   dominanceColor,
   formatMinuteLabel,
   formatVolume,
@@ -97,6 +106,20 @@ export interface StrikeVelocityTapeProps {
 
 type ScaleMode = "row" | "panel";
 
+/** Tooltip-state shape: which (strike, minute) is hovered + the
+ *  pre-computed volume/spike payload + cursor position in client
+ *  coordinates. Computed by LaneSvg on mousemove (one delegated
+ *  handler per row, not per-cell) and lifted via `onCellHover`. */
+export interface HoveredCell {
+  strike: number;
+  ts: string;
+  callVol: number;
+  putVol: number;
+  isSpike: boolean;
+  mouseX: number;
+  mouseY: number;
+}
+
 export function StrikeVelocityTape({
   tape,
   spot,
@@ -109,6 +132,17 @@ export function StrikeVelocityTape({
   // "panel" flips to absolute scaling — the day's standout strike
   // becomes the only tall one.
   const [scaleMode, setScaleMode] = useState<ScaleMode>("row");
+
+  // Hover-tooltip state (#329). Single panel-level cell at most can
+  // be "active" at any moment, so we lift state here and pass an
+  // onCellHover callback down to each LaneRow. Null = no cell hovered
+  // (tooltip hidden). Position is in client coords; the tooltip renders
+  // with `position: fixed` so it can escape any panel overflow clipping.
+  const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
+
+  // Info popover state (#329). Anchored to the ⓘ button in the panel
+  // head; explains the encoding for first-time operators.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Pre-compute the things every row needs. `tape` is the only data
   // dependency; everything else is layout state.
@@ -185,6 +219,9 @@ export function StrikeVelocityTape({
         emLower={emLower}
         scaleMode={scaleMode}
         onScaleChange={setScaleMode}
+        helpOpen={helpOpen}
+        onToggleHelp={() => setHelpOpen((v) => !v)}
+        onCloseHelp={() => setHelpOpen(false)}
       />
       <div style={{ padding: "12px 14px 6px 14px" }}>
         <div className="svt-lane-grid">
@@ -195,6 +232,7 @@ export function StrikeVelocityTape({
               axis={layout.axis}
               scale={scaleMode === "row" ? row.rowMax : layout.panelMax}
               isAtm={row.strike === atmStrike}
+              onCellHover={setHoveredCell}
             />
           ))}
           <GutterOverlay
@@ -206,6 +244,7 @@ export function StrikeVelocityTape({
         </div>
         <AxisRow axis={layout.axis} xLabelShown={layout.xLabelShown} />
       </div>
+      {hoveredCell && <MinuteTooltip cell={hoveredCell} />}
     </div>
   );
 }
@@ -218,12 +257,18 @@ function PanelHead({
   emLower,
   scaleMode,
   onScaleChange,
+  helpOpen,
+  onToggleHelp,
+  onCloseHelp,
 }: {
   spot: number | null;
   emUpper: number | null;
   emLower: number | null;
   scaleMode: ScaleMode;
   onScaleChange: (m: ScaleMode) => void;
+  helpOpen: boolean;
+  onToggleHelp: () => void;
+  onCloseHelp: () => void;
 }) {
   // Cold-start (per the snapshotter contract documented at the top
   // of this file): all four headline fields populate atomically, so
@@ -234,18 +279,93 @@ function PanelHead({
   const isColdStart = spot == null;
   return (
     <div className="svt-panel-head">
-      <div>
-        <h3 className="svt-title">Strike Velocity Tape</h3>
+      <div className="svt-title-block">
+        <div className="svt-title-row">
+          <h3 className="svt-title">Strike Velocity Tape</h3>
+          <InfoButton open={helpOpen} onToggle={onToggleHelp} />
+        </div>
         <div className="svt-sub">
           {isColdStart
             ? "Replay window shown · spot + EM marks unavailable until session open"
             : "Per minute: one block. Height = total volume · color = which side dominates · outline = spike (≥3σ MAD)."}
         </div>
+        {helpOpen && <HelpPopover onClose={onCloseHelp} />}
       </div>
       <div className="svt-controls">
         <Readout spot={spot} emUpper={emUpper} emLower={emLower} />
         <ScaleToggle mode={scaleMode} onChange={onScaleChange} />
       </div>
+    </div>
+  );
+}
+
+function InfoButton({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`svt-info-btn${open ? " active" : ""}`}
+      aria-label="How to read the strike velocity tape"
+      aria-expanded={open}
+      onClick={onToggle}
+    >
+      ⓘ
+    </button>
+  );
+}
+
+function HelpPopover({ onClose }: { onClose: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Close on outside click. mousedown (not click) fires before any
+  // focus shift, so clicking elsewhere dismisses cleanly without an
+  // intermediate "open" frame.
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      onClose();
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [onClose]);
+  return (
+    <div ref={ref} className="svt-help-popover" role="dialog" aria-label="How to read">
+      <ul>
+        <li>
+          <b>Each row</b> is one strike. ATM strike is highlighted in amber.
+        </li>
+        <li>
+          <b>Each block</b> is one minute of trading. Block <b>height</b> = total
+          (call + put) volume for that minute.
+        </li>
+        <li>
+          <b>Block color</b> = which side dominates:
+          <span className="svt-help-swatch call" /> calls,
+          <span className="svt-help-swatch put" /> puts,
+          <span className="svt-help-swatch balanced" /> balanced.
+        </li>
+        <li>
+          <b>Bright outline</b> on a block = spike minute (≥3σ MAD from the
+          strike's recent baseline).
+        </li>
+        <li>
+          <b>Triangles in the strike column</b> mark spot (white) + EM upper /
+          lower (amber).
+        </li>
+        <li>
+          <b>Scale toggle</b>: <i>per row</i> normalizes each row to its own
+          peak (preserves shape on quiet strikes); <i>panel</i> uses a single
+          scale across all strikes (shows the day's standout strike).
+        </li>
+        <li>
+          Hover any block for the exact call/put split and timestamp.
+        </li>
+      </ul>
     </div>
   );
 }
@@ -328,6 +448,7 @@ function LaneRow({
   axis,
   scale,
   isAtm,
+  onCellHover,
 }: {
   row: {
     strike: number;
@@ -342,6 +463,7 @@ function LaneRow({
   axis: string[];
   scale: number;
   isAtm: boolean;
+  onCellHover: (cell: HoveredCell | null) => void;
 }) {
   return (
     <div className={`svt-row${isAtm ? " atm" : ""}`}>
@@ -350,7 +472,7 @@ function LaneRow({
         <div className="svt-strike-vol">{formatVolume(row.total)} vol</div>
       </div>
       <div className="svt-lane-cell">
-        <LaneSvg row={row} axis={axis} scale={scale} />
+        <LaneSvg row={row} axis={axis} scale={scale} onCellHover={onCellHover} />
       </div>
       <SessionSplit split={row.split} />
     </div>
@@ -361,8 +483,10 @@ function LaneSvg({
   row,
   axis,
   scale,
+  onCellHover,
 }: {
   row: {
+    strike: number;
     callMap: Map<string, number>;
     putMap: Map<string, number>;
     callSpikes: Set<string>;
@@ -370,6 +494,7 @@ function LaneSvg({
   };
   axis: string[];
   scale: number;
+  onCellHover: (cell: HoveredCell | null) => void;
 }) {
   const W = LANE_VIEWBOX_W;
   const H = LANE_VIEWBOX_H;
@@ -408,11 +533,44 @@ function LaneSvg({
       );
     }
   }
+  // Hover handler: one delegated listener for the whole row (vs ~30
+  // per-cell listeners) — maps cursor X → column index via
+  // `cellIndexFromX`, looks up the call/put/spike payload from the
+  // already-built maps, and dispatches to the panel. onMouseLeave
+  // clears so the tooltip dismisses when the cursor leaves the row.
+  const handleMove = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const colIdx = cellIndexFromX(e.clientX, rect, axis.length);
+    if (colIdx < 0) {
+      onCellHover(null);
+      return;
+    }
+    const ts = axis[colIdx];
+    const callVol = row.callMap.get(ts) ?? 0;
+    const putVol = row.putMap.get(ts) ?? 0;
+    if (callVol + putVol === 0 && !row.callSpikes.has(ts) && !row.putSpikes.has(ts)) {
+      // Empty cell + no orphan spike — surface nothing rather than
+      // a "0 vol" tooltip that adds noise on quiet minutes.
+      onCellHover(null);
+      return;
+    }
+    onCellHover({
+      strike: row.strike,
+      ts,
+      callVol,
+      putVol,
+      isSpike: row.callSpikes.has(ts) || row.putSpikes.has(ts),
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+    });
+  };
   return (
     <svg
       className="svt-lane-svg"
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
+      onMouseMove={handleMove}
+      onMouseLeave={() => onCellHover(null)}
     >
       <rect
         x={0}
@@ -547,6 +705,55 @@ function AxisRow({
       <div className="svt-axis-pad" />
       <div className="svt-axis-ticks">{ticks}</div>
       <div className="svt-axis-pad" />
+    </div>
+  );
+}
+
+// ── Minute hover tooltip ─────────────────────────────────────────
+
+function MinuteTooltip({ cell }: { cell: HoveredCell }) {
+  // Position the tooltip near the cursor but offset so it never sits
+  // directly under the pointer. Anchor TOP-LEFT relative to the cursor
+  // unless we're close to the right or bottom of the viewport, in
+  // which case flip to the opposite side so the tooltip stays visible.
+  // `position: fixed` so it escapes any panel overflow clipping.
+  const offset = 12;
+  const estW = 220; // rough tooltip width for overflow detection
+  const estH = 110;
+  const flipX = cell.mouseX + offset + estW > window.innerWidth;
+  const flipY = cell.mouseY + offset + estH > window.innerHeight;
+  const style: CSSProperties = {
+    position: "fixed",
+    left: flipX ? cell.mouseX - offset - estW : cell.mouseX + offset,
+    top: flipY ? cell.mouseY - offset - estH : cell.mouseY + offset,
+    pointerEvents: "none",
+    zIndex: 1000,
+  };
+  const total = cell.callVol + cell.putVol;
+  const callPct = total > 0 ? (cell.callVol / total) * 100 : 0;
+  const putPct = total > 0 ? (cell.putVol / total) * 100 : 0;
+  return (
+    <div className="svt-tooltip" style={style}>
+      <div className="svt-tooltip-head">
+        <span className="svt-tooltip-strike">Strike {cell.strike}</span>
+        <span className="svt-tooltip-time">{formatMinuteLabel(cell.ts)} ET</span>
+      </div>
+      <div className="svt-tooltip-total">
+        Total <b>{formatVolume(total)}</b>
+      </div>
+      <div className="svt-tooltip-split">
+        <span className="c">
+          C <b>{formatVolume(cell.callVol)}</b>
+          <i>{callPct.toFixed(0)}%</i>
+        </span>
+        <span className="p">
+          P <b>{formatVolume(cell.putVol)}</b>
+          <i>{putPct.toFixed(0)}%</i>
+        </span>
+      </div>
+      {cell.isSpike && (
+        <div className="svt-tooltip-spike">⚠ Spike (≥3σ MAD)</div>
+      )}
     </div>
   );
 }

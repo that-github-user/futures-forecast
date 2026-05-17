@@ -18,6 +18,7 @@ import type { VelocityStrike, VelocityTape } from "../../api/terminalTypes";
 import {
   buildMinuteAxis,
   buildXLabelMask,
+  cellIndexFromX,
   dominanceColor,
   formatMinuteLabel,
   formatVolume,
@@ -364,6 +365,46 @@ describe("dominanceColor", () => {
     const pureCall = dominanceColor(100, 0);
     expect(justOverThreshold).not.toBe(pureCall);
     expect(justOverThreshold).toMatch(/^rgb\(/);
+  });
+});
+
+// ── cellIndexFromX (hover-tooltip mouse → column) ─────────────────
+
+describe("cellIndexFromX", () => {
+  // Mock SVG bounding rect at left=100 width=600 (so the lane spans
+  // 100..700 in client coords). 30-minute axis → each column is 20px wide.
+  const rect = { left: 100, width: 600 };
+  const N = 30;
+  it("maps a cursor at the leftmost edge to column 0", () => {
+    expect(cellIndexFromX(100, rect, N)).toBe(0);
+    expect(cellIndexFromX(119, rect, N)).toBe(0);
+  });
+  it("maps a cursor at the rightmost cell to column N-1", () => {
+    expect(cellIndexFromX(685, rect, N)).toBe(29);
+  });
+  it("maps a cursor in the middle correctly", () => {
+    // x=300: each column is 20px wide (600/30), col 0 spans 100..119,
+    // col 1 spans 120..139, ..., col 10 spans 300..319. x=300 lands at
+    // the START of col 10.
+    expect(cellIndexFromX(300, rect, N)).toBe(10);
+  });
+  it("returns -1 for cursor LEFT of the lane", () => {
+    expect(cellIndexFromX(50, rect, N)).toBe(-1);
+  });
+  it("returns -1 for cursor RIGHT of the lane (frac >= 1)", () => {
+    expect(cellIndexFromX(700, rect, N)).toBe(-1);
+    expect(cellIndexFromX(800, rect, N)).toBe(-1);
+  });
+  it("returns -1 on zero width (degenerate layout)", () => {
+    expect(cellIndexFromX(100, { left: 100, width: 0 }, N)).toBe(-1);
+  });
+  it("returns -1 on zero axisLength (empty tape)", () => {
+    expect(cellIndexFromX(300, rect, 0)).toBe(-1);
+  });
+  it("works with a long axis (regression guard for low cellW values)", () => {
+    // 200 columns over 600px → 3px per column. Cursor at x=190
+    // is 90/600=15% across → floor(0.15 * 200) = 30.
+    expect(cellIndexFromX(190, rect, 200)).toBe(30);
   });
 });
 
