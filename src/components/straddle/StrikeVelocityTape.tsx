@@ -51,7 +51,6 @@ import {
   rowTotalVolume,
   ROW_H,
   selectVisibleStrikes,
-  STRIKE_COL_W,
 } from "./strikeVelocityHelpers";
 import "./StrikeVelocityTape.css";
 
@@ -67,6 +66,22 @@ const LANE_CELL_PAD = 1;
 const SPIKE_STROKE = colors.textBright;
 const SPIKE_STROKE_W = 1.5;
 
+/**
+ * Cold-start contract for the headline fields (spot, emUpper, emLower,
+ * atmStrike). Per the snapshotter at
+ *   automated-dc-entry/futures_terminal/systems/straddle_chain.py:822-823
+ * `em_upper = spot + atm_straddle_mid` and `em_lower = spot -
+ * atm_straddle_mid` — all four fields populate atomically. Either every
+ * field is non-null (live snapshot) or every field is null (cold-start
+ * before the first snapshot of the session). The component handles
+ * both shapes:
+ *   - All non-null: triangles + ATM amber highlight + numeric chips.
+ *   - All null: panel still renders the replay lanes (replay tape is
+ *     independent of today's session). A "cold-start" notice in the
+ *     panel head explicitly cues the operator that spot + EM are
+ *     unavailable; readout chips show "—" instead of values.
+ *     `selectVisibleStrikes` falls back to the median tape strike.
+ */
 export interface StrikeVelocityTapeProps {
   tape: VelocityTape | null;
   /** Current spot price. */
@@ -78,21 +93,6 @@ export interface StrikeVelocityTapeProps {
   /** ATM strike — used to center the visible strike window and to
    *  amber-highlight that row. */
   atmStrike: number | null;
-  // ── Cold-start contract ──────────────────────────────────────────
-  // Per the snapshotter
-  // (automated-dc-entry/futures_terminal/systems/straddle_chain.py:822-823),
-  // `em_upper = spot + atm_straddle_mid` and `em_lower = spot -
-  // atm_straddle_mid` — all four headline fields (spot, emUpper,
-  // emLower, atmStrike) are populated atomically. Either every field
-  // is non-null (live snapshot) or every field is null (cold-start
-  // before the first snapshot of the session). The component handles
-  // both shapes:
-  //   - All non-null: triangles + ATM amber highlight + numeric chips.
-  //   - All null: panel still renders the replay lanes (replay tape
-  //     is independent of today's session). A "cold-start" notice in
-  //     the panel head explicitly cues the operator that spot + EM
-  //     are unavailable; readout chips show "—" instead of values.
-  //     `selectVisibleStrikes` falls back to the median tape strike.
 }
 
 type ScaleMode = "row" | "panel";
@@ -573,6 +573,3 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-// Re-export the geometry constants the CSS coordinates with, so tests
-// + CSS source can stay in lockstep.
-export { ROW_H, STRIKE_COL_W };

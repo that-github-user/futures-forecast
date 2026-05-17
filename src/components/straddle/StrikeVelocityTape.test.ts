@@ -385,13 +385,13 @@ describe("cold-start: all-null headlines", () => {
       strike({ strike: 7490, call_minutes: [], put_minutes: [minute(ts1, 60)] }),
     ],
   });
-  it("selectVisibleStrikes falls back to the median tape strike when atmStrike is null", () => {
-    // Median of [7510, 7500, 7490] is 7500. With maxRows=15 > 3 strikes,
-    // returns all sorted descending — the fallback never kicks in
-    // because there's nothing to clip.
+  it("selectVisibleStrikes with all-null headlines returns the full strike list sorted descending (early-return path)", () => {
+    // 3 strikes ≤ maxRows=15, so the helper short-circuits BEFORE the
+    // median fallback runs. The next test exercises the actual median-
+    // fallback branch (count > maxRows).
     expect(selectVisibleStrikes(t, null, 15)).toEqual([7510, 7500, 7490]);
   });
-  it("selectVisibleStrikes still centers on the median when capped under maxRows", () => {
+  it("selectVisibleStrikes median fallback fires when count > maxRows", () => {
     const wide = tape({
       strikes: Array.from({ length: 20 }, (_, i) =>
         strike({ strike: 7400 + i * 5 }),
