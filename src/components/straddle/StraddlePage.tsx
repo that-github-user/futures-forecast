@@ -18,7 +18,6 @@
  *     doesn't mistake synthetic data for live SPX positioning.
  */
 
-import { useMemo } from "react";
 import type { ProgramFlowEvent } from "../../api/terminalTypes";
 import { useStraddleData } from "../../hooks/useStraddleData";
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
@@ -38,23 +37,6 @@ import "./StraddlePage.css";
 
 export function StraddlePage() {
   const { data, loading, demoMode, refetch, refreshing } = useStraddleData();
-
-  // Memoize the strikeOrder list so `StrikeVelocityTape`'s downstream
-  // useMemo dependencies don't invalidate every poll. `data.strikes` is
-  // itself a fresh array on each poll, so this memo will rebuild on
-  // each poll too — but the resulting array becomes a single new
-  // reference instead of two, reducing churn one level. Tightening
-  // further would require value-equality memoization at the hook level.
-  // (We depend on `data` rather than `data?.strikes` so the React
-  // Compiler can preserve the manual memoization — its inferred
-  // dependency is the broader `data` reference.)
-  const strikeOrder = useMemo(
-    () =>
-      data?.strikes
-        ? [...data.strikes].map((s) => s.strike).sort((a, b) => b - a)
-        : undefined,
-    [data],
-  );
 
   // Cold-start: snapshotter hasn't yet written a row today. Headline
   // metric fields are null but `program_flow` is still populated, so
@@ -140,28 +122,24 @@ export function StraddlePage() {
               </div>
             </div>
 
-            {/* Strike Velocity Tape — frozen Friday-close trade-tick
-                replay promoted to its own major panel below the body
-                grid (was previously squeezed between the chart and
-                pin/upcoming column at 280px). Full-width here lets the
-                sparklines breathe; section header brands the panel as
-                a peer of the chart, not a sidebar. Renders independently
-                of the live snapshot so it surfaces even during cold-
-                start when the chart is hidden. The component renders
-                its own "(no replay available)" placeholder when the
-                backend hasn't run the replay script yet. */}
+            {/* Strike Velocity Tape — v4 lane redesign (#325). Replaces
+                the ECharts heatmap that shipped in #206. Per-strike row
+                with one block per minute (height = total volume, color
+                = call/put dominance). Spot + EM markers live in the
+                strike-column gutter as triangles; numeric values live
+                in the panel-head readout. Renders its own empty-state
+                when the snapshotter hasn't produced a tape yet. */}
             {data?.velocity_tape !== undefined && (
               <section
                 className="straddle-velocity-panel"
                 aria-label="Strike velocity tape"
               >
-                {/* Omit `height` — the major panel sizes to content
-                    (11 strikes × 48px row + header ≈ 680px). Capping
-                    at 540 forced an internal scrollbar, undercutting
-                    the peer-of-the-chart premise. */}
                 <StrikeVelocityTape
                   tape={data?.velocity_tape ?? null}
-                  strikeOrder={strikeOrder}
+                  spot={data?.spot ?? null}
+                  emUpper={data?.em_upper ?? null}
+                  emLower={data?.em_lower ?? null}
+                  atmStrike={data?.atm_strike ?? null}
                 />
               </section>
             )}

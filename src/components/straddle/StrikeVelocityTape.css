@@ -1,0 +1,350 @@
+/* StrikeVelocityTape (v4 lane redesign — #325) — responsive rules.
+ *
+ * The project's house pattern is inline styles for component
+ * primitives; this file holds only the rules that inline styles can't
+ * express cleanly: the CSS grid template for rows, the absolutely-
+ * positioned triangle overlay, and the responsive media queries.
+ *
+ * All colors / fonts go through CSS variables sourced from styles/
+ * tokens.ts at the top of the file so the velocity tape stays in
+ * theme-lockstep without each rule re-declaring values. Keep these
+ * synced when tokens.ts changes.
+ */
+
+/* ── Token aliases (sync with src/styles/tokens.ts) ───────────────*/
+.svt-lane-grid,
+.svt-row,
+.svt-panel-head,
+.svt-axis,
+.svt-readout,
+.svt-toggle,
+.svt-gutter-overlay {
+  --svt-bg-panel: #111827;
+  --svt-bg-elev: #1a2235;
+  --svt-border-dim: #1e293b;
+  --svt-border-mid: #334155;
+  --svt-ink-100: #f8fafc;
+  --svt-ink-80: #e2e8f0;
+  --svt-ink-60: #94a3b8;
+  --svt-ink-40: #64748b;
+  --svt-ink-30: #475569;
+  --svt-blue: #3b82f6;
+  --svt-blue-mid: #60a5fa;
+  --svt-amber: #f59e0b;
+  --svt-amber-mid: #fbbf24;
+  --svt-amber-dim: #b45309;
+}
+
+/* ── Panel head ───────────────────────────────────────────────────*/
+.svt-panel-head {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--svt-border-dim);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  background: var(--svt-bg-elev);
+}
+.svt-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--svt-ink-100);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.svt-sub {
+  font-size: 10.5px;
+  color: var(--svt-ink-40);
+  letter-spacing: 0.04em;
+}
+.svt-controls {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--svt-ink-60);
+  flex-wrap: wrap;
+}
+
+/* ── Readout chips ────────────────────────────────────────────────*/
+.svt-readout {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.svt-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--svt-border-mid);
+  border-radius: 2px;
+  background: var(--svt-bg-panel);
+  color: var(--svt-ink-80);
+}
+.svt-chip-lbl {
+  color: var(--svt-ink-40);
+  font-size: 9px;
+}
+.svt-chip-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.svt-chip-spot .svt-chip-lbl,
+.svt-chip-spot .svt-chip-val {
+  color: var(--svt-ink-100);
+}
+.svt-chip-em .svt-chip-lbl,
+.svt-chip-em .svt-chip-val {
+  color: var(--svt-amber);
+}
+.svt-chip-tri {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--svt-ink-100);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  margin-right: 1px;
+}
+.svt-chip-em .svt-chip-tri {
+  border-left-color: var(--svt-amber);
+}
+
+/* ── Scale toggle ─────────────────────────────────────────────────*/
+.svt-toggle {
+  display: inline-flex;
+  border: 1px solid var(--svt-border-mid);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--svt-bg-panel);
+}
+.svt-toggle button {
+  appearance: none;
+  background: transparent;
+  color: var(--svt-ink-60);
+  border: none;
+  padding: 4px 9px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 80ms, color 80ms;
+}
+.svt-toggle button:hover {
+  color: var(--svt-ink-100);
+}
+.svt-toggle button.active {
+  background: var(--svt-bg-elev);
+  color: var(--svt-ink-100);
+  box-shadow: inset 0 0 0 1px var(--svt-amber-dim);
+}
+.svt-toggle-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--svt-ink-40);
+  padding: 0 8px 0 4px;
+  align-self: center;
+}
+
+/* ── Lane grid + rows ─────────────────────────────────────────────*/
+.svt-lane-grid {
+  position: relative; /* anchors .svt-gutter-overlay */
+}
+.svt-row {
+  display: grid;
+  /* col 1 = strike (96px) | col 2 = lane (1fr) | col 3 = session (responsive)
+   * Strike column has padding-left:24px so the triangle overlay (left:0,
+   * width:96px, triangles at x=2..16) doesn't collide with the strike
+   * number, which is right-aligned within the column. */
+  grid-template-columns: 96px 1fr clamp(0px, 14vw, 120px);
+  align-items: stretch;
+  column-gap: 0;
+  border-bottom: 1px solid var(--svt-border-dim);
+  height: 44px;
+}
+.svt-row:last-child {
+  border-bottom: 0;
+}
+
+.svt-strike {
+  text-align: right;
+  padding: 0 10px 0 24px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--svt-ink-80);
+  letter-spacing: 0.02em;
+  border-right: 1px solid var(--svt-border-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 1px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+.svt-strike-vol {
+  font-size: 10px;
+  color: var(--svt-ink-40);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.svt-row.atm .svt-strike-px {
+  color: var(--svt-amber);
+}
+
+/* Lane cell: min-width:0 + svg width:100% so the SVG scales with the
+ * grid cell instead of holding its viewBox-width intrinsic size.
+ * Without this the rightmost minutes overflow at narrow viewports. */
+.svt-lane-cell {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 2px 0;
+  min-width: 0;
+}
+.svt-lane-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Session column. Shrinks with viewport via the clamp() on grid
+ * template, collapses entirely below 720px. */
+.svt-session {
+  padding: 0 8px 0 10px;
+  border-left: 1px solid var(--svt-border-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--svt-ink-40);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  min-width: 0;
+}
+.svt-split-bar {
+  height: 5px;
+  width: 100%;
+  background: var(--svt-bg-elev);
+  border-radius: 1px;
+  overflow: hidden;
+  display: flex;
+}
+.svt-split-call {
+  background: var(--svt-blue);
+  height: 100%;
+}
+.svt-split-put {
+  background: var(--svt-amber);
+  height: 100%;
+}
+.svt-session-nums {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--svt-ink-60);
+}
+.svt-session-nums .c {
+  color: var(--svt-blue-mid);
+}
+.svt-session-nums .p {
+  color: var(--svt-amber-mid);
+}
+
+/* ── Gutter triangle overlay (overlaps strike column) ─────────────*/
+.svt-gutter-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 96px;
+  pointer-events: none;
+  z-index: 1;
+}
+.svt-gutter-overlay svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.svt-tri-spot {
+  fill: var(--svt-ink-100);
+  stroke: none;
+}
+.svt-tri-em {
+  fill: var(--svt-amber);
+  stroke: none;
+}
+
+/* ── X-axis ───────────────────────────────────────────────────────*/
+.svt-axis {
+  display: grid;
+  grid-template-columns: 96px 1fr clamp(0px, 14vw, 120px);
+  align-items: center;
+  column-gap: 0;
+  padding-top: 6px;
+}
+.svt-axis-pad {
+  display: block;
+}
+.svt-axis-ticks {
+  height: 16px;
+  position: relative;
+  color: var(--svt-ink-40);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  min-width: 0;
+}
+.svt-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.svt-tick.now {
+  color: var(--svt-ink-100);
+  font-weight: 600;
+}
+
+/* ── Responsive collapse ──────────────────────────────────────────*/
+@media (max-width: 720px) {
+  .svt-row,
+  .svt-axis {
+    grid-template-columns: 78px 1fr 0px;
+  }
+  .svt-session {
+    display: none;
+  }
+  .svt-strike {
+    padding: 0 8px 0 22px;
+    font-size: 12px;
+  }
+  .svt-gutter-overlay {
+    width: 78px;
+  }
+}
+@media (max-width: 480px) {
+  .svt-row,
+  .svt-axis {
+    grid-template-columns: 64px 1fr 0px;
+  }
+  .svt-strike {
+    padding: 0 6px 0 20px;
+    font-size: 11px;
+  }
+  .svt-gutter-overlay {
+    width: 64px;
+  }
+}
