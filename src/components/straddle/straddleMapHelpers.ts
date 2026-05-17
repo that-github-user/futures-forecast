@@ -194,11 +194,46 @@ export function buildStraddleMapOption(
         // Match netOiTint's muted-neutral for exact-tie strikes
         // (net===0) so the tooltip header agrees with the bar color.
         const netColor = net > 0 ? colors.accentBlue : net < 0 ? colors.accentAmber : colors.textMuted;
+        // Color the NET flow value by sign so the operator can read
+        // direction without parsing the +/- prefix — matches the
+        // ▲ green / ▼ red glyph color convention on the bar.
+        const flowColor =
+          netFlow > 0
+            ? colors.accentGreen
+            : netFlow < 0
+              ? colors.accentRed
+              : colors.textMuted;
+        // Spot proximity (#333): operationally relevant for "is this
+        // strike near where the action is sitting right now?". Sign is
+        // strike-relative-to-spot — positive = strike is above spot.
+        // Null spot (cold-start) suppresses the line entirely.
+        const spotProximityLine =
+          data.spot == null
+            ? ""
+            : `<div style="margin-top:2px;color:${colors.textMuted};font-size:10px">` +
+              `spot ${data.spot.toFixed(2)} · ` +
+              `<span style="color:${colors.textPrimary}">strike ${strike >= data.spot ? "+" : ""}${(strike - data.spot).toFixed(2)}</span>` +
+              `</div>`;
+        // Within-EM badge — computed inline from the snapshot's
+        // em_lower/em_upper bounds (StraddleStrikeRow doesn't carry a
+        // per-row within_em flag; that lives on PinCandidate only).
+        // Useful when scanning a wide chart: this strike's flow is
+        // inside today's expected move, so it's more likely to matter
+        // for the close. Hidden during cold-start (any EM null).
+        const withinEm =
+          data.em_lower != null &&
+          data.em_upper != null &&
+          strike >= data.em_lower &&
+          strike <= data.em_upper;
+        const emBadge = withinEm
+          ? `<span style="margin-left:6px;padding:1px 5px;border:1px solid ${colors.accentAmber};color:${colors.accentAmber};border-radius:2px;font-size:9px;letter-spacing:0.06em">WITHIN EM</span>`
+          : "";
         return [
-          `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}</div>`,
+          `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}${emBadge}</div>`,
+          spotProximityLine,
           `<div style="margin-top:4px;color:${netColor}">`,
           `NET OI ${net >= 0 ? "+" : ""}${net.toFixed(0)} · `,
-          `NET flow ${netFlow >= 0 ? "+" : ""}${netFlow.toFixed(0)}`,
+          `<span style="color:${flowColor}">NET flow ${netFlow >= 0 ? "+" : ""}${netFlow.toFixed(0)}</span>`,
           `</div>`,
           `<div style="margin-top:4px;">`,
           `<span style="color:${colors.accentBlue}">CALL</span> `,

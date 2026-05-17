@@ -35,7 +35,7 @@
  *     the canvas otherwise — memory leak in long-running terminals).
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { StraddleChainResponse } from "../../api/terminalTypes";
@@ -44,6 +44,7 @@ import {
   buildStraddleMapOption,
   STRADDLE_MAP_GRID,
 } from "./straddleMapHelpers";
+import "./StraddleMapChart.css";
 
 interface Props {
   data: StraddleChainResponse | null;
@@ -90,6 +91,14 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
 
   const hasStrikes = !!data && data.strikes.length > 0;
 
+  // Info popover state (#333). Mirrors the velocity-panel pattern.
+  // Callbacks stabilized via useCallback so the HelpPopover's
+  // document-listener useEffect doesn't re-bind on every parent
+  // render (polling tick re-renders the chart prop chain).
+  const [helpOpen, setHelpOpen] = useState(false);
+  const onToggleHelp = useCallback(() => setHelpOpen((v) => !v), []);
+  const onCloseHelp = useCallback(() => setHelpOpen(false), []);
+
   return (
     <div
       style={{
@@ -103,6 +112,10 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
       }}
     >
       <StraddleMapLegend />
+      <div className="smc-info-anchor">
+        <InfoButton open={helpOpen} onToggle={onToggleHelp} />
+      </div>
+      {helpOpen && <HelpPopover onClose={onCloseHelp} />}
       <div
         ref={containerRef}
         role="img"
@@ -133,6 +146,86 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
           No 0DTE chain data yet
         </div>
       )}
+    </div>
+  );
+}
+
+function InfoButton({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`smc-info-btn${open ? " active" : ""}`}
+      aria-label="How to read the strike positioning chart"
+      aria-expanded={open}
+      onClick={onToggle}
+    >
+      ⓘ
+    </button>
+  );
+}
+
+function HelpPopover({ onClose }: { onClose: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Mirrors the velocity-panel pattern: outside mousedown OR Escape
+  // dismisses. Document-mousedown skips clicks on the ⓘ button so
+  // the button's own onClick handles the single-state-transition
+  // toggle (otherwise mousedown closes + click reopens — racy).
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      const target = e.target as Element | null;
+      if (target?.closest(".smc-info-btn")) return;
+      onClose();
+    }
+    function onDocKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onDocKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onDocKeyDown);
+    };
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      className="smc-help-popover"
+      role="dialog"
+      aria-label="How to read the strike positioning chart"
+    >
+      <ul>
+        <li>
+          <b>Each row</b> is one strike, highest strike at the top.
+        </li>
+        <li>
+          <b>Bars</b> extend right for call-dominant strikes
+          (<span className="swatch call" /> blue) and left for put-dominant
+          (<span className="swatch put" /> amber); length = |NET OI|.
+        </li>
+        <li>
+          <span className="glyph up">▲</span> on a bar = significant net
+          opening flow; <span className="glyph dn">▼</span> = net closing.
+          Threshold-gated so quiet strikes stay quiet.
+        </li>
+        <li>
+          <b>Dashed amber lines</b> = expected-move (EM) upper/lower bounds.
+          <b> Solid white line</b> = current spot. Both interpolate between
+          strike rows to land at the exact price (#321).
+        </li>
+        <li>
+          Hover any bar for the full call/put split — OI, volume, IV, Δ,
+          fresh-flow — plus spot proximity and a WITHIN EM badge when the
+          strike is inside today's expected move.
+        </li>
+      </ul>
     </div>
   );
 }
