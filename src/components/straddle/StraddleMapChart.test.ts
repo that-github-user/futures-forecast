@@ -26,6 +26,7 @@ import type {
 } from "../../api/terminalTypes";
 import { colors, withAlpha } from "../../styles/tokens";
 import {
+  buildReferenceLineIndices,
   buildStraddleMapOption,
   NET_FRESH_FLOW_GLYPH_MIN,
   NET_OI_ALPHA,
@@ -103,68 +104,65 @@ describe("buildStraddleMapOption", () => {
     ).toBeNull();
   });
 
-  it("emits markLine entries for em_upper, em_lower, and spot", () => {
-    const option = buildStraddleMapOption(snapshot());
-    expect(option).not.toBeNull();
-    // markLine lives on the single net-OI series.
-    const series = option!.series as Array<{
-      markLine?: { data?: Array<{ name?: string; yAxis?: number }> };
-    }>;
-    const markLines = series[0].markLine?.data ?? [];
-    const names = markLines.map((m) => m.name);
-    expect(names).toContain("em_upper");
-    expect(names).toContain("em_lower");
-    expect(names).toContain("spot");
-    // With yAxis=category, markLines are positioned by fractional
-    // category INDEX (strikes sorted descending: 0=5200, 1=5180, 2=5160).
-    // spot=5180 lines up exactly with index 1.
-    // em_upper=5202 is above the top strike (5200) → clamps to 0.
-    // em_lower=5158 is below the bottom strike (5160) → clamps to 2.
-    expect(markLines.find((m) => m.name === "spot")?.yAxis).toBe(1);
-    expect(markLines.find((m) => m.name === "em_upper")?.yAxis).toBe(0);
-    expect(markLines.find((m) => m.name === "em_lower")?.yAxis).toBe(2);
+  it("computes reference-line indices for em_upper / em_lower / spot via the exported helper", () => {
+    // The fractional indices feed the component-side
+    // `applyReferenceLines` post-render step (`chart.convertToPixel`
+    // between integer indices, then linear interpolation). Strikes
+    // descending: [5200, 5180, 5160] → idx 0/1/2.
+    const indices = buildReferenceLineIndices(snapshot());
+    // spot=5180 lines up exactly with idx 1 (on-strike).
+    expect(indices.spot).toBe(1);
+    // em_upper=5202 is above the top strike → clamps to 0.
+    expect(indices.emUpper).toBe(0);
+    // em_lower=5158 is below the bottom strike → clamps to N-1 = 2.
+    expect(indices.emLower).toBe(2);
   });
 
-  it("interpolates markLine yAxis index for values between strikes", () => {
-    // Spot 5170 falls exactly halfway between strike rows index 1 (5180)
-    // and index 2 (5160). categoryIndex should return 1.5 — ECharts
-    // accepts fractional indices on category axes.
-    const option = buildStraddleMapOption(snapshot({ spot: 5170 }));
-    const markLines = (option!.series as Array<{
-      markLine?: { data?: Array<{ name?: string; yAxis?: number }> };
-    }>)[0].markLine!.data!;
-    expect(markLines.find((m) => m.name === "spot")?.yAxis).toBeCloseTo(1.5, 3);
+  it("interpolates reference-line indices for values between strikes (#321)", () => {
+    // spot 5170 is exactly halfway between 5180 (idx 1) and 5160
+    // (idx 2). The helper returns 1.5 so the component can map it
+    // to a precise pixel y via interpolation.
+    const indices = buildReferenceLineIndices(snapshot({ spot: 5170 }));
+    expect(indices.spot).toBeCloseTo(1.5, 5);
   });
 
-  it("renders em markLines as dashed and spot markLine as solid", () => {
-    const option = buildStraddleMapOption(snapshot());
-    const markLines = (option!.series as Array<{
-      markLine?: {
-        data?: Array<{ name?: string; lineStyle?: { type?: string } }>;
-      };
-    }>)[0].markLine!.data!;
-    expect(markLines.find((m) => m.name === "em_upper")?.lineStyle?.type).toBe(
-      "dashed",
-    );
-    expect(markLines.find((m) => m.name === "em_lower")?.lineStyle?.type).toBe(
-      "dashed",
-    );
-    expect(markLines.find((m) => m.name === "spot")?.lineStyle?.type).toBe(
-      "solid",
-    );
-  });
-
-  it("omits a markLine for any null em / spot field (cold-start defense)", () => {
-    const option = buildStraddleMapOption(
+  it("returns null indices when any headline field is null (cold-start)", () => {
+    const indices = buildReferenceLineIndices(
       snapshot({ em_lower: null, spot: null }),
     );
-    const markLines = (option!.series as Array<{
-      markLine?: { data?: Array<{ name?: string }> };
-    }>)[0].markLine!.data!;
-    const names = markLines.map((m) => m.name);
-    expect(names).toContain("em_upper");
-    expect(names).not.toContain("em_lower");
-    expect(names).not.toContain("spot");
+    expect(indices.spot).toBeNull();
+    expect(indices.emLower).toBeNull();
+    expect(indices.emUpper).toBe(0); // still set
+  });
+
+  it("returns all-null indices for empty strikes or null data", () => {
+    expect(buildReferenceLineIndices(null)).toEqual({
+      spot: null,
+      emUpper: null,
+      emLower: null,
+    });
+    expect(buildReferenceLineIndices(snapshot({ strikes: [] }))).toEqual({
+      spot: null,
+      emUpper: null,
+      emLower: null,
+    });
+  });
+
+  it("does NOT emit markLine entries — reference lines are graphic overlays (#321)", () => {
+    // Pre-#321: spot + EM were `markLine` entries with fractional yAxis
+    // on a category axis. ECharts 6.x's OrdinalScale.parse rounds those
+    // values, mis-aligning the lines by up to ±half a strike interval.
+    // Fix: the option builder no longer emits markLine; the component
+    // overlays graphic-line elements via `applyReferenceLines` using
+    // `convertToPixel` between integer indices. Test that the option
+    // does NOT carry a markLine on the net-OI series — the absence is
+    // the contract.
+    const option = buildStraddleMapOption(snapshot());
+    expect(option).not.toBeNull();
+    const series = option!.series as Array<{
+      markLine?: unknown;
+    }>;
+    expect(series[0].markLine).toBeUndefined();
   });
 
   it("renders a category yAxis with strike labels in descending order", () => {
