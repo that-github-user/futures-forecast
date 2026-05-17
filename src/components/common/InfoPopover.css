@@ -76,6 +76,18 @@
   font-weight: 600;
 }
 
+/* Inline token labels — used in bullets to set off identifiers that
+ * refer to UI elements (e.g., scale-toggle modes "per row" / "panel").
+ * Amber-tinted, NOT italicized, so they read as named tokens rather
+ * than emphasized prose. (Carried over from the StrikeVelocityTape
+ * pre-extraction CSS during #334 lift; the convention applies to any
+ * consumer that wants to mark up token references inside popover
+ * content.) */
+.info-popover-panel i {
+  color: var(--accent-amber);
+  font-style: normal;
+}
+
 /* Inline swatch + glyph helpers commonly used inside help bullets.
  * Color of each is consumer-overridable via the same selectors. */
 .info-popover-panel .swatch {

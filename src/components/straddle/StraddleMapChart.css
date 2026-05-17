@@ -21,5 +21,6 @@
   top: 28px;
   right: 0;
   left: auto;
-  width: min(420px, calc(100vw - 40px));
+  /* width inherited from the InfoPopover.css default
+   * (min(420px, calc(100vw - 40px))) — kept implicit to avoid drift. */
 }

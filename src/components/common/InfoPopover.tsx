@@ -23,6 +23,18 @@
  * <ul> or whatever fits. The `label` prop drives BOTH the button's
  * aria-label and the dialog's aria-label so screen readers see the
  * same description in both spots.
+ *
+ * Single-popover-open assumption: the document-mousedown handler's
+ * `closest(".info-popover-btn")` skip is global by class selector,
+ * so if TWO instances of <InfoPopover> were ever simultaneously open
+ * on the same page, clicking instance B's ⓘ would cause instance A's
+ * handler to skip its close path (the button selector matches any
+ * info-popover-btn, not just its own). This isn't reachable in the
+ * current consumer set — each chart panel has at most one popover,
+ * and clicking another panel's ⓘ closes the first via outside-
+ * mousedown before the skip check fires. If future use exposes the
+ * race, scope the skip via a useRef on the OWN button rather than a
+ * class selector.
  */
 
 import {

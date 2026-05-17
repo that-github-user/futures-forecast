@@ -314,7 +314,11 @@
   font-weight: 600;
 }
 
-/* ── Info button + help popover (#329) ───────────────────────────*/
+/* ── Title row + info popover positioning override (#329, #334) ──
+ * Visual styling for the ⓘ button + popover lives in
+ * src/components/common/InfoPopover.css after the #334 lift; this
+ * section only carries the title-row layout + the velocity-panel-
+ * specific popover anchor. */
 .svt-title-block {
   min-width: 0;
 }
