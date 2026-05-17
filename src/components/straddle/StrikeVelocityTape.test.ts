@@ -29,9 +29,13 @@ import {
   buildHeatmapCells,
   buildMinuteAxis,
   buildSpotPathPoints,
+  buildSpotPathSeries,
+  buildUnifiedMinuteAxis,
   computeMaxVolume,
   formatMinuteLabel,
   formatVolume,
+  HEATMAP_GRID_BOTTOM,
+  HEATMAP_GRID_TOP,
   resolveStrikeOrder,
   rowTotalVolume,
   SPIKE_BORDER_COLOR,
@@ -185,7 +189,7 @@ describe("buildHeatmapCells", () => {
   const ts2 = "2026-05-15T15:31:00-04:00";
   const ts3 = "2026-05-15T15:32:00-04:00";
 
-  it("emits combined call + put volume per (row, col) cell", () => {
+  it("emits a cell for EVERY (row, col) — including zero-volume cells (#206 R2 B2)", () => {
     const t = tape({
       strikes: [
         strike({
@@ -196,14 +200,17 @@ describe("buildHeatmapCells", () => {
       ],
     });
     const cells = buildHeatmapCells(t, [7500], [ts1, ts2, ts3]);
-    // ts1: call 60 + put 10 = 70; ts2: call 50; ts3: no print (skipped)
+    // ts1: call 60 + put 10 = 70; ts2: call 50; ts3: no print → 0 cell
+    // (operator can still hover for "0 prints this minute"; the
+    // visualMap low stop renders this as a faint baseline tint).
     expect(cells.map((c) => c.value)).toEqual([
       [0, 0, 70],
       [1, 0, 50],
+      [2, 0, 0],
     ]);
   });
 
-  it("skips cells with zero combined volume (no print)", () => {
+  it("emits zero-volume cells with no itemStyle (no spike border)", () => {
     const t = tape({
       strikes: [
         strike({
@@ -214,9 +221,11 @@ describe("buildHeatmapCells", () => {
       ],
     });
     const cells = buildHeatmapCells(t, [7500], [ts1, ts2]);
-    // Only one cell — ts2 had no print on either side.
-    expect(cells.length).toBe(1);
+    // Both ts1 and ts2 emit; ts2 is a zero cell with no spike border.
+    expect(cells.length).toBe(2);
     expect(cells[0].value).toEqual([0, 0, 60]);
+    expect(cells[1].value).toEqual([1, 0, 0]);
+    expect(cells[1].itemStyle).toBeUndefined();
   });
 
   it("attaches a spike border when the minute is in either side's spike set", () => {
@@ -237,8 +246,10 @@ describe("buildHeatmapCells", () => {
       borderColor: SPIKE_BORDER_COLOR,
       borderWidth: SPIKE_BORDER_WIDTH,
     });
-    // Spike border uses the accentRed token.
-    expect(SPIKE_BORDER_COLOR).toBe(colors.accentRed);
+    // Spike border uses the textBright token (NOT accentRed) so it
+    // remains visible on the heatmap's hottest cells, which are
+    // themselves accentRed via the visualMap top stop (#206 R2 B1).
+    expect(SPIKE_BORDER_COLOR).toBe(colors.textBright);
   });
 
   it("flags a put-only spike just as it flags a call spike", () => {
@@ -281,6 +292,65 @@ describe("buildHeatmapCells", () => {
     const cells = buildHeatmapCells(t, [7510, 7500], [ts1]);
     // 7510 not in tape — only 7500 emits, at rowIdx=1 (caller's order).
     expect(cells).toEqual([{ value: [0, 1, 10] }]);
+  });
+
+  it("attaches spike borders to BOTH cells when two strikes spike at the same minute (#206 R1 I5)", () => {
+    // Two strikes both spiking at ts1 — assert both cells carry the
+    // spike border with their respective rowIdx values. Regression
+    // guard against any per-strike state leaking across the row loop.
+    const t = tape({
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [minute(ts1, 700)],
+          put_minutes: [],
+          call_spike_minutes: [ts1],
+          put_spike_minutes: [],
+        }),
+        strike({
+          strike: 7505,
+          call_minutes: [minute(ts1, 800)],
+          put_minutes: [],
+          call_spike_minutes: [ts1],
+          put_spike_minutes: [],
+        }),
+      ],
+    });
+    const cells = buildHeatmapCells(t, [7505, 7500], [ts1]);
+    expect(cells.length).toBe(2);
+    // rowIdx=0 → 7505 (caller's first), rowIdx=1 → 7500 (caller's second)
+    expect(cells[0].value).toEqual([0, 0, 800]);
+    expect(cells[0].itemStyle?.borderColor).toBe(SPIKE_BORDER_COLOR);
+    expect(cells[1].value).toEqual([0, 1, 700]);
+    expect(cells[1].itemStyle?.borderColor).toBe(SPIKE_BORDER_COLOR);
+  });
+
+  it("attaches a spike border to a zero-volume cell when its timestamp is in the spike set (orphan-spike pinning, #206 R1 I6)", () => {
+    // An orphan spike: the spike-detection threshold flagged ts2, but
+    // there's no recorded minute on either side for ts2. With B2 (emit
+    // zero cells), the cell now DOES exist — and its spike border must
+    // still attach so the operator sees the flag.
+    const t = tape({
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [minute(ts1, 200)],
+          put_minutes: [],
+          call_spike_minutes: [ts2], // ts2 has zero volume → orphan
+          put_spike_minutes: [],
+        }),
+      ],
+    });
+    const cells = buildHeatmapCells(t, [7500], [ts1, ts2]);
+    expect(cells.length).toBe(2);
+    expect(cells[0].value).toEqual([0, 0, 200]);
+    expect(cells[0].itemStyle).toBeUndefined();
+    // ts2: zero volume, orphan spike → border still attaches.
+    expect(cells[1].value).toEqual([1, 0, 0]);
+    expect(cells[1].itemStyle).toEqual({
+      borderColor: SPIKE_BORDER_COLOR,
+      borderWidth: SPIKE_BORDER_WIDTH,
+    });
   });
 });
 
@@ -379,6 +449,156 @@ describe("formatMinuteLabel", () => {
 
   it("falls back to the raw input on a non-parseable timestamp", () => {
     expect(formatMinuteLabel("not-a-date")).toBe("not-a-date");
+  });
+});
+
+
+describe("buildUnifiedMinuteAxis", () => {
+  it("returns the union of strike-print minutes and spot_path minutes (#206 R2 B3)", () => {
+    // Strike prints at :30, :31, :33; spot path at :30, :31, :32, :33.
+    // Union: :30, :31, :32, :33 — :32 is spot-only, :33 is shared.
+    const t = tape({
+      spot_path: [
+        { ts: "2026-05-15T15:30:00-04:00", price: 7424.30 },
+        { ts: "2026-05-15T15:31:00-04:00", price: 7423.50 },
+        { ts: "2026-05-15T15:32:00-04:00", price: 7422.20 },
+        { ts: "2026-05-15T15:33:00-04:00", price: 7421.80 },
+      ],
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [
+            minute("2026-05-15T15:30:00-04:00", 60),
+            minute("2026-05-15T15:31:00-04:00", 50),
+            minute("2026-05-15T15:33:00-04:00", 40),
+          ],
+          put_minutes: [],
+        }),
+      ],
+    });
+    expect(buildUnifiedMinuteAxis(t)).toEqual([
+      "2026-05-15T15:30:00-04:00",
+      "2026-05-15T15:31:00-04:00",
+      "2026-05-15T15:32:00-04:00",
+      "2026-05-15T15:33:00-04:00",
+    ]);
+  });
+
+  it("falls back to strike-only minutes when spot_path is null", () => {
+    const t = tape({
+      spot_path: null,
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [
+            minute("2026-05-15T15:30:00-04:00", 60),
+            minute("2026-05-15T15:31:00-04:00", 50),
+          ],
+          put_minutes: [],
+        }),
+      ],
+    });
+    expect(buildUnifiedMinuteAxis(t)).toEqual([
+      "2026-05-15T15:30:00-04:00",
+      "2026-05-15T15:31:00-04:00",
+    ]);
+  });
+
+  it("includes spot-only minutes even when no strike printed (B3 silent-misalignment guard)", () => {
+    // Strike printed only at :30. Spot path covers :30, :31, :32. The
+    // unified axis must include :31 and :32 so the spot chart's later
+    // points don't get collapsed onto the same x-position as :30 in
+    // the heatmap (the original bug).
+    const t = tape({
+      spot_path: [
+        { ts: "2026-05-15T15:30:00-04:00", price: 7424.30 },
+        { ts: "2026-05-15T15:31:00-04:00", price: 7423.50 },
+        { ts: "2026-05-15T15:32:00-04:00", price: 7422.20 },
+      ],
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [minute("2026-05-15T15:30:00-04:00", 60)],
+          put_minutes: [],
+        }),
+      ],
+    });
+    expect(buildUnifiedMinuteAxis(t)).toEqual([
+      "2026-05-15T15:30:00-04:00",
+      "2026-05-15T15:31:00-04:00",
+      "2026-05-15T15:32:00-04:00",
+    ]);
+  });
+
+  it("dedupes when a timestamp appears in both strike minutes and spot_path", () => {
+    const ts = "2026-05-15T15:30:00-04:00";
+    const t = tape({
+      spot_path: [{ ts, price: 7424.30 }],
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [minute(ts, 60)],
+          put_minutes: [],
+        }),
+      ],
+    });
+    expect(buildUnifiedMinuteAxis(t)).toEqual([ts]);
+  });
+});
+
+
+describe("buildSpotPathSeries", () => {
+  const ts1 = "2026-05-15T15:30:00-04:00";
+  const ts2 = "2026-05-15T15:31:00-04:00";
+  const ts3 = "2026-05-15T15:32:00-04:00";
+
+  it("returns prices aligned to the axis with null for missing minutes (#206 R2 B3)", () => {
+    const t = tape({
+      spot_path: [
+        { ts: ts1, price: 7424.30 },
+        { ts: ts3, price: 7422.20 },
+      ],
+    });
+    // ts2 is in the axis but absent from spot_path → null at that index.
+    expect(buildSpotPathSeries(t, [ts1, ts2, ts3])).toEqual([7424.30, null, 7422.20]);
+  });
+
+  it("returns null when spot_path is null", () => {
+    expect(buildSpotPathSeries(tape({ spot_path: null }), [ts1, ts2])).toBeNull();
+  });
+
+  it("returns null when spot_path has zero entries", () => {
+    expect(buildSpotPathSeries(tape({ spot_path: [] }), [ts1, ts2])).toBeNull();
+  });
+
+  it("returns null when the axis has fewer than 2 non-null aligned points", () => {
+    // spot_path has one point that lines up with the axis — not enough
+    // to form a line.
+    const t = tape({ spot_path: [{ ts: ts1, price: 7424.30 }] });
+    expect(buildSpotPathSeries(t, [ts1, ts2])).toBeNull();
+  });
+
+  it("emits the price for every shared axis minute when fully covered", () => {
+    const t = tape({
+      spot_path: [
+        { ts: ts1, price: 7424.30 },
+        { ts: ts2, price: 7423.50 },
+      ],
+    });
+    expect(buildSpotPathSeries(t, [ts1, ts2])).toEqual([7424.30, 7423.50]);
+  });
+});
+
+
+describe("heatmap grid constants", () => {
+  // The RightTotalsColumn wrapper anchors `top`/`bottom` to these same
+  // numbers so the labels sit at the heatmap row centers. If either
+  // constant changes, the wrapper must change in lockstep (#206 R1 I2).
+  it("exposes HEATMAP_GRID_TOP and HEATMAP_GRID_BOTTOM as numbers", () => {
+    expect(typeof HEATMAP_GRID_TOP).toBe("number");
+    expect(typeof HEATMAP_GRID_BOTTOM).toBe("number");
+    expect(HEATMAP_GRID_TOP).toBeGreaterThan(0);
+    expect(HEATMAP_GRID_BOTTOM).toBeGreaterThan(HEATMAP_GRID_TOP);
   });
 });
 

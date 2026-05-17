@@ -41,11 +41,14 @@ import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { VelocityStrike, VelocityTape } from "../../api/terminalTypes";
 import {
   buildHeatmapCells,
-  buildMinuteAxis,
   buildSpotPathPoints,
+  buildSpotPathSeries,
+  buildUnifiedMinuteAxis,
   computeMaxVolume,
   formatMinuteLabel,
   formatVolume,
+  HEATMAP_GRID_BOTTOM,
+  HEATMAP_GRID_TOP,
   resolveStrikeOrder,
   rowTotalVolume,
   sumVolume,
@@ -80,15 +83,21 @@ interface Props {
   height?: number;
 }
 
-/** Compact SPX spot-path line chart, anchored above the heatmap. */
-function SpotPathChart({ tape }: { tape: VelocityTape }) {
+/** Compact SPX spot-path line chart, anchored above the heatmap.
+ *
+ *  Renders against the SHARED minute axis (`axis` prop) — the same axis
+ *  the heatmap uses — so column N of the heatmap and point N of the
+ *  spot line refer to the SAME wall-clock minute (#206 R2 B3). Missing
+ *  minutes (axis ticks that have no spot_path entry) render as a gap
+ *  in the line via null values in the series data. */
+function SpotPathChart({ tape, axis }: { tape: VelocityTape; axis: string[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
-  // Resolve the data once per tape — buildSpotPathPoints returns null
-  // when there's no path to draw (handled by the caller; we still guard
-  // here to keep the chart effect pure).
-  const points = useMemo(() => buildSpotPathPoints(tape), [tape]);
+  // Resolve the axis-aligned series once per (tape, axis). Returns null
+  // when fewer than 2 non-null points exist (matches the legacy
+  // buildSpotPathPoints contract — caller hides the section).
+  const series = useMemo(() => buildSpotPathSeries(tape, axis), [tape, axis]);
 
   // ── Init once ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -106,14 +115,36 @@ function SpotPathChart({ tape }: { tape: VelocityTape }) {
 
   // ── Re-bind options whenever data changes ──────────────────────────
   const option = useMemo<EChartsOption | null>(() => {
-    if (!points || points.length < 2) return null;
-    const prices = points.map((p) => p[1]);
+    if (!series || axis.length === 0) return null;
+    const prices: number[] = [];
+    for (const v of series) if (v !== null) prices.push(v);
+    if (prices.length < 2) return null;
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     const range = Math.max(0.01, max - min);
     // 5% headroom on each side so the line never hugs the chart edge.
     const yMin = min - range * 0.05;
     const yMax = max + range * 0.05;
+    // Endpoints for markPoint: first and last NON-NULL values, paired
+    // with their axis indices so the markers sit on the actual data
+    // points (axis category index, not time). Captured as concrete
+    // numbers (not `null`) so the coord arrays we hand to ECharts
+    // satisfy MarkPointDataItemOption's `(string | number)[]` shape.
+    let firstIdx = -1;
+    let lastIdx = -1;
+    let firstPrice = NaN;
+    let lastPrice = NaN;
+    for (let i = 0; i < series.length; i++) {
+      const v = series[i];
+      if (v !== null) {
+        if (firstIdx === -1) {
+          firstIdx = i;
+          firstPrice = v;
+        }
+        lastIdx = i;
+        lastPrice = v;
+      }
+    }
     return {
       backgroundColor: "transparent",
       animation: false,
@@ -126,7 +157,10 @@ function SpotPathChart({ tape }: { tape: VelocityTape }) {
       },
       xAxis: {
         type: "category",
-        data: points.map((p) => p[0]),
+        // Render against the SHARED minute axis (same as the heatmap)
+        // so equal x-coordinates between this chart and the heatmap
+        // represent the same wall-clock minute (#206 R2 B3).
+        data: axis,
         axisLine: { lineStyle: { color: colors.borderDim } },
         axisTick: { show: false },
         axisLabel: { show: false },
@@ -157,11 +191,14 @@ function SpotPathChart({ tape }: { tape: VelocityTape }) {
         textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
         formatter: (params: unknown) => {
           if (!Array.isArray(params) || params.length === 0) return "";
-          const p = params[0] as { axisValue?: string; data?: number };
+          const p = params[0] as { axisValue?: string; data?: number | null };
           const ts = typeof p.axisValue === "string" ? p.axisValue : "";
-          const price = typeof p.data === "number" ? p.data : NaN;
           const label = ts ? formatMinuteLabel(ts) : "";
-          return `<div style="color:${colors.textBright}">SPX ${price.toFixed(2)}</div>` +
+          if (p.data === null || p.data === undefined || typeof p.data !== "number") {
+            return `<div style="color:${colors.textMuted}">SPX —</div>` +
+              `<div style="color:${colors.textMuted};margin-top:2px">${label} ET</div>`;
+          }
+          return `<div style="color:${colors.textBright}">SPX ${p.data.toFixed(2)}</div>` +
             `<div style="color:${colors.textMuted};margin-top:2px">${label} ET</div>`;
         },
       },
@@ -170,32 +207,39 @@ function SpotPathChart({ tape }: { tape: VelocityTape }) {
           type: "line",
           smooth: true,
           showSymbol: false,
+          // ECharts skips null values in line series, creating a clean
+          // gap rather than a fake interpolated value across missing
+          // minutes (#206 R2 B3).
+          connectNulls: false,
           // Endpoint markers anchor the eye to the start/end prices the
           // header surfaces in text — operator can correlate the chart
-          // tail to "{start} → {end}" without cross-referencing.
-          markPoint: {
-            symbol: "circle",
-            symbolSize: 6,
-            itemStyle: { color: colors.accentAmber, borderColor: colors.bgPanel, borderWidth: 1 },
-            label: { show: false },
-            data: [
-              { name: "start", coord: [points[0][0], points[0][1]] },
-              { name: "end", coord: [points[points.length - 1][0], points[points.length - 1][1]] },
-            ],
-          },
+          // tail to "{start} → {end}" without cross-referencing. Anchored
+          // on the first/last NON-NULL axis indices.
+          markPoint: firstIdx >= 0 && lastIdx >= 0 && firstIdx !== lastIdx
+            ? {
+                symbol: "circle",
+                symbolSize: 6,
+                itemStyle: { color: colors.accentAmber, borderColor: colors.bgPanel, borderWidth: 1 },
+                label: { show: false },
+                data: [
+                  { name: "start", coord: [axis[firstIdx], firstPrice] },
+                  { name: "end", coord: [axis[lastIdx], lastPrice] },
+                ],
+              }
+            : undefined,
           lineStyle: { color: colors.accentAmber, width: 1.6 },
-          data: points.map((p) => p[1]),
+          data: series,
         },
       ],
     };
-  }, [points]);
+  }, [series, axis]);
 
   useEffect(() => {
     if (!chartRef.current || !option) return;
     chartRef.current.setOption(option, { notMerge: true });
   }, [option]);
 
-  if (!points) return null;
+  if (!series) return null;
   return (
     <div
       ref={containerRef}
@@ -246,25 +290,55 @@ function HeatmapChart({
   // ── Re-bind options whenever data changes ──────────────────────────
   const option = useMemo<EChartsOption | null>(() => {
     if (axis.length === 0 || strikes.length === 0) return null;
-    // X-axis labels at 5-min intervals so the tape doesn't read as a
-    // wall of timestamps. ECharts category axes accept a per-tick
-    // formatter; we sample every 5th index off the formatted minute
-    // (or render empty when not on a 5-min boundary).
+    // X-axis labels at 5-min intervals derived from the WALL-CLOCK minute
+    // (not the array index) so labels land on :00/:05 boundaries
+    // regardless of where the replay window starts (#206 R1 I1). If the
+    // axis starts at 15:32, this surfaces labels at 15:35/15:40/15:45 —
+    // not 15:32/15:37/15:42, which an index-based stride would produce.
     const xLabels = axis.map((ts) => formatMinuteLabel(ts));
+    const xLabelShown = axis.map((ts) => {
+      const label = formatMinuteLabel(ts);
+      // formatMinuteLabel returns "HH:MM" (or the raw string on parse
+      // failure). Parse the minute out and show only when minute mod 5
+      // === 0. On a parse failure we fall back to showing the label so
+      // operators still see SOMETHING rather than an axis going silent.
+      const m = /:(\d{2})$/.exec(label);
+      if (!m) return true;
+      return Number(m[1]) % 5 === 0;
+    });
     // Strike labels go on the left axis with the highest strike at the
     // top — y-axis natively renders categories bottom-up, so we feed it
     // descending strings and rely on `inverse: false` so [0] ends up at
     // the BOTTOM, then flip with `inverse: true`. Easier: just feed
     // already-descending strikes and inverse=true. We choose the latter.
     const yLabels = strikes.map((s) => s.toFixed(0));
+    // Latest-minute accent (#206 R2 I1): a dashed vertical line between
+    // the last and second-to-last cells draws the eye to "what's hot
+    // right now". Skipped when axis has fewer than 2 minutes.
+    const latestMinuteMarkLine = axis.length >= 2
+      ? {
+          symbol: "none",
+          silent: true,
+          animation: false,
+          lineStyle: {
+            color: withAlpha(colors.textBright, 0.4),
+            type: "dashed" as const,
+            width: 1,
+          },
+          label: { show: false },
+          data: [{ xAxis: axis.length - 1 }],
+        }
+      : undefined;
     return {
       backgroundColor: "transparent",
       animation: false,
       grid: {
         left: STRIKE_LABEL_WIDTH,
         right: TOTAL_LABEL_WIDTH,
-        top: 10,
-        bottom: 30,
+        // Heatmap plot bounds are pulled from the shared constants so
+        // the RightTotalsColumn wrapper stays in lockstep (#206 R1 I2).
+        top: HEATMAP_GRID_TOP,
+        bottom: HEATMAP_GRID_BOTTOM,
         containLabel: false,
       },
       xAxis: {
@@ -278,9 +352,12 @@ function HeatmapChart({
           color: colors.textSecondary,
           fontFamily: fonts.mono,
           fontSize: 10,
-          // Only render every 5th tick label (5-min cadence). ECharts
-          // accepts a formatter that returns "" to hide labels per-tick.
-          interval: (i: number) => i % 5 === 0,
+          // Label visibility is derived from the WALL-CLOCK minute (see
+          // xLabelShown above). ECharts' `interval` axis callback
+          // receives `(index, value)`; we precomputed the boolean per
+          // tick so the callback is a simple array lookup. Returning
+          // true shows the label, false hides it.
+          interval: (i: number) => xLabelShown[i] === true,
         },
       },
       yAxis: {
@@ -292,6 +369,13 @@ function HeatmapChart({
         // matching how operators read option chains (calls/upside above
         // ATM, puts/downside below).
         inverse: true,
+        // Lock the band layout so RightTotalsColumn's flex:1 row
+        // distribution stays aligned with the heatmap's strike rows
+        // (#206 R1 I2). For category axes, `boundaryGap: true` makes
+        // each category occupy a full band with the tick at the band
+        // center — heatmap cells then span an entire band per strike,
+        // matching the equal-flex rows in RightTotalsColumn.
+        boundaryGap: true,
         axisLine: { show: false },
         axisTick: { show: false },
         splitArea: { show: false },
@@ -309,11 +393,15 @@ function HeatmapChart({
         calculable: false,
         show: false,
         inRange: {
-          // Warm gradient: dark transparent panel → amber → bright red
-          // at peak. Background panel base means low-volume cells fade
-          // into the panel; only meaningful flow reads as "lit".
+          // Warm gradient: faint amber baseline → amber mid → bright red
+          // at peak. The baseline tint (low stop) is a faint amber wash
+          // rather than fully transparent so zero-volume cells still
+          // render as a visible cell — operator can hover them to see
+          // "0 prints this minute" instead of the cell vanishing into
+          // background (#206 R2 B2). The mid stop stays amber so the
+          // gradient still climbs warmth-to-heat through the band.
           color: [
-            withAlpha(colors.bgPanel, 0),
+            withAlpha(colors.accentAmber, 0.12),
             withAlpha(colors.accentAmber, 0.55),
             colors.accentRed,
           ],
@@ -338,17 +426,24 @@ function HeatmapChart({
           const callSpike = row?.call_spike_minutes.includes(ts) ?? false;
           const putSpike = row?.put_spike_minutes.includes(ts) ?? false;
           const spikeLine = callSpike && putSpike
-            ? `<div style="color:${colors.accentRed};margin-top:4px">⚠ Spike (both)</div>`
+            ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (both)</div>`
             : callSpike
-              ? `<div style="color:${colors.accentRed};margin-top:4px">⚠ Spike (call)</div>`
+              ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (call)</div>`
               : putSpike
-                ? `<div style="color:${colors.accentRed};margin-top:4px">⚠ Spike (put)</div>`
+                ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (put)</div>`
                 : "";
+          // Put-side label uses `accentBlue` (the same hue as the call
+          // side, paired with the "PUT"/"CALL" prefix to carry the
+          // distinction via text) rather than `accentAmber`. Amber is
+          // the heatmap's midpoint visualMap color, so a warm-amber
+          // cell with amber put-text in its tooltip produced a
+          // chromatic clash (#206 R2 I4). Matches PinCandidatesPanel
+          // text-only-distinction convention.
           return [
             `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}</div>`,
             `<div style="color:${colors.textMuted};margin-top:2px">${formatMinuteLabel(ts)} ET</div>`,
             `<div style="margin-top:4px;color:${colors.textPrimary}">Total: ${formatVolume(totalVol)}</div>`,
-            `<div style="margin-top:2px"><span style="color:${colors.accentBlue}">Call ${formatVolume(callVol)}</span> / <span style="color:${colors.accentAmber}">Put ${formatVolume(putVol)}</span></div>`,
+            `<div style="margin-top:2px"><span style="color:${colors.accentBlue}">CALL ${formatVolume(callVol)}</span> / <span style="color:${colors.accentBlue}">PUT ${formatVolume(putVol)}</span></div>`,
             spikeLine,
           ].join("");
         },
@@ -364,10 +459,15 @@ function HeatmapChart({
           },
           emphasis: {
             itemStyle: {
+              // Bump emphasis borderWidth above the spike border (2px)
+              // so hovering a spike cell always produces a visible
+              // delta — without this, hovering a spike cell looked
+              // identical to the resting state (#206 R2 I3).
               borderColor: colors.textBright,
-              borderWidth: 2,
+              borderWidth: 3,
             },
           },
+          markLine: latestMinuteMarkLine,
           progressive: 0, // disable progressive rendering for crispness
         },
       ],
@@ -414,9 +514,12 @@ export function StrikeVelocityTape({
     [strikeOrder, tape],
   );
 
-  // ── Shared minute axis (union of all minutes in the tape) ─────────
+  // ── Shared minute axis (union of strike minutes ∪ spot-path minutes)
+  // Both the spot-path chart and the heatmap consume this same axis so
+  // a column index in one refers to the SAME wall-clock minute as the
+  // same column index in the other (#206 R2 B3).
   const axis = useMemo(
-    () => (tape ? buildMinuteAxis(tape) : []),
+    () => (tape ? buildUnifiedMinuteAxis(tape) : []),
     [tape],
   );
 
@@ -626,7 +729,7 @@ export function StrikeVelocityTape({
               {spotSummary.change.toFixed(2)})
             </span>
           </div>
-          <SpotPathChart tape={tape} />
+          <SpotPathChart tape={tape} axis={axis} />
         </div>
       )}
 
@@ -669,7 +772,14 @@ export function StrikeVelocityTape({
  *  Lives outside the ECharts chart because ECharts' built-in axis-tick
  *  labels can't carry per-row styling (red/bold for spike rows) without
  *  fragile custom-graphic gymnastics. A plain absolutely-positioned
- *  div is the simpler, more legible approach. */
+ *  div is the simpler, more legible approach.
+ *
+ *  Row alignment: the wrapper's `top`/`bottom` mirror the heatmap's
+ *  `grid.top`/`grid.bottom` (HEATMAP_GRID_TOP / _BOTTOM), and the
+ *  heatmap's yAxis pins `boundaryGap: true` so each strike occupies a
+ *  full categorical band centered on its tick — the ECharts band layout
+ *  then partitions the usable height into N equal bands, matching the
+ *  `flex:1` row distribution here (#206 R1 I2). */
 function RightTotalsColumn({
   strikes,
   rowTotals,
@@ -679,20 +789,12 @@ function RightTotalsColumn({
 }) {
   const n = strikes.length;
   if (n === 0) return null;
-  // Match the heatmap's grid: top=10, bottom=30 — so the usable y-range
-  // is `chartHeight - 10 - 30`. Each row's center y is
-  //   top_offset + (i + 0.5) * rowHeight
-  // where rowHeight = usable / n. We can't easily get the *rendered*
-  // chart height here without measuring; instead we let the parent's
-  // flex layout drive height and position labels by percentage of the
-  // chart container, anchored to the chart's effective y-range via the
-  // same paddings the chart uses.
   return (
     <div
       style={{
         position: "absolute",
-        top: 10,
-        bottom: 30,
+        top: HEATMAP_GRID_TOP,
+        bottom: HEATMAP_GRID_BOTTOM,
         right: 0,
         width: TOTAL_LABEL_WIDTH,
         pointerEvents: "none",
@@ -716,7 +818,6 @@ function RightTotalsColumn({
               fontSize: 11,
               color: entry.hasSpike ? colors.accentRed : colors.textPrimary,
               fontWeight: entry.hasSpike ? 600 : 400,
-              borderTop: `1px dashed ${withAlpha(colors.borderDim, 0)}`,
             }}
           >
             {formatVolume(entry.total)}
