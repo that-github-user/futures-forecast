@@ -6,9 +6,12 @@
  * can't express `@media`, so the grid class lives here while the rest
  * of the visual style stays inline next to the component.
  *
- * Single rule: at ≤ 900px the body collapses to a single column so
- * the chart isn't squeezed to unreadable widths on tablets / split
- * windows.
+ * Single rule: at ≤ 1100px the body collapses to a single column and
+ * the velocity tape is hidden so the chart isn't squeezed to
+ * unreadable widths on tablets / split windows. The breakpoint sits
+ * higher than the page-level collapse used elsewhere because the
+ * velocity tape reserves ~280px next to the chart — between 900px and
+ * 1100px the chart was being crushed to ~305px wide for 40 strikes.
  */
 
 .straddle-body-grid {
@@ -37,13 +40,14 @@
   flex: 0 0 280px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .straddle-body-grid {
     grid-template-columns: 1fr;
   }
-  /* Below 900px the velocity tape would crowd the chart out — hide
-   * it entirely (the chart already collapses to single-column at this
-   * breakpoint). The replay column is non-essential on narrow widths.
+  /* Below 1100px the velocity tape's fixed ~280px reservation
+   * squeezes the 40-strike chart to <320px wide — unusable. Hide the
+   * tape and let the chart's own responsive behavior take over. The
+   * replay column is non-essential on narrow widths.
    */
   .straddle-velocity-cell {
     display: none;

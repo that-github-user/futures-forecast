@@ -1,15 +1,23 @@
 /**
  * StrikeVelocityTape — frozen replay of strike-level trade velocity
- * for the 0DTE chain, rendered to the right of `StraddleMapChart`.
+ * for the 0DTE chain, rendered as an independent panel to the right of
+ * `StraddleMapChart`.
  *
- * Layout (one row per strike, sorted descending to match the chart):
+ * IMPORTANT: this panel is NOT a row-aligned overlay on the chart.
+ * The chart packs ~40 strikes at ~13.5px/row; this panel uses a fixed
+ * ROW_HEIGHT (~36px) sized for legible sparklines, and shows a focused
+ * ATM ± 5 cluster subset of strikes. Operators should read the two
+ * columns as paired views of the same chain, NOT as a strike-by-strike
+ * row mirror.
+ *
+ * Layout (one row per cluster strike, sorted descending):
  *   - Left:   strike label (mono, right-aligned numerical)
  *   - Center: TWO inline SVG sparklines stacked vertically — top row
  *             is call-side per-minute volume, bottom row is put-side.
  *             One bar per 1-min bucket within the replay window
  *             (typically 15-30 buckets). Spike minutes (those tagged
  *             on the backend as > mean+3σ) get an amber glow + a small
- *             ▲ glyph above the bar so the operator can scan for
+ *             ▲/▼ glyph above the bar so the operator can scan for
  *             unusual flow visually.
  *   - Right:  total volume scalar for the 15-min window (call + put
  *             combined), formatted with k-suffix for readability.
@@ -26,8 +34,8 @@
  *
  * Implementation notes:
  *   - No ECharts here — inline SVG sparklines are cheaper to render
- *     and easier to align row-by-row to whatever y-grid the operator's
- *     chart settles into. Same render cost as a static badge.
+ *     and the fixed-row layout keeps sparklines at a legible size
+ *     regardless of how many strikes the chart packs in.
  *   - The component is presentational; data shape comes straight from
  *     `velocity_tape` on the StraddleChainResponse.
  */
@@ -41,6 +49,7 @@ import {
   formatVolume,
   resolveStrikeOrder,
   rowTotalVolume,
+  spikeGlyphsAt,
   sumVolume,
 } from "./strikeVelocityHelpers";
 
@@ -50,7 +59,12 @@ import {
 const ROW_HEIGHT = 36;                  // per-strike row total height
 const SPARK_HEIGHT = 14;                // height of each call/put sparkline
 const SPARK_GAP = 2;                    // vertical gap between call and put rows
-const SPIKE_GLYPH_HEIGHT = 8;           // glyph row above the call sparkline
+const SPIKE_GLYPH_HEIGHT = 11;          // glyph row above the call sparkline
+                                        // (was 8 — bumped so the stacked
+                                        // collision case has room for two
+                                        // glyphs at ≥6px fontSize, which
+                                        // is the practical legibility
+                                        // floor for ▲/▼ on most displays)
 const SPOT_OVERLAY_HEIGHT = 36;
 const STRIKE_LABEL_WIDTH = 56;
 const VOLUME_LABEL_WIDTH = 56;
@@ -59,14 +73,17 @@ const MIN_BAR_WIDTH = 2;
 
 interface Props {
   tape: VelocityTape | null;
-  /** Strike order from the chart (descending). The component aligns
-   *  rows to this order so the velocity column reads in lockstep with
-   *  the strike chart on its left. When null/empty, falls back to the
-   *  tape's own strike order (descending by strike). */
+  /** Strike order from the chart (descending). The component filters
+   *  to strikes the tape carries and renders them in this order so the
+   *  cluster subset reads in the same direction as the chart's y-axis.
+   *  This is NOT a row-by-row alignment — the panel uses its own fixed
+   *  ROW_HEIGHT (sized for legible sparklines), independent of the
+   *  chart's per-strike pixel density. When null/empty, falls back to
+   *  the tape's own strike order (descending by strike). */
   strikeOrder?: number[];
   /** Container height, typically passed in to match the chart's height
-   *  so the two columns visually align. Spot overlay + rows are laid
-   *  out proportionally within. */
+   *  so the two columns occupy the same vertical band. Spot overlay +
+   *  rows are laid out proportionally within. */
   height?: number;
 }
 
@@ -78,12 +95,14 @@ function Sparkline({
   values,
   axis,
   spikes,
+  strike,
   width,
   side,
 }: {
   values: Array<number | null>;
   axis: string[];
   spikes: Set<string>;
+  strike: number;
   width: number;
   side: "call" | "put";
 }) {
@@ -103,7 +122,7 @@ function Sparkline({
       width={width}
       height={SPARK_HEIGHT}
       style={{ display: "block" }}
-      aria-label={`${side} per-minute volume sparkline`}
+      aria-label={`Per-minute ${side} volume at strike ${strike}`}
     >
       {axis.map((ts, i) => {
         const v = values[i];
@@ -143,50 +162,78 @@ function Sparkline({
   );
 }
 
-/** Render the small ▲ glyph row above the call sparkline, one ▲ per
- *  spike minute. Renders to the right of the call sparkline's x-grid
- *  so each glyph sits directly over its corresponding bar. */
+/** Render the small ▲/▼ glyph row above the call sparkline, one glyph
+ *  per spike minute per side. Renders to the right of the call
+ *  sparkline's x-grid so each glyph sits directly over its
+ *  corresponding bar.
+ *
+ *  When BOTH sides spike at the same minute, we stack the glyphs
+ *  vertically (▲ in the top half, ▼ in the bottom half) so neither
+ *  side is silently dropped. Both glyphs keep their side-specific
+ *  colors so the operator can still tell call-vs-put at a glance. */
 function SpikeGlyphRow({
   axis,
   callSpikes,
   putSpikes,
+  strike,
   width,
 }: {
   axis: string[];
   callSpikes: Set<string>;
   putSpikes: Set<string>;
+  strike: number;
   width: number;
 }) {
   const slot = axis.length > 0 ? width / axis.length : width;
-  // We render one row of glyphs spanning both sides: ▲ for call spikes,
-  // ▼ for put spikes — same minute may carry both. They share the row
-  // to keep vertical space tight.
+  // Color convention: call spikes pop in red (the emphasis hue used
+  // for the spike bar itself), put spikes use the amber put accent so
+  // the operator can still tell sides apart when both fire at the
+  // same minute.
+  const callGlyphColor = colors.accentRed;
+  const putGlyphColor = colors.accentAmber;
+  // Half-row offsets used when both sides fire at the same minute. The
+  // top half is the call ▲, the bottom half is the put ▼.
+  const halfRow = SPIKE_GLYPH_HEIGHT / 2;
   return (
     <svg
       width={width}
       height={SPIKE_GLYPH_HEIGHT}
       style={{ display: "block" }}
-      aria-label="spike-minute markers"
+      aria-label={`Spike-minute markers at strike ${strike}`}
     >
       {axis.map((ts, i) => {
-        const isCall = callSpikes.has(ts);
-        const isPut = putSpikes.has(ts);
-        if (!isCall && !isPut) return null;
+        const glyphs = spikeGlyphsAt(ts, callSpikes, putSpikes);
+        if (glyphs.length === 0) return null;
         const cx = i * slot + slot / 2;
-        const glyph = isCall ? "▲" : "▼"; // ▲ / ▼
-        return (
-          <text
-            key={ts}
-            x={cx}
-            y={SPIKE_GLYPH_HEIGHT - 1}
-            fill={colors.accentRed}
-            fontSize={7}
-            fontFamily={fonts.mono}
-            textAnchor="middle"
-          >
-            {glyph}
-          </text>
-        );
+        const stacked = glyphs.length === 2;
+        return glyphs.map((g) => {
+          // Single-side fire → glyph sits on the row baseline.
+          // Stacked fire → top half (▲) and bottom half (▼) so neither
+          //                side is silently dropped.
+          let y: number;
+          if (g.position === "top") y = halfRow;
+          else if (g.position === "bottom") y = SPIKE_GLYPH_HEIGHT - 1;
+          else y = SPIKE_GLYPH_HEIGHT - 1;
+          const fill = g.side === "call" ? callGlyphColor : putGlyphColor;
+          return (
+            <text
+              key={`${ts}-${g.side}`}
+              x={cx}
+              y={y}
+              fill={fill}
+              // Bump stacked fontSize from 5→6 — 5px is below the
+              // legibility floor for ▲/▼ on most displays. 6px in mono
+              // is still small but resolves the arrow direction at a
+              // glance. SPIKE_GLYPH_HEIGHT was bumped 8→11 in tandem
+              // so both halves fit.
+              fontSize={stacked ? 6 : 8}
+              fontFamily={fonts.mono}
+              textAnchor="middle"
+            >
+              {g.glyph}
+            </text>
+          );
+        });
       })}
     </svg>
   );
@@ -305,6 +352,12 @@ export function StrikeVelocityTape({
     try {
       const start = new Date(tape.window_start);
       const end = new Date(tape.window_end);
+      // Date(...) returns Invalid Date (NaN time) for unparseable
+      // inputs instead of throwing — guard explicitly so we don't
+      // leak the raw ISO string when an upstream feed gets weird.
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return "(replay window unavailable)";
+      }
       const fmt = (d: Date) =>
         d.toLocaleTimeString("en-US", {
           hour: "2-digit",
@@ -320,7 +373,9 @@ export function StrikeVelocityTape({
       });
       return `${dayLabel} ${fmt(start)}-${fmt(end)} ET`;
     } catch {
-      return tape.window_start;
+      // Defensive — current toLocale* paths shouldn't throw on a
+      // valid Date, but operator shouldn't see raw ISO either way.
+      return "(replay window unavailable)";
     }
   }, [tape]);
 
@@ -405,6 +460,22 @@ export function StrikeVelocityTape({
           }}
         >
           Frozen Replay
+        </div>
+        {/* Honest panel framing: this is a focused ATM-cluster subset
+            view, NOT a row-aligned mirror of the chart's strike axis.
+            Spelling that out in the header avoids operators mis-reading
+            the panel as "strike 7505 appears at y=N in both columns" —
+            in practice the two grids use different per-row pixel densities. */}
+        <div
+          style={{
+            fontFamily: fonts.mono,
+            fontSize: 10,
+            letterSpacing: "0.06em",
+            color: colors.textSecondary,
+            textTransform: "uppercase",
+          }}
+        >
+          ATM ± 5 cluster · trade velocity (15-min)
         </div>
         <div
           style={{
@@ -507,12 +578,14 @@ export function StrikeVelocityTape({
                   axis={axis}
                   callSpikes={callSpikes}
                   putSpikes={putSpikes}
+                  strike={strike}
                   width={sparkWidth}
                 />
                 <Sparkline
                   values={callValues}
                   axis={axis}
                   spikes={callSpikes}
+                  strike={strike}
                   width={sparkWidth}
                   side="call"
                 />
@@ -520,6 +593,7 @@ export function StrikeVelocityTape({
                   values={putValues}
                   axis={axis}
                   spikes={putSpikes}
+                  strike={strike}
                   width={sparkWidth}
                   side="put"
                 />

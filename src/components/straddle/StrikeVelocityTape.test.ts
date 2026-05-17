@@ -25,6 +25,7 @@ import {
   formatVolume,
   resolveStrikeOrder,
   rowTotalVolume,
+  spikeGlyphsAt,
   sumVolume,
 } from "./strikeVelocityHelpers";
 
@@ -191,6 +192,50 @@ describe("resolveStrikeOrder", () => {
 
   it("treats an empty chart order as 'no order' and falls back", () => {
     expect(resolveStrikeOrder(t, [])).toEqual([7505, 7500, 7495]);
+  });
+});
+
+
+describe("spikeGlyphsAt", () => {
+  const ts = "2026-05-15T15:30:00-04:00";
+
+  it("returns no glyphs when neither side spikes at this minute", () => {
+    expect(spikeGlyphsAt(ts, new Set(), new Set())).toEqual([]);
+  });
+
+  it("returns a single full-row ▲ for a call-only spike", () => {
+    const glyphs = spikeGlyphsAt(ts, new Set([ts]), new Set());
+    expect(glyphs).toEqual([
+      { side: "call", glyph: "▲", position: "full" },
+    ]);
+  });
+
+  it("returns a single full-row ▼ for a put-only spike", () => {
+    const glyphs = spikeGlyphsAt(ts, new Set(), new Set([ts]));
+    expect(glyphs).toEqual([
+      { side: "put", glyph: "▼", position: "full" },
+    ]);
+  });
+
+  it("renders BOTH glyphs stacked when call+put spike at the same minute", () => {
+    // Pre-fix renderer used `isCall ? "▲" : "▼"` which silently
+    // dropped the put glyph on collision. This test pins the
+    // collision behavior so the regression can't sneak back in.
+    const glyphs = spikeGlyphsAt(ts, new Set([ts]), new Set([ts]));
+    expect(glyphs).toEqual([
+      { side: "call", glyph: "▲", position: "top" },
+      { side: "put", glyph: "▼", position: "bottom" },
+    ]);
+    // Sanity: two distinct entries, one per side, neither dropped.
+    expect(glyphs.length).toBe(2);
+    expect(new Set(glyphs.map((g) => g.side))).toEqual(new Set(["call", "put"]));
+  });
+
+  it("only fires at minutes where the side has a spike", () => {
+    // A minute that isn't in either spike set returns no glyphs even
+    // when surrounding minutes do spike.
+    const other = "2026-05-15T15:35:00-04:00";
+    expect(spikeGlyphsAt(other, new Set([ts]), new Set([ts]))).toEqual([]);
   });
 });
 
