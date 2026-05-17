@@ -1,17 +1,19 @@
 /* StraddlePage — responsive layout rules.
  *
  * Most of the page is built from inline-styled component primitives
- * (the project's house pattern), but the body's 2-column 7fr/3fr grid
- * needs a media query to collapse on narrow viewports. Inline styles
- * can't express `@media`, so the grid class lives here while the rest
- * of the visual style stays inline next to the component.
+ * (the project's house pattern), but the body grid and the velocity
+ * panel need media-query collapse rules that inline styles can't
+ * express. Everything else lives inline next to the component.
  *
- * Single rule: at ≤ 1100px the body collapses to a single column and
- * the velocity tape is hidden so the chart isn't squeezed to
- * unreadable widths on tablets / split windows. The breakpoint sits
- * higher than the page-level collapse used elsewhere because the
- * velocity tape reserves ~280px next to the chart — between 900px and
- * 1100px the chart was being crushed to ~305px wide for 40 strikes.
+ * Layout (desktop ≥ 900px):
+ *   - .straddle-body-grid — 2-col chart (~7fr) + pin/upcoming (~3fr)
+ *   - .straddle-velocity-panel — full-width major panel BELOW the grid,
+ *     promoted from the original 280px sidebar so the sparklines have
+ *     room to breathe.
+ *
+ * Mobile (< 900px):
+ *   - Body grid collapses to single column (chart, then pin/upcoming).
+ *   - Velocity panel stays full-width but constrained to viewport.
  */
 
 .straddle-body-grid {
@@ -21,35 +23,23 @@
   align-items: start;
 }
 
-/* The chart cell now contains a horizontal flex: StraddleMapChart on
- * the left, StrikeVelocityTape on the right. The velocity column has
- * a fixed ~280px reservation; the chart takes the remaining space. */
-.straddle-chart-row {
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
+.straddle-chart-cell {
   min-width: 0; /* let the chart shrink rather than overflow the grid */
 }
 
-.straddle-chart-cell {
-  flex: 1 1 auto;
+/* Velocity panel — full-width peer of the body grid, NOT a sidebar.
+ * Sits below the body grid in the DOM order so the chart + pin/upcoming
+ * read first (primary view), then the velocity tape reads second
+ * (secondary "what's being built right now" view). The panel has its
+ * own breathing room and a section-like visual treatment so operators
+ * read it as a peer of the chart, not as an adjunct. */
+.straddle-velocity-panel {
   min-width: 0;
+  width: 100%;
 }
 
-.straddle-velocity-cell {
-  flex: 0 0 280px;
-}
-
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .straddle-body-grid {
     grid-template-columns: 1fr;
-  }
-  /* Below 1100px the velocity tape's fixed ~280px reservation
-   * squeezes the 40-strike chart to <320px wide — unusable. Hide the
-   * tape and let the chart's own responsive behavior take over. The
-   * replay column is non-essential on narrow widths.
-   */
-  .straddle-velocity-cell {
-    display: none;
   }
 }

@@ -117,33 +117,11 @@ export function StraddlePage() {
             )}
 
             <div className="straddle-body-grid">
-              <div className="straddle-chart-row">
-                {!isColdStart && (
-                  <div className="straddle-chart-cell">
-                    <StraddleMapChart data={data} height={540} />
-                  </div>
-                )}
-                {/* Strike Velocity Tape — frozen Friday-close trade-tick
-                    replay shown as an independent ATM-cluster panel
-                    next to the chart. Not a row-by-row alignment with
-                    the chart's strike axis — the panel uses its own
-                    fixed row height sized for legible sparklines, so
-                    "strike 7505" can sit at different y-positions in
-                    the two columns. Renders independently of the live
-                    snapshot so it surfaces even during cold-start when
-                    the chart is hidden. The component renders its own
-                    "(no replay available)" placeholder when the
-                    backend hasn't run the replay script yet. */}
-                {data?.velocity_tape !== undefined && (
-                  <div className="straddle-velocity-cell">
-                    <StrikeVelocityTape
-                      tape={data?.velocity_tape ?? null}
-                      strikeOrder={strikeOrder}
-                      height={540}
-                    />
-                  </div>
-                )}
-              </div>
+              {!isColdStart && (
+                <div className="straddle-chart-cell">
+                  <StraddleMapChart data={data} height={540} />
+                </div>
+              )}
               <div
                 style={{
                   display: "flex",
@@ -161,6 +139,26 @@ export function StraddlePage() {
                 />
               </div>
             </div>
+
+            {/* Strike Velocity Tape — frozen Friday-close trade-tick
+                replay promoted to its own major panel below the body
+                grid (was previously squeezed between the chart and
+                pin/upcoming column at 280px). Full-width here lets the
+                sparklines breathe; section header brands the panel as
+                a peer of the chart, not a sidebar. Renders independently
+                of the live snapshot so it surfaces even during cold-
+                start when the chart is hidden. The component renders
+                its own "(no replay available)" placeholder when the
+                backend hasn't run the replay script yet. */}
+            {data?.velocity_tape !== undefined && (
+              <section className="straddle-velocity-panel">
+                <StrikeVelocityTape
+                  tape={data?.velocity_tape ?? null}
+                  strikeOrder={strikeOrder}
+                  height={540}
+                />
+              </section>
+            )}
           </>
         )}
 
