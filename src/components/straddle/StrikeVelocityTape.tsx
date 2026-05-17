@@ -35,10 +35,7 @@
  */
 
 import {
-  useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -46,6 +43,7 @@ import {
 } from "react";
 import type { VelocityTape } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
+import { InfoPopover } from "../common/InfoPopover";
 import {
   buildMinuteAxis,
   buildXLabelMask,
@@ -143,14 +141,6 @@ export function StrikeVelocityTape({
   // with `position: fixed` so it can escape any panel overflow clipping.
   const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
 
-  // Info popover state (#329). Anchored to the ⓘ button in the panel
-  // head; explains the encoding for first-time operators. Callbacks
-  // are stable across renders via useCallback so HelpPopover's
-  // document-listener useEffect doesn't re-bind on every parent render
-  // (the parent re-renders on every SSE tick).
-  const [helpOpen, setHelpOpen] = useState(false);
-  const onToggleHelp = useCallback(() => setHelpOpen((v) => !v), []);
-  const onCloseHelp = useCallback(() => setHelpOpen(false), []);
 
   // Pre-compute the things every row needs. `tape` is the only data
   // dependency; everything else is layout state.
@@ -227,9 +217,6 @@ export function StrikeVelocityTape({
         emLower={emLower}
         scaleMode={scaleMode}
         onScaleChange={setScaleMode}
-        helpOpen={helpOpen}
-        onToggleHelp={onToggleHelp}
-        onCloseHelp={onCloseHelp}
       />
       <div style={{ padding: "12px 14px 6px 14px" }}>
         <div className="svt-lane-grid">
@@ -265,18 +252,12 @@ function PanelHead({
   emLower,
   scaleMode,
   onScaleChange,
-  helpOpen,
-  onToggleHelp,
-  onCloseHelp,
 }: {
   spot: number | null;
   emUpper: number | null;
   emLower: number | null;
   scaleMode: ScaleMode;
   onScaleChange: (m: ScaleMode) => void;
-  helpOpen: boolean;
-  onToggleHelp: () => void;
-  onCloseHelp: () => void;
 }) {
   // Cold-start (per the snapshotter contract documented at the top
   // of this file): all four headline fields populate atomically, so
@@ -290,7 +271,38 @@ function PanelHead({
       <div className="svt-title-block">
         <div className="svt-title-row">
           <h3 className="svt-title">Strike Velocity Tape</h3>
-          <InfoButton open={helpOpen} onToggle={onToggleHelp} />
+          {/* Shared InfoPopover (#334). Renders the ⓘ button inline +
+              the popover absolutely-positioned relative to the
+              `.svt-panel-head` wrapper (which is position:relative).
+              Help content is passed as children; styling overrides
+              for the velocity-panel-specific anchor live in
+              StrikeVelocityTape.css under
+              `.svt-panel-head .info-popover-panel`. */}
+          <InfoPopover label="How to read the strike velocity tape">
+            <ul>
+              <li>
+                <b>Each row</b> is one strike (ATM in amber); <b>each block</b> is
+                one minute of trading.
+              </li>
+              <li>
+                Block <b>height</b> = total (call + put) volume; <b>color</b> = which
+                side dominates:
+                <span className="swatch call" /> calls,
+                <span className="swatch put" /> puts,
+                <span className="swatch balanced" /> balanced.
+              </li>
+              <li>
+                <b>Bright outline</b> on a block = spike minute (≥3σ MAD from the
+                strike's baseline). Triangles in the strike column mark
+                <b> spot</b> (white) + <b>EM upper / lower</b> (amber).
+              </li>
+              <li>
+                <b>Scale toggle</b>: <i>per row</i> normalizes each row to its own
+                peak (shape on quiet strikes); <i>panel</i> uses one scale (the day's
+                standout strike).
+              </li>
+            </ul>
+          </InfoPopover>
         </div>
         <div className="svt-sub">
           {isColdStart
@@ -302,91 +314,6 @@ function PanelHead({
         <Readout spot={spot} emUpper={emUpper} emLower={emLower} />
         <ScaleToggle mode={scaleMode} onChange={onScaleChange} />
       </div>
-      {/* Popover anchored at the panel-head level (NOT the title-block)
-          so when the head wraps at narrow viewports it slides below
-          the wrapped controls instead of overlapping them. */}
-      {helpOpen && <HelpPopover onClose={onCloseHelp} />}
-    </div>
-  );
-}
-
-function InfoButton({
-  open,
-  onToggle,
-}: {
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`svt-info-btn${open ? " active" : ""}`}
-      aria-label="How to read the strike velocity tape"
-      aria-expanded={open}
-      onClick={onToggle}
-    >
-      ⓘ
-    </button>
-  );
-}
-
-function HelpPopover({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  // Close on (a) outside click — mousedown rather than click so it
-  // fires before focus shift; (b) Escape keydown — standard dialog
-  // keyboard parity. The mousedown handler skips clicks on the ⓘ
-  // button itself so the button's own onClick handles the
-  // single-state-transition toggle (without this, clicking ⓘ to
-  // close would briefly unmount/remount the popover in the same
-  // frame as the document-mousedown runs before the button-click).
-  useEffect(() => {
-    function onDocMouseDown(e: MouseEvent) {
-      if (!ref.current) return;
-      if (ref.current.contains(e.target as Node)) return;
-      const target = e.target as Element | null;
-      if (target?.closest(".svt-info-btn")) return;
-      onClose();
-    }
-    function onDocKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onDocKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onDocKeyDown);
-    };
-  }, [onClose]);
-  return (
-    <div
-      ref={ref}
-      className="svt-help-popover"
-      role="dialog"
-      aria-label="How to read the strike velocity tape"
-    >
-      <ul>
-        <li>
-          <b>Each row</b> is one strike (ATM in amber); <b>each block</b> is
-          one minute of trading.
-        </li>
-        <li>
-          Block <b>height</b> = total (call + put) volume; <b>color</b> = which
-          side dominates:
-          <span className="svt-help-swatch call" /> calls,
-          <span className="svt-help-swatch put" /> puts,
-          <span className="svt-help-swatch balanced" /> balanced.
-        </li>
-        <li>
-          <b>Bright outline</b> on a block = spike minute (≥3σ MAD from the
-          strike's baseline). Triangles in the strike column mark
-          <b> spot</b> (white) + <b>EM upper / lower</b> (amber).
-        </li>
-        <li>
-          <b>Scale toggle</b>: <i>per row</i> normalizes each row to its own
-          peak (shape on quiet strikes); <i>panel</i> uses one scale (the day's
-          standout strike).
-        </li>
-      </ul>
     </div>
   );
 }
