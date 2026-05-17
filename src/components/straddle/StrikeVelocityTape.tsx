@@ -1,13 +1,14 @@
 /**
  * StrikeVelocityTape — frozen replay of strike-level trade velocity
- * for the 0DTE chain, rendered as an independent panel to the right of
- * `StraddleMapChart`.
+ * for the 0DTE chain, rendered as a full-width major panel BELOW the
+ * straddle body grid. Promoted from the original 280px sidebar — the
+ * sparklines need more horizontal room than that gave them.
  *
  * IMPORTANT: this panel is NOT a row-aligned overlay on the chart.
  * The chart packs ~40 strikes at ~13.5px/row; this panel uses a fixed
- * ROW_HEIGHT (~36px) sized for legible sparklines, and shows a focused
+ * ROW_HEIGHT (~48px) sized for legible sparklines, and shows a focused
  * ATM ± 5 cluster subset of strikes. Operators should read the two
- * columns as paired views of the same chain, NOT as a strike-by-strike
+ * grids as paired views of the same chain, NOT as a strike-by-strike
  * row mirror.
  *
  * Layout (one row per cluster strike, sorted descending):
@@ -56,7 +57,12 @@ import {
 // ── Geometry ────────────────────────────────────────────────────────
 // Single source of truth for sparkline dims; keeps row math honest.
 
-const ROW_HEIGHT = 36;                  // per-strike row total height
+// Row height. Inner column stacks SPIKE_GLYPH_HEIGHT(11) + SPARK_GAP(2)
+// + SPARK_HEIGHT(14) + SPARK_GAP(2) + SPARK_HEIGHT(14) = 43px of
+// content. 48 leaves a small comfortable padding for the row's top/bottom
+// padding + bottom border so the divider doesn't crowd the put sparkline.
+// (Subsumes #318.)
+const ROW_HEIGHT = 48;
 const SPARK_HEIGHT = 14;                // height of each call/put sparkline
 const SPARK_GAP = 2;                    // vertical gap between call and put rows
 const SPIKE_GLYPH_HEIGHT = 11;          // glyph row above the call sparkline
@@ -66,10 +72,21 @@ const SPIKE_GLYPH_HEIGHT = 11;          // glyph row above the call sparkline
                                         // is the practical legibility
                                         // floor for ▲/▼ on most displays)
 const SPOT_OVERLAY_HEIGHT = 36;
-const STRIKE_LABEL_WIDTH = 56;
-const VOLUME_LABEL_WIDTH = 56;
+// Label columns. Bumped slightly from the 56/56 the old 280px sidebar
+// used — now that the panel is full-width (~1100px), the extra room
+// in the strike + volume columns reads more cleanly without crowding
+// the sparkline column.
+const STRIKE_LABEL_WIDTH = 64;
+const VOLUME_LABEL_WIDTH = 80;
 const BAR_GAP = 1;
 const MIN_BAR_WIDTH = 2;
+
+// SVG logical coordinate width for the responsive sparkline / glyph /
+// spot SVGs. Bars + glyphs + polyline points are positioned in this
+// logical space; `preserveAspectRatio="none"` lets the SVG CSS-scale
+// horizontally to fill its container while keeping the pixel-accurate
+// vertical layout (heights are fixed).
+const LOGICAL_WIDTH = 1000;
 
 interface Props {
   tape: VelocityTape | null;
@@ -81,29 +98,35 @@ interface Props {
    *  chart's per-strike pixel density. When null/empty, falls back to
    *  the tape's own strike order (descending by strike). */
   strikeOrder?: number[];
-  /** Container height, typically passed in to match the chart's height
-   *  so the two columns occupy the same vertical band. Spot overlay +
-   *  rows are laid out proportionally within. */
+  /** Optional container height. When omitted (the default), the panel
+   *  sizes to its content — the right behavior for the major-panel
+   *  promotion (#319), where forcing a fixed 540px caused an internal
+   *  scrollbar because 11 strikes × 48px ROW_HEIGHT + header + spot
+   *  overlay ≈ 680px exceeds 540. Pass an explicit number to cap (e.g.,
+   *  if embedding in a side panel that needs a fixed band). */
   height?: number;
 }
 
 /** Build a flat sparkline of `<rect>` bars for one strike/side.
  *  Bars normalize against the maximum volume across BOTH call+put for
  *  this strike+axis pair, so the call vs put bars at the same minute
- *  are visually comparable. */
+ *  are visually comparable.
+ *
+ *  Responsive layout: the SVG is sized in a logical LOGICAL_WIDTH
+ *  coordinate space and CSS-scales to fill its parent column via
+ *  width="100%" + preserveAspectRatio="none". Vertical layout stays
+ *  pixel-exact because SPARK_HEIGHT is fixed. */
 function Sparkline({
   values,
   axis,
   spikes,
   strike,
-  width,
   side,
 }: {
   values: Array<number | null>;
   axis: string[];
   spikes: Set<string>;
   strike: number;
-  width: number;
   side: "call" | "put";
 }) {
   // Hemisphere convention: calls = blue, puts = amber. Spike border
@@ -112,15 +135,20 @@ function Sparkline({
   const spikeColor = colors.accentRed;
   const numericValues = values.filter((v): v is number => v !== null);
   const max = numericValues.length > 0 ? Math.max(...numericValues) : 0;
-  // Bar width: derive from container width / axis length, then floor
-  // to MIN_BAR_WIDTH so even a 30-bucket window stays legible.
-  const slot = axis.length > 0 ? width / axis.length : width;
+  // Bar width in logical coords: derive from logical width / axis length,
+  // then floor to MIN_BAR_WIDTH so even a 30-bucket window stays legible
+  // when the SVG renders into a narrow container. preserveAspectRatio
+  // stretches the bars horizontally beyond the MIN_BAR_WIDTH floor as the
+  // container widens.
+  const slot = axis.length > 0 ? LOGICAL_WIDTH / axis.length : LOGICAL_WIDTH;
   const barWidth = Math.max(MIN_BAR_WIDTH, slot - BAR_GAP);
 
   return (
     <svg
-      width={width}
+      width="100%"
       height={SPARK_HEIGHT}
+      viewBox={`0 0 ${LOGICAL_WIDTH} ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
       style={{ display: "block" }}
       aria-label={`Per-minute ${side} volume at strike ${strike}`}
     >
@@ -176,78 +204,105 @@ function SpikeGlyphRow({
   callSpikes,
   putSpikes,
   strike,
-  width,
 }: {
   axis: string[];
   callSpikes: Set<string>;
   putSpikes: Set<string>;
   strike: number;
-  width: number;
 }) {
-  const slot = axis.length > 0 ? width / axis.length : width;
   // Color convention: call spikes pop in red (the emphasis hue used
   // for the spike bar itself), put spikes use the amber put accent so
   // the operator can still tell sides apart when both fire at the
   // same minute.
   const callGlyphColor = colors.accentRed;
   const putGlyphColor = colors.accentAmber;
-  // Half-row offsets used when both sides fire at the same minute. The
-  // top half is the call ▲, the bottom half is the put ▼.
-  const halfRow = SPIKE_GLYPH_HEIGHT / 2;
+  // RENDER AS HTML, NOT SVG — when the panel widens past LOGICAL_WIDTH
+  // (1000px) and we used `preserveAspectRatio="none"` on the SVG, the
+  // ▲/▼ text glyphs got horizontally stretched along with the bars,
+  // breaking the legibility floor that motivated the size bump in the
+  // first place. Rendering glyphs as absolutely-positioned HTML spans
+  // anchored by percentage left lets them scale POSITION horizontally
+  // (matching the bar columns below) without distorting their NATIVE
+  // font shape. Bars in Sparkline can still stretch — that's intended
+  // for the bar visualization. Glyphs are text, they shouldn't stretch.
+  const axisLen = axis.length;
   return (
-    <svg
-      width={width}
-      height={SPIKE_GLYPH_HEIGHT}
-      style={{ display: "block" }}
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: SPIKE_GLYPH_HEIGHT,
+      }}
+      role="img"
       aria-label={`Spike-minute markers at strike ${strike}`}
     >
       {axis.map((ts, i) => {
         const glyphs = spikeGlyphsAt(ts, callSpikes, putSpikes);
         if (glyphs.length === 0) return null;
-        const cx = i * slot + slot / 2;
+        // Center the glyph in its bucket: ((i + 0.5) / N) * 100%.
+        const leftPct = ((i + 0.5) / axisLen) * 100;
         const stacked = glyphs.length === 2;
         return glyphs.map((g) => {
-          // Single-side fire → glyph sits on the row baseline.
-          // Stacked fire → top half (▲) and bottom half (▼) so neither
-          //                side is silently dropped.
-          let y: number;
-          if (g.position === "top") y = halfRow;
-          else if (g.position === "bottom") y = SPIKE_GLYPH_HEIGHT - 1;
-          else y = SPIKE_GLYPH_HEIGHT - 1;
+          // Vertical anchoring per spike-position:
+          //   "top"    (stacked-call ▲) — anchored to top of row
+          //   "bottom" (stacked-put ▼)  — anchored to middle (~floor(H/2))
+          //   "full"   (single-side)    — anchored to BOTTOM of row so
+          //                               the glyph sits directly above
+          //                               the sparkline that immediately
+          //                               follows. The bottom anchor was
+          //                               the implicit behavior of the
+          //                               old SVG version (y=SPIKE_HEIGHT-1
+          //                               with text baseline = bottom).
+          //                               R1 round-2 caught a regression
+          //                               where the HTML rewrite floated
+          //                               single-side glyphs to top:0,
+          //                               leaving ~9px gap above the bar.
+          const positionStyle: React.CSSProperties =
+            g.position === "top"
+              ? { top: 0 }
+              : g.position === "bottom"
+                ? { top: Math.floor(SPIKE_GLYPH_HEIGHT / 2) }
+                : /* "full" — single-side */ { bottom: 0 };
           const fill = g.side === "call" ? callGlyphColor : putGlyphColor;
           return (
-            <text
+            <span
               key={`${ts}-${g.side}`}
-              x={cx}
-              y={y}
-              fill={fill}
-              // Bump stacked fontSize from 5→6 — 5px is below the
-              // legibility floor for ▲/▼ on most displays. 6px in mono
-              // is still small but resolves the arrow direction at a
-              // glance. SPIKE_GLYPH_HEIGHT was bumped 8→11 in tandem
-              // so both halves fit.
-              fontSize={stacked ? 6 : 8}
-              fontFamily={fonts.mono}
-              textAnchor="middle"
+              style={{
+                position: "absolute",
+                left: `${leftPct}%`,
+                ...positionStyle,
+                transform: "translateX(-50%)",
+                color: fill,
+                // Stacked fontSize 6 fits two glyphs in 11px. Single-side
+                // gets 8px for legibility. Mono font keeps width
+                // consistent across digits / glyphs.
+                fontSize: stacked ? 6 : 8,
+                fontFamily: fonts.mono,
+                lineHeight: 1,
+                pointerEvents: "none",
+                userSelect: "none",
+              }}
             >
               {g.glyph}
-            </text>
+            </span>
           );
         });
       })}
-    </svg>
+    </div>
   );
 }
 
 /** Spot-path mini-line above the per-strike rows. One SVG <polyline>
  *  fed by the velocity_tape.spot_path 1-min closes. Suppressed when
- *  spot_path is null or empty. */
+ *  spot_path is null or empty.
+ *
+ *  Responsive layout: same viewBox pattern as Sparkline — points are
+ *  placed in logical LOGICAL_WIDTH coords; the SVG CSS-scales
+ *  horizontally to fill its container. */
 function SpotOverlay({
   points,
-  width,
 }: {
   points: Array<{ ts: string; price: number }>;
-  width: number;
 }) {
   if (points.length < 2) return null;
   const prices = points.map((p) => p.price);
@@ -259,7 +314,7 @@ function SpotOverlay({
   // visually clipped.
   const padding = 4;
   const usableHeight = SPOT_OVERLAY_HEIGHT - padding * 2;
-  const xs = points.map((_, i) => (i / (points.length - 1)) * width);
+  const xs = points.map((_, i) => (i / (points.length - 1)) * LOGICAL_WIDTH);
   const ys = prices.map((p) => padding + (1 - (p - min) / range) * usableHeight);
   const pathPoints = xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
   // Endpoint readout: shows the change across the window for context.
@@ -274,8 +329,10 @@ function SpotOverlay({
       }}
     >
       <svg
-        width={width}
+        width="100%"
         height={SPOT_OVERLAY_HEIGHT}
+        viewBox={`0 0 ${LOGICAL_WIDTH} ${SPOT_OVERLAY_HEIGHT}`}
+        preserveAspectRatio="none"
         style={{ display: "block" }}
         aria-label="SPX spot path during replay window"
       >
@@ -284,6 +341,7 @@ function SpotOverlay({
           stroke={colors.textSecondary}
           strokeWidth={1}
           fill="none"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
       <div
@@ -319,7 +377,7 @@ function SpotOverlay({
 export function StrikeVelocityTape({
   tape,
   strikeOrder,
-  height = 540,
+  height,
 }: Props) {
   // All hooks must run unconditionally to satisfy React's hook order.
   // The empty/null contract is rendered AFTER memoization via a
@@ -419,98 +477,129 @@ export function StrikeVelocityTape({
     );
   }
 
-  // ── Width budget for sparkline columns ────────────────────────────
-  // Total component width is constrained by parent (~280px on
-  // desktop). The sparkline gets whatever remains after the strike +
-  // volume labels.
-  const componentWidth = 280;
-  const sparkWidth = componentWidth - STRIKE_LABEL_WIDTH - VOLUME_LABEL_WIDTH - 16;
+  // ── Row grid template ──────────────────────────────────────────────
+  // Strike label + volume label are fixed-pixel columns; the sparkline
+  // column takes 1fr (the remainder of the row's full width). The inner
+  // SVGs fill that 1fr column at width="100%" via the viewBox pattern.
+  const rowGridTemplate = `${STRIKE_LABEL_WIDTH}px 1fr ${VOLUME_LABEL_WIDTH}px`;
 
   return (
     <div
       style={{
         width: "100%",
-        maxWidth: componentWidth,
         background: colors.bgPanel,
         border: `1px solid ${colors.borderDim}`,
         borderRadius: 6,
-        padding: "10px 10px 12px 10px",
+        padding: "12px 14px 14px 14px",
         height,
         display: "flex",
         flexDirection: "column",
         fontFamily: fonts.sans,
       }}
     >
-      {/* Header */}
+      {/* Section header — major-panel treatment marks this as a peer
+          of the chart, not a sidebar. Title + subline. The "Frozen
+          Replay" eyebrow was dropped because the word "Frozen" already
+          appeared in the title tail ("Frozen Friday-close replay") —
+          redundant on adjacent lines (R2 round-2 review). */}
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           gap: 4,
-          marginBottom: 8,
+          marginBottom: 10,
         }}
       >
+        {/* Section title — slightly larger, semibold, mixed-weight so
+            the panel reads as a peer of the chart. The dot-separated
+            tail spells out the panel's framing: this is a focused
+            ATM-cluster view, NOT a row-aligned mirror of the chart.
+            Flex-wrap lets the tail drop to a second line on narrow
+            viewports instead of breaking mid-phrase. */}
         <div
           style={{
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            color: colors.accentAmber,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "baseline",
+            columnGap: 8,
+            rowGap: 2,
+            fontFamily: fonts.sans,
+            letterSpacing: "0.04em",
             textTransform: "uppercase",
           }}
         >
-          Frozen Replay
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: colors.textBright,
+            }}
+          >
+            Trade Velocity
+          </span>
+          <span
+            style={{
+              fontSize: 12,
+              color: colors.textSecondary,
+              fontWeight: 400,
+            }}
+          >
+            · ATM ± 5 cluster ·{" "}
+            {/* Amber "this is replay, not live" semantic — preserved from
+                the dropped eyebrow (R2 round-2 NIT). Restoring the
+                accentAmber on the "Frozen Friday-close replay" phrase
+                lets the not-live cue carry visual weight without
+                resurrecting the redundant eyebrow line above. */}
+            <span style={{ color: colors.accentAmber }}>
+              Frozen Friday-close replay
+            </span>
+          </span>
         </div>
-        {/* Honest panel framing: this is a focused ATM-cluster subset
-            view, NOT a row-aligned mirror of the chart's strike axis.
-            Spelling that out in the header avoids operators mis-reading
-            the panel as "strike 7505 appears at y=N in both columns" —
-            in practice the two grids use different per-row pixel densities. */}
         <div
           style={{
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            letterSpacing: "0.06em",
-            color: colors.textSecondary,
-            textTransform: "uppercase",
-          }}
-        >
-          ATM ± 5 cluster · trade velocity (15-min)
-        </div>
-        <div
-          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "center",
             fontFamily: fonts.mono,
             fontSize: 11,
             color: colors.textPrimary,
           }}
         >
-          {headerLabel}
-        </div>
-        <div
-          style={{
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            color: colors.textMuted,
-          }}
-        >
-          {formatVolume(totalVolume)} contracts ·{" "}
-          <span style={{ color: colors.accentBlue }}>calls</span>{" "}
-          /{" "}
-          <span style={{ color: colors.accentAmber }}>puts</span>
+          <span>{headerLabel}</span>
+          <span style={{ color: colors.textMuted }}>
+            {formatVolume(totalVolume)} contracts ·{" "}
+            <span style={{ color: colors.accentBlue }}>calls</span>
+            {" / "}
+            <span style={{ color: colors.accentAmber }}>puts</span>
+          </span>
         </div>
       </div>
 
-      {/* Optional SPX spot overlay */}
+      {/* Optional SPX spot overlay — sits in the sparkline column so it
+          aligns horizontally with the per-strike sparklines below.
+          Outer 3-col grid mirrors the per-strike row layout. */}
       {tape.spot_path && tape.spot_path.length > 1 && (
-        <SpotOverlay points={tape.spot_path} width={componentWidth - 20} />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: rowGridTemplate,
+            gap: 8,
+            alignItems: "stretch",
+          }}
+        >
+          <div />
+          <SpotOverlay points={tape.spot_path} />
+          <div />
+        </div>
       )}
 
       {/* Column headers above the per-strike rows */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `${STRIKE_LABEL_WIDTH}px 1fr ${VOLUME_LABEL_WIDTH}px`,
-          gap: 6,
+          gridTemplateColumns: rowGridTemplate,
+          gap: 8,
           alignItems: "center",
           paddingBottom: 4,
           borderBottom: `1px solid ${colors.borderDim}`,
@@ -534,7 +623,7 @@ export function StrikeVelocityTape({
           marginTop: 4,
         }}
       >
-        {orderedStrikes.map((strike) => {
+        {orderedStrikes.map((strike, idx) => {
           const s = strikesByKey.get(strike)!;
           const callValues = densify(s.call_minutes, axis);
           const putValues = densify(s.put_minutes, axis);
@@ -542,18 +631,25 @@ export function StrikeVelocityTape({
           const putSpikes = new Set(s.put_spike_minutes);
           const rowTotal = rowTotalVolume(s);
           const hasSpike = s.call_spike_minutes.length > 0 || s.put_spike_minutes.length > 0;
+          const isLast = idx === orderedStrikes.length - 1;
           return (
             <div
               key={strike}
               style={{
                 display: "grid",
-                gridTemplateColumns: `${STRIKE_LABEL_WIDTH}px 1fr ${VOLUME_LABEL_WIDTH}px`,
-                gap: 6,
+                gridTemplateColumns: rowGridTemplate,
+                gap: 8,
                 alignItems: "center",
                 height: ROW_HEIGHT,
                 paddingTop: 2,
                 paddingBottom: 2,
-                borderBottom: `1px solid ${withAlpha(colors.borderDim, 0.4)}`,
+                // Subtle horizontal divider between strike rows so operators
+                // can scan the wider panel without the rows blurring into
+                // each other. Last row drops the divider so the table
+                // doesn't double-up with the panel's own bottom border.
+                borderBottom: isLast
+                  ? "none"
+                  : `1px solid ${withAlpha(colors.borderDim, 0.6)}`,
               }}
             >
               <div
@@ -572,6 +668,7 @@ export function StrikeVelocityTape({
                   display: "flex",
                   flexDirection: "column",
                   gap: SPARK_GAP,
+                  minWidth: 0,
                 }}
               >
                 <SpikeGlyphRow
@@ -579,14 +676,12 @@ export function StrikeVelocityTape({
                   callSpikes={callSpikes}
                   putSpikes={putSpikes}
                   strike={strike}
-                  width={sparkWidth}
                 />
                 <Sparkline
                   values={callValues}
                   axis={axis}
                   spikes={callSpikes}
                   strike={strike}
-                  width={sparkWidth}
                   side="call"
                 />
                 <Sparkline
@@ -594,7 +689,6 @@ export function StrikeVelocityTape({
                   axis={axis}
                   spikes={putSpikes}
                   strike={strike}
-                  width={sparkWidth}
                   side="put"
                 />
               </div>
