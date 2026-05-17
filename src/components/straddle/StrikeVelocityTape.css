@@ -37,6 +37,10 @@
   align-items: baseline;
   gap: 14px;
   background: #1a2235;
+  /* Popover anchors here (#329 R2 nit 6) — when the head wraps at
+   * narrow viewports the popover slides below the entire wrapped row
+   * instead of overlaying the wrapped controls. */
+  position: relative;
 }
 .svt-title {
   margin: 0;
@@ -308,6 +312,167 @@
 .svt-tick.now {
   color: var(--text-bright);
   font-weight: 600;
+}
+
+/* ── Info button + help popover (#329) ───────────────────────────*/
+.svt-title-block {
+  min-width: 0;
+}
+.svt-title-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.svt-info-btn {
+  appearance: none;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms, color 80ms, border-color 80ms;
+}
+.svt-info-btn:hover {
+  color: var(--text-bright);
+  border-color: var(--text-muted);
+}
+.svt-info-btn.active {
+  background: #1a2235;
+  color: var(--text-bright);
+  border-color: var(--accent-amber);
+}
+.svt-help-popover {
+  position: absolute;
+  top: 100%;
+  left: 14px; /* match .svt-panel-head's inline padding */
+  margin-top: 4px;
+  z-index: 50;
+  width: min(440px, calc(100vw - 40px));
+  padding: 12px 14px 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-amber);
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  line-height: 1.55;
+  text-transform: none;
+}
+.svt-help-popover ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.svt-help-popover li {
+  margin-bottom: 4px;
+}
+.svt-help-popover li:last-child {
+  margin-bottom: 0;
+}
+.svt-help-popover b {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+.svt-help-popover i {
+  color: var(--accent-amber);
+  font-style: normal;
+}
+.svt-help-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 4px 0 6px;
+  vertical-align: -1px;
+  border-radius: 1px;
+}
+.svt-help-swatch.call {
+  background: var(--accent-blue);
+}
+.svt-help-swatch.put {
+  background: var(--accent-amber);
+}
+.svt-help-swatch.balanced {
+  background: var(--text-dim);
+}
+
+/* ── Minute hover tooltip (#329) ─────────────────────────────────*/
+.svt-tooltip {
+  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-mid);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  color: var(--text-primary);
+  min-width: 180px;
+}
+.svt-tooltip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-dim);
+  padding-bottom: 4px;
+  margin-bottom: 5px;
+}
+.svt-tooltip-strike {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+.svt-tooltip-time {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.svt-tooltip-total {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+}
+.svt-tooltip-total b {
+  color: var(--text-bright);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+.svt-tooltip-split {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 10.5px;
+}
+.svt-tooltip-split .c {
+  color: var(--accent-blue);
+}
+.svt-tooltip-split .p {
+  color: var(--accent-amber);
+}
+.svt-tooltip-split b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 0 4px;
+}
+.svt-tooltip-split i {
+  font-style: normal;
+  color: var(--text-muted);
+}
+.svt-tooltip-spike {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-dim);
+  color: var(--text-bright);
+  font-size: 10px;
+  letter-spacing: 0.04em;
 }
 
 /* ── Responsive collapse ──────────────────────────────────────────*/

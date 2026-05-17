@@ -247,6 +247,32 @@ export function dominanceColor(call: number, put: number): string {
   return "#475569";
 }
 
+// ── Hover-tooltip geometry ────────────────────────────────────────
+
+/** Map a mouse client-X coordinate to a column index inside a lane
+ *  SVG. The lane SVG stretches a 1000-unit viewBox to fit the cell's
+ *  pixel width, so the mapping is `floor((mouseX - rectLeft) / rectWidth
+ *  * axisLength)`. Returns `-1` when the cursor is outside the cell
+ *  (or `rectWidth`/`axisLength` is 0) so callers can use a single
+ *  guard against the no-hit case.
+ *
+ *  Used by the hover-tooltip handler (#329) to locate which minute
+ *  block the cursor sits over without per-rect event listeners (450+
+ *  cells per panel — single delegated handler is cheaper). */
+export function cellIndexFromX(
+  mouseClientX: number,
+  rect: { left: number; width: number },
+  axisLength: number,
+): number {
+  if (!Number.isFinite(mouseClientX) || !Number.isFinite(rect.left) || !Number.isFinite(rect.width)) {
+    return -1;
+  }
+  if (rect.width <= 0 || axisLength <= 0) return -1;
+  const frac = (mouseClientX - rect.left) / rect.width;
+  if (frac < 0 || frac >= 1) return -1;
+  return Math.floor(frac * axisLength);
+}
+
 // ── Layout constants (exported for tests + CSS coordination) ──────
 
 /** Row height in pixels. Lane SVGs have height: 100% of the cell, and
