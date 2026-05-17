@@ -243,11 +243,26 @@ function SpikeGlyphRow({
         const leftPct = ((i + 0.5) / axisLen) * 100;
         const stacked = glyphs.length === 2;
         return glyphs.map((g) => {
-          // Single-side fire → glyph sits on the row baseline (bottom).
-          // Stacked fire → call ▲ in the top half, put ▼ in the bottom.
-          let topPx: number;
-          if (g.position === "top") topPx = 0;
-          else topPx = stacked ? Math.floor(SPIKE_GLYPH_HEIGHT / 2) : 0;
+          // Vertical anchoring per spike-position:
+          //   "top"    (stacked-call ▲) — anchored to top of row
+          //   "bottom" (stacked-put ▼)  — anchored to middle (~floor(H/2))
+          //   "full"   (single-side)    — anchored to BOTTOM of row so
+          //                               the glyph sits directly above
+          //                               the sparkline that immediately
+          //                               follows. The bottom anchor was
+          //                               the implicit behavior of the
+          //                               old SVG version (y=SPIKE_HEIGHT-1
+          //                               with text baseline = bottom).
+          //                               R1 round-2 caught a regression
+          //                               where the HTML rewrite floated
+          //                               single-side glyphs to top:0,
+          //                               leaving ~9px gap above the bar.
+          const positionStyle: React.CSSProperties =
+            g.position === "top"
+              ? { top: 0 }
+              : g.position === "bottom"
+                ? { top: Math.floor(SPIKE_GLYPH_HEIGHT / 2) }
+                : /* "full" — single-side */ { bottom: 0 };
           const fill = g.side === "call" ? callGlyphColor : putGlyphColor;
           return (
             <span
@@ -255,7 +270,7 @@ function SpikeGlyphRow({
               style={{
                 position: "absolute",
                 left: `${leftPct}%`,
-                top: topPx,
+                ...positionStyle,
                 transform: "translateX(-50%)",
                 color: fill,
                 // Stacked fontSize 6 fits two glyphs in 11px. Single-side
@@ -529,7 +544,15 @@ export function StrikeVelocityTape({
               fontWeight: 400,
             }}
           >
-            · ATM ± 5 cluster · Frozen Friday-close replay
+            · ATM ± 5 cluster ·{" "}
+            {/* Amber "this is replay, not live" semantic — preserved from
+                the dropped eyebrow (R2 round-2 NIT). Restoring the
+                accentAmber on the "Frozen Friday-close replay" phrase
+                lets the not-live cue carry visual weight without
+                resurrecting the redundant eyebrow line above. */}
+            <span style={{ color: colors.accentAmber }}>
+              Frozen Friday-close replay
+            </span>
           </span>
         </div>
         <div
