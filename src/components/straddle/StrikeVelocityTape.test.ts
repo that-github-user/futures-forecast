@@ -406,6 +406,11 @@ describe("cellIndexFromX", () => {
     // is 90/600=15% across → floor(0.15 * 200) = 30.
     expect(cellIndexFromX(190, rect, 200)).toBe(30);
   });
+  it("returns -1 for NaN inputs (defensive guard, #329 R1 nit 2)", () => {
+    expect(cellIndexFromX(NaN, rect, N)).toBe(-1);
+    expect(cellIndexFromX(300, { left: NaN, width: 600 }, N)).toBe(-1);
+    expect(cellIndexFromX(300, { left: 100, width: NaN }, N)).toBe(-1);
+  });
 });
 
 // ── Cold-start (all-null headlines) integration smoke ─────────────

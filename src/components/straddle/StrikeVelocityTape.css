@@ -37,6 +37,10 @@
   align-items: baseline;
   gap: 14px;
   background: #1a2235;
+  /* Popover anchors here (#329 R2 nit 6) — when the head wraps at
+   * narrow viewports the popover slides below the entire wrapped row
+   * instead of overlaying the wrapped controls. */
+  position: relative;
 }
 .svt-title {
   margin: 0;
@@ -312,7 +316,6 @@
 
 /* ── Info button + help popover (#329) ───────────────────────────*/
 .svt-title-block {
-  position: relative; /* anchors .svt-help-popover */
   min-width: 0;
 }
 .svt-title-row {
@@ -350,8 +353,8 @@
 .svt-help-popover {
   position: absolute;
   top: 100%;
-  left: 0;
-  margin-top: 8px;
+  left: 14px; /* match .svt-panel-head's inline padding */
+  margin-top: 4px;
   z-index: 50;
   width: min(440px, calc(100vw - 40px));
   padding: 12px 14px 10px 14px;
@@ -449,10 +452,10 @@
   font-size: 10.5px;
 }
 .svt-tooltip-split .c {
-  color: #60a5fa;
+  color: var(--accent-blue);
 }
 .svt-tooltip-split .p {
-  color: #fbbf24;
+  color: var(--accent-amber);
 }
 .svt-tooltip-split b {
   font-weight: 700;

@@ -35,6 +35,7 @@
  */
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -109,8 +110,10 @@ type ScaleMode = "row" | "panel";
 /** Tooltip-state shape: which (strike, minute) is hovered + the
  *  pre-computed volume/spike payload + cursor position in client
  *  coordinates. Computed by LaneSvg on mousemove (one delegated
- *  handler per row, not per-cell) and lifted via `onCellHover`. */
-export interface HoveredCell {
+ *  handler per row, not per-cell) and lifted via `onCellHover`.
+ *  Internal — keep unexported so the shape can evolve without a
+ *  cross-file contract. */
+interface HoveredCell {
   strike: number;
   ts: string;
   callVol: number;
@@ -141,8 +144,13 @@ export function StrikeVelocityTape({
   const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
 
   // Info popover state (#329). Anchored to the ⓘ button in the panel
-  // head; explains the encoding for first-time operators.
+  // head; explains the encoding for first-time operators. Callbacks
+  // are stable across renders via useCallback so HelpPopover's
+  // document-listener useEffect doesn't re-bind on every parent render
+  // (the parent re-renders on every SSE tick).
   const [helpOpen, setHelpOpen] = useState(false);
+  const onToggleHelp = useCallback(() => setHelpOpen((v) => !v), []);
+  const onCloseHelp = useCallback(() => setHelpOpen(false), []);
 
   // Pre-compute the things every row needs. `tape` is the only data
   // dependency; everything else is layout state.
@@ -220,8 +228,8 @@ export function StrikeVelocityTape({
         scaleMode={scaleMode}
         onScaleChange={setScaleMode}
         helpOpen={helpOpen}
-        onToggleHelp={() => setHelpOpen((v) => !v)}
-        onCloseHelp={() => setHelpOpen(false)}
+        onToggleHelp={onToggleHelp}
+        onCloseHelp={onCloseHelp}
       />
       <div style={{ padding: "12px 14px 6px 14px" }}>
         <div className="svt-lane-grid">
@@ -289,12 +297,15 @@ function PanelHead({
             ? "Replay window shown · spot + EM marks unavailable until session open"
             : "Per minute: one block. Height = total volume · color = which side dominates · outline = spike (≥3σ MAD)."}
         </div>
-        {helpOpen && <HelpPopover onClose={onCloseHelp} />}
       </div>
       <div className="svt-controls">
         <Readout spot={spot} emUpper={emUpper} emLower={emLower} />
         <ScaleToggle mode={scaleMode} onChange={onScaleChange} />
       </div>
+      {/* Popover anchored at the panel-head level (NOT the title-block)
+          so when the head wraps at narrow viewports it slides below
+          the wrapped controls instead of overlapping them. */}
+      {helpOpen && <HelpPopover onClose={onCloseHelp} />}
     </div>
   );
 }
@@ -321,49 +332,59 @@ function InfoButton({
 
 function HelpPopover({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  // Close on outside click. mousedown (not click) fires before any
-  // focus shift, so clicking elsewhere dismisses cleanly without an
-  // intermediate "open" frame.
+  // Close on (a) outside click — mousedown rather than click so it
+  // fires before focus shift; (b) Escape keydown — standard dialog
+  // keyboard parity. The mousedown handler skips clicks on the ⓘ
+  // button itself so the button's own onClick handles the
+  // single-state-transition toggle (without this, clicking ⓘ to
+  // close would briefly unmount/remount the popover in the same
+  // frame as the document-mousedown runs before the button-click).
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       if (!ref.current) return;
       if (ref.current.contains(e.target as Node)) return;
+      const target = e.target as Element | null;
+      if (target?.closest(".svt-info-btn")) return;
       onClose();
     }
+    function onDocKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
     document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onDocKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onDocKeyDown);
+    };
   }, [onClose]);
   return (
-    <div ref={ref} className="svt-help-popover" role="dialog" aria-label="How to read">
+    <div
+      ref={ref}
+      className="svt-help-popover"
+      role="dialog"
+      aria-label="How to read the strike velocity tape"
+    >
       <ul>
         <li>
-          <b>Each row</b> is one strike. ATM strike is highlighted in amber.
+          <b>Each row</b> is one strike (ATM in amber); <b>each block</b> is
+          one minute of trading.
         </li>
         <li>
-          <b>Each block</b> is one minute of trading. Block <b>height</b> = total
-          (call + put) volume for that minute.
-        </li>
-        <li>
-          <b>Block color</b> = which side dominates:
+          Block <b>height</b> = total (call + put) volume; <b>color</b> = which
+          side dominates:
           <span className="svt-help-swatch call" /> calls,
           <span className="svt-help-swatch put" /> puts,
           <span className="svt-help-swatch balanced" /> balanced.
         </li>
         <li>
           <b>Bright outline</b> on a block = spike minute (≥3σ MAD from the
-          strike's recent baseline).
-        </li>
-        <li>
-          <b>Triangles in the strike column</b> mark spot (white) + EM upper /
-          lower (amber).
+          strike's baseline). Triangles in the strike column mark
+          <b> spot</b> (white) + <b>EM upper / lower</b> (amber).
         </li>
         <li>
           <b>Scale toggle</b>: <i>per row</i> normalizes each row to its own
-          peak (preserves shape on quiet strikes); <i>panel</i> uses a single
-          scale across all strikes (shows the day's standout strike).
-        </li>
-        <li>
-          Hover any block for the exact call/put split and timestamp.
+          peak (shape on quiet strikes); <i>panel</i> uses one scale (the day's
+          standout strike).
         </li>
       </ul>
     </div>
@@ -718,8 +739,12 @@ function MinuteTooltip({ cell }: { cell: HoveredCell }) {
   // which case flip to the opposite side so the tooltip stays visible.
   // `position: fixed` so it escapes any panel overflow clipping.
   const offset = 12;
-  const estW = 220; // rough tooltip width for overflow detection
-  const estH = 110;
+  // Conservative size estimates for the flip decision (#329 R1+R2 nit).
+  // Tooltip has `min-width: 180px` + padding; spike footer adds ~22px
+  // height. Rounding generous so a 5-digit strike + spike line doesn't
+  // overshoot the viewport before the flip fires.
+  const estW = 260;
+  const estH = 130;
   const flipX = cell.mouseX + offset + estW > window.innerWidth;
   const flipY = cell.mouseY + offset + estH > window.innerHeight;
   const style: CSSProperties = {

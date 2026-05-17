@@ -264,6 +264,9 @@ export function cellIndexFromX(
   rect: { left: number; width: number },
   axisLength: number,
 ): number {
+  if (!Number.isFinite(mouseClientX) || !Number.isFinite(rect.left) || !Number.isFinite(rect.width)) {
+    return -1;
+  }
   if (rect.width <= 0 || axisLength <= 0) return -1;
   const frac = (mouseClientX - rect.left) / rect.width;
   if (frac < 0 || frac >= 1) return -1;
