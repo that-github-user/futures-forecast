@@ -5,10 +5,13 @@
  * StraddleMap-specific (`.smc-*`) so they don't conflict with the
  * velocity-panel info-popover styling (`.svt-*` in
  * StrikeVelocityTape.css). The two patterns ARE near-identical;
- * a separate follow-up task tracks extracting a shared
- * `InfoPopover` component once we have a third consumer (rule of
- * three — see [[reference_echarts_category_axis_fractional]] for
- * the same principle applied to the chart-axis rounding issue). */
+ * task #334 tracks extracting a shared `<InfoPopover>` component
+ * once we have a third consumer (rule of three — see
+ * [[reference_echarts_category_axis_fractional]] for the same
+ * principle applied to the chart-axis rounding issue). When the
+ * extraction lands BOTH this file and StrikeVelocityTape.css's
+ * .svt-info-* / .svt-help-* sections collapse into the shared
+ * module. */
 
 .smc-info-btn {
   appearance: none;
@@ -33,6 +36,9 @@
   border-color: var(--text-muted);
 }
 .smc-info-btn.active {
+  /* TODO(#326): replace `#1a2235` with `var(--bg-panel-head)` once
+   * the alias lands in globals.css. Same literal used by
+   * .svt-info-btn.active + .svt-toggle button.active. */
   background: #1a2235;
   color: var(--text-bright);
   border-color: var(--accent-amber);

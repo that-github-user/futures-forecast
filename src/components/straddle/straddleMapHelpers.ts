@@ -195,8 +195,11 @@ export function buildStraddleMapOption(
         // (net===0) so the tooltip header agrees with the bar color.
         const netColor = net > 0 ? colors.accentBlue : net < 0 ? colors.accentAmber : colors.textMuted;
         // Color the NET flow value by sign so the operator can read
-        // direction without parsing the +/- prefix — matches the
-        // ▲ green / ▼ red glyph color convention on the bar.
+        // direction without parsing the +/- prefix. Three-way split
+        // (positive / negative / tie → muted) mirrors the NET OI
+        // header's tie treatment two lines above; intentionally
+        // differs from the bar's ▲/▼ glyph helper which uses `>= 0`
+        // (green wins ties) to keep glyphs binary on the bar.
         const flowColor =
           netFlow > 0
             ? colors.accentGreen
@@ -220,13 +223,22 @@ export function buildStraddleMapOption(
         // Useful when scanning a wide chart: this strike's flow is
         // inside today's expected move, so it's more likely to matter
         // for the close. Hidden during cold-start (any EM null).
+        //
+        // Inclusive on both ends to match the snapshotter contract
+        // ("[em_lower, em_upper]" per terminalTypes.PinCandidate
+        // docstring at terminalTypes.ts:302).
+        //
+        // Styling deliberately mirrors PinCandidatesPanel's "EM" badge
+        // (green-tinted background) so the operator sees the same
+        // visual convention for the same concept across both panels
+        // — flagged as a cross-panel consistency win in #333 review.
         const withinEm =
           data.em_lower != null &&
           data.em_upper != null &&
           strike >= data.em_lower &&
           strike <= data.em_upper;
         const emBadge = withinEm
-          ? `<span style="margin-left:6px;padding:1px 5px;border:1px solid ${colors.accentAmber};color:${colors.accentAmber};border-radius:2px;font-size:9px;letter-spacing:0.06em">WITHIN EM</span>`
+          ? `<span style="margin-left:6px;padding:1px 5px;color:${colors.accentGreen};background:${withAlpha(colors.accentGreen, 0.09)};border:1px solid ${withAlpha(colors.accentGreen, 0.3)};border-radius:2px;font-size:9px;letter-spacing:0.06em">EM</span>`
           : "";
         return [
           `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}${emBadge}</div>`,

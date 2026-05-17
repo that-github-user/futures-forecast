@@ -218,7 +218,7 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
         <li>
           <b>Dashed amber lines</b> = expected-move (EM) upper/lower bounds.
           <b> Solid white line</b> = current spot. Both interpolate between
-          strike rows to land at the exact price (#321).
+          strike rows to land at the exact price.
         </li>
         <li>
           Hover any bar for the full call/put split — OI, volume, IV, Δ,

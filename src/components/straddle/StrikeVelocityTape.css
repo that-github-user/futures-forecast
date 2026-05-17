@@ -346,6 +346,11 @@
   border-color: var(--text-muted);
 }
 .svt-info-btn.active {
+  /* TODO(#326): replace with var(--bg-panel-head) when the globals
+   * alias lands. Same literal also at lines 39, 140, 234. Task #334
+   * tracks extracting this whole .svt-info-* / .svt-help-* section
+   * (mirror of .smc-info-* / .smc-help-* in StraddleMapChart.css)
+   * into a shared <InfoPopover> module on the third consumer. */
   background: #1a2235;
   color: var(--text-bright);
   border-color: var(--accent-amber);
