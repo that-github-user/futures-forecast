@@ -302,41 +302,18 @@ function HeatmapChart({
     // the BOTTOM, then flip with `inverse: true`. Easier: just feed
     // already-descending strikes and inverse=true. We choose the latter.
     const yLabels = strikes.map((s) => s.toFixed(0));
-    // Latest-minute accent (#206 R2 I1 + round-2 follow-up): a dashed
-    // vertical line BETWEEN the last and second-to-last cells, labeled
-    // "NOW", draws the eye to "what's hot right now". Skipped when
-    // axis has fewer than 2 minutes.
-    //
-    // ECharts category xAxis defaults to `boundaryGap: true`, so an
-    // integer `xAxis: N-1` markLine renders AT the CENTER of band N-1
-    // (i.e., ON the last column). To position the line BETWEEN the
-    // last two cells (the visual boundary signaling "now"), we use the
-    // fractional category index `N - 1.5` — ECharts accepts fractional
-    // markLine positions on category axes and interpolates between
-    // band centers. The "NOW" label anchors the semantic explicitly so
-    // the dashed line isn't ambiguous.
-    const latestMinuteMarkLine = axis.length >= 2
-      ? {
-          symbol: "none",
-          silent: true,
-          animation: false,
-          lineStyle: {
-            color: withAlpha(colors.textBright, 0.5),
-            type: "dashed" as const,
-            width: 1,
-          },
-          label: {
-            show: true,
-            formatter: "NOW",
-            position: "end" as const,
-            color: withAlpha(colors.textBright, 0.7),
-            fontFamily: fonts.mono,
-            fontSize: 9,
-            fontWeight: 700,
-          },
-          data: [{ xAxis: axis.length - 1.5 }],
-        }
-      : undefined;
+    // Live-minute cue: rather than overlaying a markLine to flag "what's
+    // hot right now" (rounds 2+3 tried both an integer xAxis index and
+    // a fractional one; the integer rendered ON the live cell instead
+    // of beside it, and ECharts 6.x rounds fractional category-axis
+    // values via OrdinalScale.parse, making `axis.length - 1.5` a
+    // pixel-identical no-op), we lean on the x-axis itself: the
+    // rightmost label is always rendered (see `buildXLabelMask` —
+    // force-true at the last index) so operators can read the live
+    // minute directly from the axis without an unreliable overlay.
+    // Spike borders still flag individual notable cells; the rightmost
+    // column being identifiable is sufficient "look here" framing
+    // without misleading visual chrome (#206 R3 R2 B1).
     return {
       backgroundColor: "transparent",
       animation: false,
@@ -475,7 +452,6 @@ function HeatmapChart({
               borderWidth: 3,
             },
           },
-          markLine: latestMinuteMarkLine,
           progressive: 0, // disable progressive rendering for crispness
         },
       ],

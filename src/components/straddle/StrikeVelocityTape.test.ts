@@ -577,14 +577,14 @@ describe("buildUnifiedMinuteAxis", () => {
 
 
 describe("buildXLabelMask", () => {
-  it("marks ONLY wall-clock minutes divisible by 5 (#206 R1 round-2 NIT)", () => {
+  it("marks wall-clock minutes divisible by 5 AND always marks the last index (#206 R3 R2 B1)", () => {
     const axis = [
-      "2026-05-15T15:32:00-04:00", // :32 → false
-      "2026-05-15T15:33:00-04:00", // :33 → false
-      "2026-05-15T15:34:00-04:00", // :34 → false
-      "2026-05-15T15:35:00-04:00", // :35 → true
-      "2026-05-15T15:36:00-04:00", // :36 → false
-      "2026-05-15T15:40:00-04:00", // :40 → true
+      "2026-05-15T15:32:00-04:00", // :32, idx 0 → false
+      "2026-05-15T15:33:00-04:00", // :33, idx 1 → false
+      "2026-05-15T15:34:00-04:00", // :34, idx 2 → false
+      "2026-05-15T15:35:00-04:00", // :35, idx 3 → true (stride)
+      "2026-05-15T15:36:00-04:00", // :36, idx 4 → false
+      "2026-05-15T15:40:00-04:00", // :40, idx 5 → true (last + stride)
     ];
     expect(buildXLabelMask(axis)).toEqual([false, false, false, true, false, true]);
   });
@@ -592,17 +592,37 @@ describe("buildXLabelMask", () => {
   it("anchors to wall-clock (not array index) so axis offset doesn't shift labels", () => {
     // Axis starts at :32 — an index-based mask would surface labels at
     // indices [0, 5, 10] which maps to :32 / :37 / :42 (wrong).
-    // Wall-clock mask must surface :35, :40 instead.
+    // Wall-clock mask must surface :35, :40 instead. Last index (idx
+    // 9, :41) is also force-true now.
     const axis = Array.from({ length: 10 }, (_, i) => {
       const minuteOfHour = 32 + i;
       const mm = String(minuteOfHour).padStart(2, "0");
       return `2026-05-15T15:${mm}:00-04:00`;
     });
     const mask = buildXLabelMask(axis);
-    // True at indices 3 (:35) and 8 (:40).
+    // True at indices 3 (:35), 8 (:40), and 9 (:41 — last-index force).
     expect(mask).toEqual([
-      false, false, false, true, false, false, false, false, true, false,
+      false, false, false, true, false, false, false, false, true, true,
     ]);
+  });
+
+  it("force-shows the rightmost label as the live-minute cue (#206 R3 R2 B1)", () => {
+    // Axis where NO interior tick hits a 5-min stride — the last index
+    // must STILL render so the operator can read the live minute. Drop
+    // the last index from a stride-only axis to confirm the
+    // pre-force-true mask was all-false, then add a non-stride last
+    // tick and watch the last index flip to true.
+    const axis = [
+      "2026-05-15T15:31:00-04:00", // :31 → false
+      "2026-05-15T15:32:00-04:00", // :32 → false
+      "2026-05-15T15:33:00-04:00", // :33 → true (LAST)
+    ];
+    expect(buildXLabelMask(axis)).toEqual([false, false, true]);
+  });
+
+  it("single-element axis: the only index is the last index → true", () => {
+    const axis = ["2026-05-15T15:33:00-04:00"];
+    expect(buildXLabelMask(axis)).toEqual([true]);
   });
 
   it("returns an empty array for an empty axis", () => {
@@ -615,6 +635,23 @@ describe("buildXLabelMask", () => {
     // see SOMETHING rather than a silent axis.
     const axis = ["not-a-timestamp", "also-not-a-timestamp"];
     expect(buildXLabelMask(axis)).toEqual([true, true]);
+  });
+
+  it("handles hour wraparound: :55 → false, :00 → true, last is :01 force-true", () => {
+    // Pin behavior across an hour boundary so a future refactor can't
+    // silently break the modulo logic at the 60-minute wrap.
+    const axis = [
+      "2026-05-15T15:55:00-04:00", // :55 → true (stride: 55 mod 5 === 0)
+      "2026-05-15T15:56:00-04:00", // :56 → false
+      "2026-05-15T15:57:00-04:00", // :57 → false
+      "2026-05-15T15:58:00-04:00", // :58 → false
+      "2026-05-15T15:59:00-04:00", // :59 → false
+      "2026-05-15T16:00:00-04:00", // :00 → true (stride)
+      "2026-05-15T16:01:00-04:00", // :01 → true (LAST force)
+    ];
+    expect(buildXLabelMask(axis)).toEqual([
+      true, false, false, false, false, true, true,
+    ]);
   });
 });
 

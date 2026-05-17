@@ -299,6 +299,14 @@ export function buildSpotPathSeries(
  *  15:40 / 15:45 — NOT 15:32 / 15:37 / 15:42 which an index-based
  *  stride would produce.
  *
+ *  The LAST axis index is ALWAYS rendered (force-true) regardless of
+ *  whether its wall-clock minute hits a 5-min stride. This is the
+ *  "live minute" cue — operators need to read what minute is currently
+ *  the rightmost cell. Replaces the round-2/round-3 markLine overlay
+ *  (ECharts 6.x rounds fractional category-axis values via
+ *  `OrdinalScale.parse`, so the fractional-position trick was a no-op;
+ *  see #206 R3 R2 B1).
+ *
  *  Falls back to `true` (label visible) on parse failure so an
  *  upstream timestamp-format drift leaves operators with SOMETHING to
  *  read on the axis instead of going completely silent.
@@ -306,9 +314,19 @@ export function buildSpotPathSeries(
  *  Extracted as a pure helper (#206 R1 round-2 NIT) so the
  *  wall-clock-vs-index distinction is testable without rendering the
  *  chart.
+ *
+ *  Input assumption: `axis` is the unified minute axis produced by
+ *  `buildUnifiedMinuteAxis` (sorted, deduped, ISO-with-HH:MM tail).
+ *  Calling with arbitrary strings is supported (the parse-failure
+ *  fallback applies per element), but the force-last-true behavior
+ *  presumes time-ordered input.
  */
 export function buildXLabelMask(axis: string[]): boolean[] {
-  return axis.map((ts) => {
+  const lastIdx = axis.length - 1;
+  return axis.map((ts, i) => {
+    // Live-minute cue: the rightmost cell is always labeled so the
+    // operator can read "what minute is now" from the axis.
+    if (i === lastIdx) return true;
     const label = formatMinuteLabel(ts);
     // formatMinuteLabel returns "HH:MM" (or the raw string on parse
     // failure). Parse the minute out and show only when minute mod 5
