@@ -31,6 +31,7 @@ import {
   buildSpotPathPoints,
   buildSpotPathSeries,
   buildUnifiedMinuteAxis,
+  buildXLabelMask,
   computeMaxVolume,
   formatMinuteLabel,
   formatVolume,
@@ -210,7 +211,7 @@ describe("buildHeatmapCells", () => {
     ]);
   });
 
-  it("emits zero-volume cells with no itemStyle (no spike border)", () => {
+  it("emits zero-volume cells with a transparent fill override (#206 R2 round-2 N1+N2)", () => {
     const t = tape({
       strikes: [
         strike({
@@ -221,11 +222,15 @@ describe("buildHeatmapCells", () => {
       ],
     });
     const cells = buildHeatmapCells(t, [7500], [ts1, ts2]);
-    // Both ts1 and ts2 emit; ts2 is a zero cell with no spike border.
+    // Both ts1 and ts2 emit; ts2 is a zero cell. The visualMap's
+    // amber-floor low stop would otherwise tint EVERY zero cell with a
+    // faint warm wash, masking the "no print this minute" signal — so
+    // we override the fill to fully transparent at the cell level.
     expect(cells.length).toBe(2);
     expect(cells[0].value).toEqual([0, 0, 60]);
+    expect(cells[0].itemStyle).toBeUndefined(); // non-zero, no spike → no itemStyle
     expect(cells[1].value).toEqual([1, 0, 0]);
-    expect(cells[1].itemStyle).toBeUndefined();
+    expect(cells[1].itemStyle).toEqual({ color: "transparent" });
   });
 
   it("attaches a spike border when the minute is in either side's spike set", () => {
@@ -345,12 +350,36 @@ describe("buildHeatmapCells", () => {
     expect(cells.length).toBe(2);
     expect(cells[0].value).toEqual([0, 0, 200]);
     expect(cells[0].itemStyle).toBeUndefined();
-    // ts2: zero volume, orphan spike → border still attaches.
+    // ts2: zero volume, orphan spike → transparent fill (zero override)
+    // AND spike border. Both layer onto the same itemStyle object —
+    // the border still surfaces against the transparent (panel-color)
+    // background, which is the desired contrast for an orphan spike.
     expect(cells[1].value).toEqual([1, 0, 0]);
     expect(cells[1].itemStyle).toEqual({
+      color: "transparent",
       borderColor: SPIKE_BORDER_COLOR,
       borderWidth: SPIKE_BORDER_WIDTH,
     });
+  });
+
+  it("layers transparent fill onto every zero-volume cell, leaves non-zero cells untouched (#206 R2 round-2 N1+N2)", () => {
+    // Mixed row: ts1=non-zero, ts2=zero, ts3=non-zero. Walk every
+    // cell to assert the zero-override stays cell-local and doesn't
+    // bleed into adjacent non-zero cells.
+    const t = tape({
+      strikes: [
+        strike({
+          strike: 7500,
+          call_minutes: [minute(ts1, 40), minute(ts3, 20)],
+          put_minutes: [],
+        }),
+      ],
+    });
+    const cells = buildHeatmapCells(t, [7500], [ts1, ts2, ts3]);
+    expect(cells.length).toBe(3);
+    expect(cells[0].itemStyle).toBeUndefined();
+    expect(cells[1].itemStyle).toEqual({ color: "transparent" });
+    expect(cells[2].itemStyle).toBeUndefined();
   });
 });
 
@@ -543,6 +572,49 @@ describe("buildUnifiedMinuteAxis", () => {
       ],
     });
     expect(buildUnifiedMinuteAxis(t)).toEqual([ts]);
+  });
+});
+
+
+describe("buildXLabelMask", () => {
+  it("marks ONLY wall-clock minutes divisible by 5 (#206 R1 round-2 NIT)", () => {
+    const axis = [
+      "2026-05-15T15:32:00-04:00", // :32 → false
+      "2026-05-15T15:33:00-04:00", // :33 → false
+      "2026-05-15T15:34:00-04:00", // :34 → false
+      "2026-05-15T15:35:00-04:00", // :35 → true
+      "2026-05-15T15:36:00-04:00", // :36 → false
+      "2026-05-15T15:40:00-04:00", // :40 → true
+    ];
+    expect(buildXLabelMask(axis)).toEqual([false, false, false, true, false, true]);
+  });
+
+  it("anchors to wall-clock (not array index) so axis offset doesn't shift labels", () => {
+    // Axis starts at :32 — an index-based mask would surface labels at
+    // indices [0, 5, 10] which maps to :32 / :37 / :42 (wrong).
+    // Wall-clock mask must surface :35, :40 instead.
+    const axis = Array.from({ length: 10 }, (_, i) => {
+      const minuteOfHour = 32 + i;
+      const mm = String(minuteOfHour).padStart(2, "0");
+      return `2026-05-15T15:${mm}:00-04:00`;
+    });
+    const mask = buildXLabelMask(axis);
+    // True at indices 3 (:35) and 8 (:40).
+    expect(mask).toEqual([
+      false, false, false, true, false, false, false, false, true, false,
+    ]);
+  });
+
+  it("returns an empty array for an empty axis", () => {
+    expect(buildXLabelMask([])).toEqual([]);
+  });
+
+  it("falls back to true (label visible) when the timestamp can't be parsed", () => {
+    // formatMinuteLabel returns the raw string on parse failure, which
+    // won't match `/:(\d{2})$/`. Surface ALL labels so operators still
+    // see SOMETHING rather than a silent axis.
+    const axis = ["not-a-timestamp", "also-not-a-timestamp"];
+    expect(buildXLabelMask(axis)).toEqual([true, true]);
   });
 });
 

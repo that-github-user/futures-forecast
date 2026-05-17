@@ -118,11 +118,23 @@ export function rowTotalVolume(strike: VelocityStrike): number {
  *
  *  When a (strike, minute) cell coincides with either a call_spike or
  *  put_spike timestamp, we attach a per-point `itemStyle` with a thick
- *  red border so ECharts paints the spike border without us needing a
- *  separate series. ECharts merges this with the base series itemStyle. */
+ *  border so ECharts paints the spike border without us needing a
+ *  separate series. ECharts merges this with the base series itemStyle.
+ *
+ *  When a cell has `totalVolume === 0` we attach a per-point
+ *  `itemStyle.color = transparent` so the visualMap's continuous
+ *  gradient is bypassed entirely for zero cells. This makes zero cells
+ *  visually disappear (matching the panel background) while non-zero
+ *  cells render against the warm gradient — operator can distinguish
+ *  "no print" from "single illiquid print" at a glance, instead of
+ *  both rendering at the near-floor amber tint (#206 R2 round-2 N1+N2). */
 export interface HeatmapCell {
   value: [number, number, number];
-  itemStyle?: { borderColor: string; borderWidth: number };
+  itemStyle?: {
+    color?: string;
+    borderColor?: string;
+    borderWidth?: number;
+  };
 }
 
 /** Spike-border styling. Exposed so tests can assert against the exact
@@ -196,11 +208,25 @@ export function buildHeatmapCells(
       const total = callVol + putVol;
       const isSpike = callSpikes.has(ts) || putSpikes.has(ts);
       const cell: HeatmapCell = { value: [colIdx, rowIdx, total] };
-      if (isSpike) {
-        cell.itemStyle = {
-          borderColor: SPIKE_BORDER_COLOR,
-          borderWidth: SPIKE_BORDER_WIDTH,
-        };
+      // Per-cell itemStyle layering:
+      //   1. total === 0 → override fill to fully transparent so the
+      //      visualMap's continuous amber gradient is bypassed (would
+      //      otherwise tint EVERY zero cell with ~α=0.12 amber and turn
+      //      the whole panel into a faint warm wash, masking the
+      //      "this minute had 0 contracts" signal that should read as
+      //      a blank cell). #206 R2 round-2 N1+N2.
+      //   2. spike → border styling on top of whichever fill applied.
+      //      Both fill-override and border can coexist via the same
+      //      itemStyle object.
+      if (total === 0 || isSpike) {
+        cell.itemStyle = {};
+        if (total === 0) {
+          cell.itemStyle.color = "transparent";
+        }
+        if (isSpike) {
+          cell.itemStyle.borderColor = SPIKE_BORDER_COLOR;
+          cell.itemStyle.borderWidth = SPIKE_BORDER_WIDTH;
+        }
       }
       cells.push(cell);
     }
@@ -264,6 +290,33 @@ export function buildSpotPathSeries(
   for (const v of series) if (v !== null) nonNull++;
   if (nonNull < 2) return null;
   return series;
+}
+
+/** Build a per-tick "show this label?" mask for the heatmap's x-axis.
+ *  Derived from WALL-CLOCK minutes (not array indices) so labels land
+ *  on `:00`/`:05` boundaries regardless of where the replay window
+ *  starts. If the axis starts at 15:32, labels surface at 15:35 /
+ *  15:40 / 15:45 — NOT 15:32 / 15:37 / 15:42 which an index-based
+ *  stride would produce.
+ *
+ *  Falls back to `true` (label visible) on parse failure so an
+ *  upstream timestamp-format drift leaves operators with SOMETHING to
+ *  read on the axis instead of going completely silent.
+ *
+ *  Extracted as a pure helper (#206 R1 round-2 NIT) so the
+ *  wall-clock-vs-index distinction is testable without rendering the
+ *  chart.
+ */
+export function buildXLabelMask(axis: string[]): boolean[] {
+  return axis.map((ts) => {
+    const label = formatMinuteLabel(ts);
+    // formatMinuteLabel returns "HH:MM" (or the raw string on parse
+    // failure). Parse the minute out and show only when minute mod 5
+    // === 0.
+    const m = /:(\d{2})$/.exec(label);
+    if (!m) return true;
+    return Number(m[1]) % 5 === 0;
+  });
 }
 
 /** Maximum cell volume across the heatmap, used as the `visualMap.max`

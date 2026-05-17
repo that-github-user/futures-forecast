@@ -44,6 +44,7 @@ import {
   buildSpotPathPoints,
   buildSpotPathSeries,
   buildUnifiedMinuteAxis,
+  buildXLabelMask,
   computeMaxVolume,
   formatMinuteLabel,
   formatVolume,
@@ -292,41 +293,48 @@ function HeatmapChart({
     if (axis.length === 0 || strikes.length === 0) return null;
     // X-axis labels at 5-min intervals derived from the WALL-CLOCK minute
     // (not the array index) so labels land on :00/:05 boundaries
-    // regardless of where the replay window starts (#206 R1 I1). If the
-    // axis starts at 15:32, this surfaces labels at 15:35/15:40/15:45 —
-    // not 15:32/15:37/15:42, which an index-based stride would produce.
+    // regardless of where the replay window starts (#206 R1 I1).
     const xLabels = axis.map((ts) => formatMinuteLabel(ts));
-    const xLabelShown = axis.map((ts) => {
-      const label = formatMinuteLabel(ts);
-      // formatMinuteLabel returns "HH:MM" (or the raw string on parse
-      // failure). Parse the minute out and show only when minute mod 5
-      // === 0. On a parse failure we fall back to showing the label so
-      // operators still see SOMETHING rather than an axis going silent.
-      const m = /:(\d{2})$/.exec(label);
-      if (!m) return true;
-      return Number(m[1]) % 5 === 0;
-    });
+    const xLabelShown = buildXLabelMask(axis);
     // Strike labels go on the left axis with the highest strike at the
     // top — y-axis natively renders categories bottom-up, so we feed it
     // descending strings and rely on `inverse: false` so [0] ends up at
     // the BOTTOM, then flip with `inverse: true`. Easier: just feed
     // already-descending strikes and inverse=true. We choose the latter.
     const yLabels = strikes.map((s) => s.toFixed(0));
-    // Latest-minute accent (#206 R2 I1): a dashed vertical line between
-    // the last and second-to-last cells draws the eye to "what's hot
-    // right now". Skipped when axis has fewer than 2 minutes.
+    // Latest-minute accent (#206 R2 I1 + round-2 follow-up): a dashed
+    // vertical line BETWEEN the last and second-to-last cells, labeled
+    // "NOW", draws the eye to "what's hot right now". Skipped when
+    // axis has fewer than 2 minutes.
+    //
+    // ECharts category xAxis defaults to `boundaryGap: true`, so an
+    // integer `xAxis: N-1` markLine renders AT the CENTER of band N-1
+    // (i.e., ON the last column). To position the line BETWEEN the
+    // last two cells (the visual boundary signaling "now"), we use the
+    // fractional category index `N - 1.5` — ECharts accepts fractional
+    // markLine positions on category axes and interpolates between
+    // band centers. The "NOW" label anchors the semantic explicitly so
+    // the dashed line isn't ambiguous.
     const latestMinuteMarkLine = axis.length >= 2
       ? {
           symbol: "none",
           silent: true,
           animation: false,
           lineStyle: {
-            color: withAlpha(colors.textBright, 0.4),
+            color: withAlpha(colors.textBright, 0.5),
             type: "dashed" as const,
             width: 1,
           },
-          label: { show: false },
-          data: [{ xAxis: axis.length - 1 }],
+          label: {
+            show: true,
+            formatter: "NOW",
+            position: "end" as const,
+            color: withAlpha(colors.textBright, 0.7),
+            fontFamily: fonts.mono,
+            fontSize: 9,
+            fontWeight: 700,
+          },
+          data: [{ xAxis: axis.length - 1.5 }],
         }
       : undefined;
     return {
