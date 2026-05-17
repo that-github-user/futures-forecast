@@ -1,817 +1,575 @@
 /**
- * StrikeVelocityTape — frozen replay of strike-level trade velocity
- * for the 0DTE chain, rendered as a full-width major panel BELOW the
- * straddle body grid.
+ * StrikeVelocityTape (v4 lane redesign — #325).
  *
- * Heatmap redesign (#320). The previous SVG sparkline + spike-glyph
- * layout was "fancy but not actionable" — bars smushed as the panel
- * widened, the two-per-strike rows blurred call vs put, the SPX
- * overlay collided with column headers, and no interactivity. The
- * redesign trades all of that for a dense ECharts heatmap where:
+ * Replaces the ECharts heatmap that shipped in PR #206 (#320). The
+ * heatmap had structural problems the operator flagged:
+ *   1. Warm-gradient color (amber → red) is colorblind-hostile.
+ *   2. The sibling SPX line chart couldn't align with the discrete-
+ *      time heatmap grid; auto-scaled price y-axis drifted between
+ *      refreshes; operator had to "look all the way to the left" to
+ *      read price.
+ *   3. ITM/OTM tags in the right column were side-dependent and
+ *      ambiguous for a strike trading both calls and puts.
  *
- *   - Rows are strikes (descending top→bottom, same as the chart axis)
- *   - Columns are 1-min buckets across the replay window
- *   - Cell color encodes total (call+put) volume on a warm gradient
- *     so "heat" reads naturally — operators scan for the bright spots
- *   - Spike minutes (>3σ MAD threshold) wear a thick red border so
- *     they pop without distorting the gradient
- *   - Hover tooltip discloses the call/put split and the spike flag
+ * v4 design (locked in static mock at ~/.claude/plans/velocity-
+ * lanes-mock/):
+ *   - One row per strike, one BLOCK per minute. Block height encodes
+ *     total (call+put) volume; block color encodes which side
+ *     dominates via a colorblind-safe blue ↔ grey ↔ amber diverging
+ *     palette. Spike minutes wear a bright-white outline (NOT red —
+ *     red-on-amber-gradient was invisible in #206).
+ *   - Spot + EM markers as right-pointing triangles INSIDE the strike
+ *     column (left-aligned, at interpolated y-pixels between rows).
+ *     Numeric values live in a panel-head readout, not next to each
+ *     marker, so the chart body has nothing left to overlap.
+ *   - Right column: per-strike session call/put split bar. Collapses
+ *     below 720px viewport via media query.
+ *   - Per-row / panel-wide normalization toggle in the panel head.
+ *     Default per-row so quiet strikes still show contour.
  *
- * Above the heatmap, a small ECharts line chart traces the SPX 1-min
- * close path across the same window. Same minute-axis range, separate
- * chart instance (simpler to size independently than ECharts grids).
- *
- * Null contract: when the parent passes `tape={null}` (no replay row
- * yet), the component renders a single muted "(no replay available)"
- * placeholder, sized to match the chart so the layout doesn't reflow
- * when a replay first appears.
- *
- * Chart-lifecycle rules (matching StraddleMapChart):
- *   - `echarts.init` once with `[]` dep — instance held in a ref
- *   - `setOption(...)` in a separate `[data]` dep effect (no teardown
- *     on refresh — just rebind series)
- *   - `ResizeObserver` on the container → `chart.resize()`
- *   - `chart.dispose()` on unmount (echarts holds the canvas otherwise)
+ * Critical SVG note: `width: 100%; height: 100%` on the lane SVG plus
+ * `min-width: 0` on the cell — otherwise SVG keeps its intrinsic
+ * 300px width and the rightmost minutes overflow. v3 mock had this
+ * bug; v4 + this implementation fix it. CSS lives in
+ * `StrikeVelocityTape.css`.
  */
 
-import { useEffect, useMemo, useRef } from "react";
-import * as echarts from "echarts";
-import type { EChartsOption } from "echarts";
+import { useMemo, useState, type ReactNode } from "react";
+import type { VelocityTape } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
-import type { VelocityStrike, VelocityTape } from "../../api/terminalTypes";
 import {
-  buildHeatmapCells,
-  buildSpotPathPoints,
-  buildSpotPathSeries,
-  buildUnifiedMinuteAxis,
+  buildMinuteAxis,
   buildXLabelMask,
-  computeMaxVolume,
+  dominanceColor,
   formatMinuteLabel,
   formatVolume,
-  HEATMAP_GRID_BOTTOM,
-  HEATMAP_GRID_TOP,
-  resolveStrikeOrder,
+  MAX_ROWS,
+  panelMaxVol,
+  priceToY,
+  rowMaxVol,
+  rowSplit,
   rowTotalVolume,
-  sumVolume,
+  ROW_H,
+  selectVisibleStrikes,
 } from "./strikeVelocityHelpers";
+import "./StrikeVelocityTape.css";
 
-// ── Geometry ────────────────────────────────────────────────────────
-// Single source of truth for chart dims. The heatmap height scales
-// with strike count so 11 strikes (the typical ATM ± 5 cluster) gets
-// ~30px per row + axis-label headroom; very narrow tapes still get
-// a legible row height.
+// ── Constants (kept inside the file rather than tokens because they
+// describe lane GEOMETRY specifically, not theme primitives) ──────
+const LANE_VIEWBOX_W = 1000;
+const LANE_VIEWBOX_H = 40;
+const LANE_CELL_PAD = 1;
+/** Cell-spike outline color/width. Bright-white (textBright) so it
+ *  remains visible against the saturated dominance hues at the peak
+ *  of the gradient — the #206 round-1 review caught red-on-red being
+ *  invisible at hot cells. */
+const SPIKE_STROKE = colors.textBright;
+const SPIKE_STROKE_W = 1.5;
 
-const SPOT_CHART_HEIGHT = 80;
-const HEATMAP_ROW_PX = 28;
-const HEATMAP_AXIS_PADDING = 60;
-const STRIKE_LABEL_WIDTH = 60;
-const TOTAL_LABEL_WIDTH = 72;
-
-interface Props {
+/**
+ * Cold-start contract for the headline fields (spot, emUpper, emLower,
+ * atmStrike). Per the snapshotter at
+ *   automated-dc-entry/futures_terminal/systems/straddle_chain.py:822-823
+ * `em_upper = spot + atm_straddle_mid` and `em_lower = spot -
+ * atm_straddle_mid` — all four fields populate atomically. Either every
+ * field is non-null (live snapshot) or every field is null (cold-start
+ * before the first snapshot of the session). The component handles
+ * both shapes:
+ *   - All non-null: triangles + ATM amber highlight + numeric chips.
+ *   - All null: panel still renders the replay lanes (replay tape is
+ *     independent of today's session). A "cold-start" notice in the
+ *     panel head explicitly cues the operator that spot + EM are
+ *     unavailable; readout chips show "—" instead of values.
+ *     `selectVisibleStrikes` falls back to the median tape strike.
+ */
+export interface StrikeVelocityTapeProps {
   tape: VelocityTape | null;
-  /** Strike order from the chart (descending). The component filters
-   *  to strikes the tape carries and renders them in this order so the
-   *  cluster subset reads in the same direction as the chart's y-axis.
-   *  This is NOT a row-by-row alignment — the heatmap uses its own per-
-   *  row pixel density, independent of the chart's strike packing.
-   *  When null/empty, falls back to the tape's own strike order
-   *  (descending by strike). */
-  strikeOrder?: number[];
-  /** Optional container height. When omitted (the default), the panel
-   *  sizes to its content — the heatmap row count drives the total
-   *  height. Pass an explicit number to cap (e.g., if embedding in a
-   *  side panel that needs a fixed band). */
-  height?: number;
+  /** Current spot price. */
+  spot: number | null;
+  /** Expected-move upper bound. */
+  emUpper: number | null;
+  /** Expected-move lower bound. */
+  emLower: number | null;
+  /** ATM strike — used to center the visible strike window and to
+   *  amber-highlight that row. */
+  atmStrike: number | null;
 }
 
-/** Compact SPX spot-path line chart, anchored above the heatmap.
- *
- *  Renders against the SHARED minute axis (`axis` prop) — the same axis
- *  the heatmap uses — so column N of the heatmap and point N of the
- *  spot line refer to the SAME wall-clock minute (#206 R2 B3). Missing
- *  minutes (axis ticks that have no spot_path entry) render as a gap
- *  in the line via null values in the series data. */
-function SpotPathChart({ tape, axis }: { tape: VelocityTape; axis: string[] }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
-
-  // Resolve the axis-aligned series once per (tape, axis). Returns null
-  // when fewer than 2 non-null points exist (matches the legacy
-  // buildSpotPathPoints contract — caller hides the section).
-  const series = useMemo(() => buildSpotPathSeries(tape, axis), [tape, axis]);
-
-  // ── Init once ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = echarts.init(containerRef.current);
-    chartRef.current = chart;
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(containerRef.current);
-    return () => {
-      ro.disconnect();
-      chart.dispose();
-      chartRef.current = null;
-    };
-  }, []);
-
-  // ── Re-bind options whenever data changes ──────────────────────────
-  const option = useMemo<EChartsOption | null>(() => {
-    if (!series || axis.length === 0) return null;
-    const prices: number[] = [];
-    for (const v of series) if (v !== null) prices.push(v);
-    if (prices.length < 2) return null;
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const range = Math.max(0.01, max - min);
-    // 5% headroom on each side so the line never hugs the chart edge.
-    const yMin = min - range * 0.05;
-    const yMax = max + range * 0.05;
-    // Endpoints for markPoint: first and last NON-NULL values, paired
-    // with their axis indices so the markers sit on the actual data
-    // points (axis category index, not time). Captured as concrete
-    // numbers (not `null`) so the coord arrays we hand to ECharts
-    // satisfy MarkPointDataItemOption's `(string | number)[]` shape.
-    let firstIdx = -1;
-    let lastIdx = -1;
-    let firstPrice = NaN;
-    let lastPrice = NaN;
-    for (let i = 0; i < series.length; i++) {
-      const v = series[i];
-      if (v !== null) {
-        if (firstIdx === -1) {
-          firstIdx = i;
-          firstPrice = v;
-        }
-        lastIdx = i;
-        lastPrice = v;
-      }
-    }
-    return {
-      backgroundColor: "transparent",
-      animation: false,
-      grid: {
-        left: STRIKE_LABEL_WIDTH,
-        right: TOTAL_LABEL_WIDTH,
-        top: 8,
-        bottom: 20,
-        containLabel: false,
-      },
-      xAxis: {
-        type: "category",
-        // Render against the SHARED minute axis (same as the heatmap)
-        // so equal x-coordinates between this chart and the heatmap
-        // represent the same wall-clock minute (#206 R2 B3).
-        data: axis,
-        axisLine: { lineStyle: { color: colors.borderDim } },
-        axisTick: { show: false },
-        axisLabel: { show: false },
-        boundaryGap: false,
-      },
-      yAxis: {
-        type: "value",
-        min: yMin,
-        max: yMax,
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitLine: { show: false },
-        axisLabel: {
-          show: true,
-          color: colors.textMuted,
-          fontFamily: fonts.mono,
-          fontSize: 9,
-          showMinLabel: true,
-          showMaxLabel: true,
-          formatter: (v: number) => v.toFixed(2),
-        },
-      },
-      tooltip: {
-        trigger: "axis",
-        backgroundColor: colors.bgPanel,
-        borderColor: colors.borderDim,
-        borderWidth: 1,
-        textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
-        formatter: (params: unknown) => {
-          if (!Array.isArray(params) || params.length === 0) return "";
-          const p = params[0] as { axisValue?: string; data?: number | null };
-          const ts = typeof p.axisValue === "string" ? p.axisValue : "";
-          const label = ts ? formatMinuteLabel(ts) : "";
-          if (p.data === null || p.data === undefined || typeof p.data !== "number") {
-            return `<div style="color:${colors.textMuted}">SPX —</div>` +
-              `<div style="color:${colors.textMuted};margin-top:2px">${label} ET</div>`;
-          }
-          return `<div style="color:${colors.textBright}">SPX ${p.data.toFixed(2)}</div>` +
-            `<div style="color:${colors.textMuted};margin-top:2px">${label} ET</div>`;
-        },
-      },
-      series: [
-        {
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          // ECharts skips null values in line series, creating a clean
-          // gap rather than a fake interpolated value across missing
-          // minutes (#206 R2 B3).
-          connectNulls: false,
-          // Endpoint markers anchor the eye to the start/end prices the
-          // header surfaces in text — operator can correlate the chart
-          // tail to "{start} → {end}" without cross-referencing. Anchored
-          // on the first/last NON-NULL axis indices.
-          markPoint: firstIdx >= 0 && lastIdx >= 0 && firstIdx !== lastIdx
-            ? {
-                symbol: "circle",
-                symbolSize: 6,
-                itemStyle: { color: colors.accentAmber, borderColor: colors.bgPanel, borderWidth: 1 },
-                label: { show: false },
-                data: [
-                  { name: "start", coord: [axis[firstIdx], firstPrice] },
-                  { name: "end", coord: [axis[lastIdx], lastPrice] },
-                ],
-              }
-            : undefined,
-          lineStyle: { color: colors.accentAmber, width: 1.6 },
-          data: series,
-        },
-      ],
-    };
-  }, [series, axis]);
-
-  useEffect(() => {
-    if (!chartRef.current || !option) return;
-    chartRef.current.setOption(option, { notMerge: true });
-  }, [option]);
-
-  if (!series) return null;
-  return (
-    <div
-      ref={containerRef}
-      role="img"
-      aria-label="SPX spot path during replay window"
-      style={{ width: "100%", height: SPOT_CHART_HEIGHT }}
-    />
-  );
-}
-
-/** Heatmap chart: strike rows × minute columns, color = total volume,
- *  spike border = >3σ MAD minute on either side. */
-function HeatmapChart({
-  tape,
-  strikes,
-  axis,
-}: {
-  tape: VelocityTape;
-  strikes: number[];
-  axis: string[];
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
-
-  // Build the data array + helpers once per (tape, strikes, axis). The
-  // helpers are pure so this memo is cheap; keeps the option-builder
-  // effect from re-running on unrelated parent rerenders.
-  const data = useMemo(() => {
-    const cells = buildHeatmapCells(tape, strikes, axis);
-    const max = computeMaxVolume(tape, strikes);
-    return { cells, max };
-  }, [tape, strikes, axis]);
-
-  // ── Init once ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = echarts.init(containerRef.current);
-    chartRef.current = chart;
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(containerRef.current);
-    return () => {
-      ro.disconnect();
-      chart.dispose();
-      chartRef.current = null;
-    };
-  }, []);
-
-  // ── Re-bind options whenever data changes ──────────────────────────
-  const option = useMemo<EChartsOption | null>(() => {
-    if (axis.length === 0 || strikes.length === 0) return null;
-    // X-axis labels at 5-min intervals derived from the WALL-CLOCK minute
-    // (not the array index) so labels land on :00/:05 boundaries
-    // regardless of where the replay window starts (#206 R1 I1).
-    const xLabels = axis.map((ts) => formatMinuteLabel(ts));
-    const xLabelShown = buildXLabelMask(axis);
-    // Strike labels go on the left axis with the highest strike at the
-    // top — y-axis natively renders categories bottom-up, so we feed it
-    // descending strings and rely on `inverse: false` so [0] ends up at
-    // the BOTTOM, then flip with `inverse: true`. Easier: just feed
-    // already-descending strikes and inverse=true. We choose the latter.
-    const yLabels = strikes.map((s) => s.toFixed(0));
-    // Live-minute cue: rather than overlaying a markLine to flag "what's
-    // hot right now" (rounds 2+3 tried both an integer xAxis index and
-    // a fractional one; the integer rendered ON the live cell instead
-    // of beside it, and ECharts 6.x rounds fractional category-axis
-    // values via OrdinalScale.parse, making `axis.length - 1.5` a
-    // pixel-identical no-op), we lean on the x-axis itself: the
-    // rightmost label is always rendered (see `buildXLabelMask` —
-    // force-true at the last index) so operators can read the live
-    // minute directly from the axis without an unreliable overlay.
-    // Spike borders still flag individual notable cells; the rightmost
-    // column being identifiable is sufficient "look here" framing
-    // without misleading visual chrome (#206 R3 R2 B1).
-    return {
-      backgroundColor: "transparent",
-      animation: false,
-      grid: {
-        left: STRIKE_LABEL_WIDTH,
-        right: TOTAL_LABEL_WIDTH,
-        // Heatmap plot bounds are pulled from the shared constants so
-        // the RightTotalsColumn wrapper stays in lockstep (#206 R1 I2).
-        top: HEATMAP_GRID_TOP,
-        bottom: HEATMAP_GRID_BOTTOM,
-        containLabel: false,
-      },
-      xAxis: {
-        type: "category",
-        data: xLabels,
-        position: "bottom",
-        axisLine: { lineStyle: { color: colors.borderDim } },
-        axisTick: { show: false },
-        splitArea: { show: false },
-        axisLabel: {
-          color: colors.textSecondary,
-          fontFamily: fonts.mono,
-          fontSize: 10,
-          // Label visibility is derived from the WALL-CLOCK minute (see
-          // xLabelShown above). ECharts' `interval` axis callback
-          // receives `(index, value)`; we precomputed the boolean per
-          // tick so the callback is a simple array lookup. Returning
-          // true shows the label, false hides it.
-          interval: (i: number) => xLabelShown[i] === true,
-        },
-      },
-      yAxis: {
-        type: "category",
-        data: yLabels,
-        // `strikes` is already descending (high→low). ECharts category
-        // axes put index[0] at the BOTTOM by default; `inverse: true`
-        // flips so index[0] (the HIGHEST strike) sits at the TOP,
-        // matching how operators read option chains (calls/upside above
-        // ATM, puts/downside below).
-        inverse: true,
-        // Lock the band layout so RightTotalsColumn's flex:1 row
-        // distribution stays aligned with the heatmap's strike rows
-        // (#206 R1 I2). For category axes, `boundaryGap: true` makes
-        // each category occupy a full band with the tick at the band
-        // center — heatmap cells then span an entire band per strike,
-        // matching the equal-flex rows in RightTotalsColumn.
-        boundaryGap: true,
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitArea: { show: false },
-        axisLabel: {
-          color: colors.textPrimary,
-          fontFamily: fonts.mono,
-          fontSize: 11,
-          formatter: (v: string) => v,
-        },
-      },
-      visualMap: {
-        type: "continuous",
-        min: 0,
-        max: data.max,
-        calculable: false,
-        show: false,
-        inRange: {
-          // Warm gradient: faint amber baseline → amber mid → bright red
-          // at peak. The baseline tint (low stop) is a faint amber wash
-          // rather than fully transparent so zero-volume cells still
-          // render as a visible cell — operator can hover them to see
-          // "0 prints this minute" instead of the cell vanishing into
-          // background (#206 R2 B2). The mid stop stays amber so the
-          // gradient still climbs warmth-to-heat through the band.
-          color: [
-            withAlpha(colors.accentAmber, 0.12),
-            withAlpha(colors.accentAmber, 0.55),
-            colors.accentRed,
-          ],
-        },
-      },
-      tooltip: {
-        trigger: "item",
-        backgroundColor: colors.bgPanel,
-        borderColor: colors.borderDim,
-        borderWidth: 1,
-        textStyle: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 11 },
-        formatter: (params: unknown) => {
-          // ECharts heatmap params.value === [colIdx, rowIdx, value]
-          const p = params as { value?: [number, number, number] };
-          if (!p.value || p.value.length < 3) return "";
-          const [colIdx, rowIdx, totalVol] = p.value;
-          const strike = strikes[rowIdx];
-          const ts = axis[colIdx];
-          const row = tape.strikes.find((s) => s.strike === strike);
-          const callVol = row?.call_minutes.find((m) => m.ts === ts)?.volume ?? 0;
-          const putVol = row?.put_minutes.find((m) => m.ts === ts)?.volume ?? 0;
-          const callSpike = row?.call_spike_minutes.includes(ts) ?? false;
-          const putSpike = row?.put_spike_minutes.includes(ts) ?? false;
-          const spikeLine = callSpike && putSpike
-            ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (both)</div>`
-            : callSpike
-              ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (call)</div>`
-              : putSpike
-                ? `<div style="color:${colors.textBright};margin-top:4px">⚠ Spike (put)</div>`
-                : "";
-          // Put-side label uses `accentBlue` (the same hue as the call
-          // side, paired with the "PUT"/"CALL" prefix to carry the
-          // distinction via text) rather than `accentAmber`. Amber is
-          // the heatmap's midpoint visualMap color, so a warm-amber
-          // cell with amber put-text in its tooltip produced a
-          // chromatic clash (#206 R2 I4). Matches PinCandidatesPanel
-          // text-only-distinction convention.
-          return [
-            `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}</div>`,
-            `<div style="color:${colors.textMuted};margin-top:2px">${formatMinuteLabel(ts)} ET</div>`,
-            `<div style="margin-top:4px;color:${colors.textPrimary}">Total: ${formatVolume(totalVol)}</div>`,
-            `<div style="margin-top:2px"><span style="color:${colors.accentBlue}">CALL ${formatVolume(callVol)}</span> / <span style="color:${colors.accentBlue}">PUT ${formatVolume(putVol)}</span></div>`,
-            spikeLine,
-          ].join("");
-        },
-      },
-      series: [
-        {
-          type: "heatmap",
-          data: data.cells,
-          itemStyle: {
-            borderRadius: 2,
-            borderColor: withAlpha(colors.bgPanel, 0.8),
-            borderWidth: 1,
-          },
-          emphasis: {
-            itemStyle: {
-              // Bump emphasis borderWidth above the spike border (2px)
-              // so hovering a spike cell always produces a visible
-              // delta — without this, hovering a spike cell looked
-              // identical to the resting state (#206 R2 I3).
-              borderColor: colors.textBright,
-              borderWidth: 3,
-            },
-          },
-          progressive: 0, // disable progressive rendering for crispness
-        },
-      ],
-    };
-  }, [tape, strikes, axis, data]);
-
-  useEffect(() => {
-    if (!chartRef.current || !option) return;
-    chartRef.current.setOption(option, { notMerge: true });
-  }, [option]);
-
-  const chartHeight = Math.max(
-    HEATMAP_ROW_PX * 3 + HEATMAP_AXIS_PADDING,
-    strikes.length * HEATMAP_ROW_PX + HEATMAP_AXIS_PADDING,
-  );
-
-  return (
-    <div
-      ref={containerRef}
-      role="img"
-      aria-label={
-        "Strike velocity heatmap. Rows are strikes, columns are " +
-        "1-minute buckets. Cell color intensity encodes total " +
-        "(call+put) volume; a red border marks spike minutes."
-      }
-      style={{ width: "100%", height: chartHeight }}
-    />
-  );
-}
+type ScaleMode = "row" | "panel";
 
 export function StrikeVelocityTape({
   tape,
-  strikeOrder,
-  height,
-}: Props) {
-  // All hooks must run unconditionally to satisfy React's hook order.
-  // The empty/null contract is rendered AFTER memoization via a
-  // boolean gate — when `tape` is null, the memos return safe empty
-  // defaults so we never read tape.strikes on null.
+  spot,
+  emUpper,
+  emLower,
+  atmStrike,
+}: StrikeVelocityTapeProps) {
+  // Scale toggle state. Default "row" preserves contour on quiet
+  // strikes so the operator can read curve SHAPE on every row.
+  // "panel" flips to absolute scaling — the day's standout strike
+  // becomes the only tall one.
+  const [scaleMode, setScaleMode] = useState<ScaleMode>("row");
 
-  // ── Strike order (descending to match chart's y-axis) ─────────────
-  const orderedStrikes = useMemo(
-    () => (tape ? resolveStrikeOrder(tape, strikeOrder) : []),
-    [strikeOrder, tape],
-  );
-
-  // ── Shared minute axis (union of strike minutes ∪ spot-path minutes)
-  // Both the spot-path chart and the heatmap consume this same axis so
-  // a column index in one refers to the SAME wall-clock minute as the
-  // same column index in the other (#206 R2 B3).
-  const axis = useMemo(
-    () => (tape ? buildUnifiedMinuteAxis(tape) : []),
-    [tape],
-  );
-
-  // ── Per-strike row total + spike-flag lookup for the right-side col
-  const rowTotals = useMemo(() => {
-    if (!tape) return new Map<number, { total: number; hasSpike: boolean }>();
-    const m = new Map<number, { total: number; hasSpike: boolean }>();
+  // Pre-compute the things every row needs. `tape` is the only data
+  // dependency; everything else is layout state.
+  const layout = useMemo(() => {
+    if (!tape || tape.strikes.length === 0) return null;
+    const visible = selectVisibleStrikes(tape, atmStrike, MAX_ROWS);
+    const axis = buildMinuteAxis(tape);
+    const xLabelShown = buildXLabelMask(axis);
+    const panelMax = panelMaxVol(tape, visible);
+    // Per-strike side maps for O(1) lookup during lane render.
+    type SideMap = Map<string, number>;
+    type RowData = {
+      strike: number;
+      callMap: SideMap;
+      putMap: SideMap;
+      callSpikes: Set<string>;
+      putSpikes: Set<string>;
+      rowMax: number;
+      split: ReturnType<typeof rowSplit>;
+      total: number;
+    };
+    const visibleSet = new Set(visible);
+    const rowsByStrike = new Map<number, RowData>();
     for (const s of tape.strikes) {
-      const total = rowTotalVolume(s);
-      const hasSpike =
-        s.call_spike_minutes.length > 0 || s.put_spike_minutes.length > 0;
-      m.set(s.strike, { total, hasSpike });
-    }
-    return m;
-  }, [tape]);
-
-  // ── Window label for header (e.g. "Fri 15:30-16:00 ET") ───────────
-  const headerLabel = useMemo(() => {
-    if (!tape) return "";
-    try {
-      const start = new Date(tape.window_start);
-      const end = new Date(tape.window_end);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return "(replay window unavailable)";
-      }
-      const fmt = (d: Date) =>
-        d.toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: "America/New_York",
-        });
-      const dayLabel = start.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "numeric",
-        day: "numeric",
-        timeZone: "America/New_York",
+      if (!visibleSet.has(s.strike)) continue;
+      const callMap: SideMap = new Map();
+      const putMap: SideMap = new Map();
+      for (const m of s.call_minutes) callMap.set(m.ts, m.volume);
+      for (const m of s.put_minutes) putMap.set(m.ts, m.volume);
+      rowsByStrike.set(s.strike, {
+        strike: s.strike,
+        callMap,
+        putMap,
+        callSpikes: new Set(s.call_spike_minutes),
+        putSpikes: new Set(s.put_spike_minutes),
+        rowMax: rowMaxVol(s),
+        split: rowSplit(s),
+        total: rowTotalVolume(s),
       });
-      return `${dayLabel} ${fmt(start)}-${fmt(end)} ET`;
-    } catch {
-      return "(replay window unavailable)";
     }
-  }, [tape]);
-
-  // ── Total volume across all strikes in the tape ───────────────────
-  const totalVolume = useMemo(() => {
-    if (!tape) return 0;
-    let n = 0;
-    for (const s of tape.strikes) {
-      n += sumVolume(s.call_minutes) + sumVolume(s.put_minutes);
+    const rows: RowData[] = [];
+    for (const strike of visible) {
+      const r = rowsByStrike.get(strike);
+      if (r) rows.push(r);
     }
-    return n;
-  }, [tape]);
+    return { visible, axis, xLabelShown, panelMax, rows };
+  }, [tape, atmStrike]);
 
-  // ── Spot path summary for the section header above the line chart
-  const spotSummary = useMemo(() => {
-    if (!tape) return null;
-    const pts = buildSpotPathPoints(tape);
-    if (!pts) return null;
-    const start = pts[0][1];
-    const end = pts[pts.length - 1][1];
-    return { start, end, change: end - start };
-  }, [tape]);
-
-  // ── Null / empty contract ──────────────────────────────────────────
-  if (!tape || tape.strikes.length === 0) {
-    return (
-      <div
-        style={{
-          width: "100%",
-          height,
-          background: colors.bgPanel,
-          border: `1px solid ${colors.borderDim}`,
-          borderRadius: 6,
-          padding: 12,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: colors.textMuted,
-          fontFamily: fonts.sans,
-          fontSize: 12,
-          letterSpacing: "0.04em",
-          textAlign: "center",
-        }}
-      >
-        <div>(no replay available)</div>
-        <div style={{ fontSize: 10, marginTop: 6, color: colors.textMuted }}>
-          run scripts/replay_strike_velocity.py
-        </div>
-      </div>
-    );
+  if (!tape) return <EmptyState message="No velocity tape data yet." />;
+  if (!layout || layout.rows.length === 0) {
+    return <EmptyState message="No replay activity for this window." />;
   }
 
   return (
     <div
+      role="img"
+      aria-label={
+        "Strike velocity tape. Rows are strikes, blocks are 1-minute " +
+        "buckets. Block height encodes total (call+put) volume; block " +
+        "color encodes which side dominates (blue for calls, amber for " +
+        "puts, grey for balanced). Bright outlines mark spike minutes."
+      }
       style={{
-        width: "100%",
         background: colors.bgPanel,
         border: `1px solid ${colors.borderDim}`,
-        borderRadius: 6,
-        padding: "12px 14px 14px 14px",
-        height,
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: fonts.sans,
+        borderRadius: 4,
+        overflow: "hidden",
+        fontFamily: fonts.mono,
       }}
     >
-      {/* Section header — major-panel treatment marks this as a peer
-          of the chart, not a sidebar. The three-tone title row is
-          preserved from the prior design (operator approved). */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-          marginBottom: 10,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "baseline",
-            columnGap: 8,
-            rowGap: 2,
-            fontFamily: fonts.sans,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: colors.textBright,
-            }}
-          >
-            Trade Velocity
-          </span>
-          <span
-            style={{
-              fontSize: 12,
-              color: colors.textSecondary,
-              fontWeight: 400,
-            }}
-          >
-            · ATM ± 5 cluster ·{" "}
-            <span style={{ color: colors.accentAmber }}>
-              Frozen Friday-close replay
-            </span>
-          </span>
+      <PanelHead
+        spot={spot}
+        emUpper={emUpper}
+        emLower={emLower}
+        scaleMode={scaleMode}
+        onScaleChange={setScaleMode}
+      />
+      <div style={{ padding: "12px 14px 6px 14px" }}>
+        <div className="svt-lane-grid">
+          {layout.rows.map((row) => (
+            <LaneRow
+              key={row.strike}
+              row={row}
+              axis={layout.axis}
+              scale={scaleMode === "row" ? row.rowMax : layout.panelMax}
+              isAtm={row.strike === atmStrike}
+            />
+          ))}
+          <GutterOverlay
+            strikes={layout.visible}
+            spot={spot}
+            emUpper={emUpper}
+            emLower={emLower}
+          />
         </div>
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            flexWrap: "wrap",
-            alignItems: "center",
-            fontFamily: fonts.mono,
-            fontSize: 11,
-            color: colors.textPrimary,
-          }}
-        >
-          <span>{headerLabel}</span>
-          <span style={{ color: colors.textMuted }}>
-            {formatVolume(totalVolume)} contracts ·{" "}
-            <span style={{ color: colors.accentBlue }}>calls</span>
-            {" / "}
-            <span style={{ color: colors.accentAmber }}>puts</span>
-          </span>
-        </div>
-      </div>
-
-      {/* SPX spot path — labeled section header + ECharts line chart.
-          Suppressed when buildSpotPathPoints returns null. */}
-      {spotSummary && (
-        <div style={{ marginBottom: 10 }}>
-          <div
-            style={{
-              fontFamily: fonts.mono,
-              fontSize: 10,
-              color: colors.textMuted,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              marginBottom: 4,
-            }}
-          >
-            SPX during window —{" "}
-            <span style={{ color: colors.textPrimary }}>
-              {spotSummary.start.toFixed(2)}
-            </span>
-            {" → "}
-            <span style={{ color: colors.textPrimary }}>
-              {spotSummary.end.toFixed(2)}
-            </span>
-            {"  "}
-            <span
-              style={{
-                color:
-                  spotSummary.change >= 0
-                    ? colors.accentGreen
-                    : colors.accentRed,
-              }}
-            >
-              ({spotSummary.change >= 0 ? "+" : ""}
-              {spotSummary.change.toFixed(2)})
-            </span>
-          </div>
-          <SpotPathChart tape={tape} axis={axis} />
-        </div>
-      )}
-
-      {/* Heatmap section — labeled section header + ECharts heatmap +
-          right-side per-strike total volume column overlaid on the
-          chart's right margin. */}
-      <div
-        style={{
-          fontFamily: fonts.mono,
-          fontSize: 10,
-          color: colors.textMuted,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          marginBottom: 4,
-        }}
-      >
-        Heatmap · color = total volume · red border = spike
-      </div>
-
-      {/* Heatmap + right-side total column. Position the totals
-          absolutely over the chart's right margin so they align row-by-
-          row with the heatmap's strike y-axis. */}
-      <div style={{ position: "relative" }}>
-        <HeatmapChart tape={tape} strikes={orderedStrikes} axis={axis} />
-        <RightTotalsColumn
-          strikes={orderedStrikes}
-          rowTotals={rowTotals}
-        />
+        <AxisRow axis={layout.axis} xLabelShown={layout.xLabelShown} />
       </div>
     </div>
   );
 }
 
-/** Per-strike total-volume column rendered as absolutely-positioned
- *  labels in the heatmap's right margin. Each label sits at the
- *  vertical center of its strike row by computing
- *  `top = (rowIdx + 0.5) / N * heatmapHeight`. Spike rows render bold +
- *  red so the operator can scan totals visually alongside the heatmap.
- *
- *  Lives outside the ECharts chart because ECharts' built-in axis-tick
- *  labels can't carry per-row styling (red/bold for spike rows) without
- *  fragile custom-graphic gymnastics. A plain absolutely-positioned
- *  div is the simpler, more legible approach.
- *
- *  Row alignment: the wrapper's `top`/`bottom` mirror the heatmap's
- *  `grid.top`/`grid.bottom` (HEATMAP_GRID_TOP / _BOTTOM), and the
- *  heatmap's yAxis pins `boundaryGap: true` so each strike occupies a
- *  full categorical band centered on its tick — the ECharts band layout
- *  then partitions the usable height into N equal bands, matching the
- *  `flex:1` row distribution here (#206 R1 I2). */
-function RightTotalsColumn({
+// ── Panel head ─────────────────────────────────────────────────────
+
+function PanelHead({
+  spot,
+  emUpper,
+  emLower,
+  scaleMode,
+  onScaleChange,
+}: {
+  spot: number | null;
+  emUpper: number | null;
+  emLower: number | null;
+  scaleMode: ScaleMode;
+  onScaleChange: (m: ScaleMode) => void;
+}) {
+  // Cold-start (per the snapshotter contract documented at the top
+  // of this file): all four headline fields populate atomically, so
+  // `spot == null` is the single indicator that the live session
+  // hasn't begun. Render an explicit notice so the operator doesn't
+  // mistake the missing triangles + ATM highlight for a rendering
+  // bug — the chips show "—" too, but the notice is the louder cue.
+  const isColdStart = spot == null;
+  return (
+    <div className="svt-panel-head">
+      <div>
+        <h3 className="svt-title">Strike Velocity Tape</h3>
+        <div className="svt-sub">
+          {isColdStart
+            ? "Replay window shown · spot + EM marks unavailable until session open"
+            : "Per minute: one block. Height = total volume · color = which side dominates · outline = spike (≥3σ MAD)."}
+        </div>
+      </div>
+      <div className="svt-controls">
+        <Readout spot={spot} emUpper={emUpper} emLower={emLower} />
+        <ScaleToggle mode={scaleMode} onChange={onScaleChange} />
+      </div>
+    </div>
+  );
+}
+
+function Readout({
+  spot,
+  emUpper,
+  emLower,
+}: {
+  spot: number | null;
+  emUpper: number | null;
+  emLower: number | null;
+}) {
+  // Three chips, ordered EM↑ / spot / EM↓ vertically descending in
+  // price-space so the operator reads them in the same order as the
+  // strike axis below. Null values render as "—".
+  return (
+    <div className="svt-readout">
+      <Chip kind="em" label="EM↑" value={emUpper} />
+      <Chip kind="spot" label="spot" value={spot} />
+      <Chip kind="em" label="EM↓" value={emLower} />
+    </div>
+  );
+}
+
+function Chip({
+  kind,
+  label,
+  value,
+}: {
+  kind: "em" | "spot";
+  label: string;
+  value: number | null;
+}) {
+  return (
+    <span className={`svt-chip svt-chip-${kind}`}>
+      <span className="svt-chip-tri" aria-hidden="true" />
+      <span className="svt-chip-lbl">{label}</span>
+      <span className="svt-chip-val">
+        {value == null ? "—" : value.toFixed(1)}
+      </span>
+    </span>
+  );
+}
+
+function ScaleToggle({
+  mode,
+  onChange,
+}: {
+  mode: ScaleMode;
+  onChange: (m: ScaleMode) => void;
+}) {
+  return (
+    <div className="svt-toggle" role="group" aria-label="Volume scale">
+      <span className="svt-toggle-lbl">scale</span>
+      <button
+        type="button"
+        className={mode === "row" ? "active" : ""}
+        aria-pressed={mode === "row"}
+        onClick={() => onChange("row")}
+      >
+        per row
+      </button>
+      <button
+        type="button"
+        className={mode === "panel" ? "active" : ""}
+        aria-pressed={mode === "panel"}
+        onClick={() => onChange("panel")}
+      >
+        panel
+      </button>
+    </div>
+  );
+}
+
+// ── Per-strike lane row ────────────────────────────────────────────
+
+function LaneRow({
+  row,
+  axis,
+  scale,
+  isAtm,
+}: {
+  row: {
+    strike: number;
+    callMap: Map<string, number>;
+    putMap: Map<string, number>;
+    callSpikes: Set<string>;
+    putSpikes: Set<string>;
+    rowMax: number;
+    split: { call: number; put: number; total: number };
+    total: number;
+  };
+  axis: string[];
+  scale: number;
+  isAtm: boolean;
+}) {
+  return (
+    <div className={`svt-row${isAtm ? " atm" : ""}`}>
+      <div className="svt-strike">
+        <div className="svt-strike-px">{row.strike}</div>
+        <div className="svt-strike-vol">{formatVolume(row.total)} vol</div>
+      </div>
+      <div className="svt-lane-cell">
+        <LaneSvg row={row} axis={axis} scale={scale} />
+      </div>
+      <SessionSplit split={row.split} />
+    </div>
+  );
+}
+
+function LaneSvg({
+  row,
+  axis,
+  scale,
+}: {
+  row: {
+    callMap: Map<string, number>;
+    putMap: Map<string, number>;
+    callSpikes: Set<string>;
+    putSpikes: Set<string>;
+  };
+  axis: string[];
+  scale: number;
+}) {
+  const W = LANE_VIEWBOX_W;
+  const H = LANE_VIEWBOX_H;
+  const cellW = axis.length > 0 ? W / axis.length : 0;
+  // Rect data computed in a flat array — avoids per-cell wrapping
+  // elements which add layout cost in long axes (30+ minutes × 15
+  // strikes = 450+ cells per render).
+  const blocks: ReactNode[] = [];
+  for (let i = 0; i < axis.length; i++) {
+    const ts = axis[i];
+    const callVol = row.callMap.get(ts) ?? 0;
+    const putVol = row.putMap.get(ts) ?? 0;
+    const total = callVol + putVol;
+    if (total === 0) continue; // skip empty cells — bg shows through
+    const x = i * cellW + LANE_CELL_PAD;
+    const w = cellW - 2 * LANE_CELL_PAD;
+    const h = (total / scale) * (H - 4);
+    const y = H - h - 2;
+    const color = dominanceColor(callVol, putVol);
+    blocks.push(
+      <rect key={`b${i}`} x={x} y={y} width={w} height={h} fill={color} />,
+    );
+    if (row.callSpikes.has(ts) || row.putSpikes.has(ts)) {
+      blocks.push(
+        <rect
+          key={`s${i}`}
+          x={x - 0.5}
+          y={y - 0.5}
+          width={w + 1}
+          height={h + 1}
+          fill="none"
+          stroke={SPIKE_STROKE}
+          strokeWidth={SPIKE_STROKE_W}
+          rx={1}
+        />,
+      );
+    }
+  }
+  return (
+    <svg
+      className="svt-lane-svg"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+    >
+      <rect
+        x={0}
+        y={0}
+        width={W}
+        height={H}
+        fill={withAlpha(colors.textBright, 0.02)}
+      />
+      {blocks}
+    </svg>
+  );
+}
+
+// ── Session split column ──────────────────────────────────────────
+
+function SessionSplit({
+  split,
+}: {
+  split: { call: number; put: number; total: number };
+}) {
+  if (split.total === 0) {
+    return (
+      <div className="svt-session">
+        <div className="svt-session-nums">—</div>
+      </div>
+    );
+  }
+  const callPct = (split.call / split.total) * 100;
+  const putPct = 100 - callPct;
+  return (
+    <div className="svt-session">
+      <div className="svt-split-bar">
+        <div
+          className="svt-split-call"
+          style={{ width: `${callPct.toFixed(1)}%` }}
+        />
+        <div
+          className="svt-split-put"
+          style={{ width: `${putPct.toFixed(1)}%` }}
+        />
+      </div>
+      <div className="svt-session-nums">
+        <span className="c">C {formatVolume(split.call)}</span>
+        <span className="p">P {formatVolume(split.put)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Gutter overlay (triangles inside strike column) ───────────────
+
+function GutterOverlay({
   strikes,
-  rowTotals,
+  spot,
+  emUpper,
+  emLower,
 }: {
   strikes: number[];
-  rowTotals: Map<number, { total: number; hasSpike: boolean }>;
+  spot: number | null;
+  emUpper: number | null;
+  emLower: number | null;
 }) {
-  const n = strikes.length;
-  if (n === 0) return null;
+  // Triangles point right; base at x=2, apex at x = 2 + width.
+  // Spot is larger (14px wide, 12px tall) so it reads as primary;
+  // EM markers are 10px wide, 8px tall.
+  // The overlay sits over the strike COLUMN (left:0, width:STRIKE_COL_W)
+  // — see CSS .svt-gutter-overlay.
+  const tris: ReactNode[] = [];
+  if (emUpper != null) {
+    tris.push(triPoly("emU", priceToY(emUpper, strikes, ROW_H), 10, 8, "em"));
+  }
+  if (spot != null) {
+    tris.push(triPoly("spot", priceToY(spot, strikes, ROW_H), 14, 12, "spot"));
+  }
+  if (emLower != null) {
+    tris.push(triPoly("emL", priceToY(emLower, strikes, ROW_H), 10, 8, "em"));
+  }
+  if (tris.length === 0) return null;
+  return (
+    <div className="svt-gutter-overlay" aria-hidden="true">
+      <svg preserveAspectRatio="none">{tris}</svg>
+    </div>
+  );
+}
+
+function triPoly(
+  key: string,
+  y: number,
+  width: number,
+  height: number,
+  cls: "em" | "spot",
+) {
+  const xBase = 2;
+  const xApex = xBase + width;
+  const halfH = height / 2;
+  const points = `${xBase},${y - halfH} ${xApex},${y} ${xBase},${y + halfH}`;
+  return (
+    <polygon
+      key={key}
+      className={cls === "spot" ? "svt-tri-spot" : "svt-tri-em"}
+      points={points}
+    />
+  );
+}
+
+// ── X-axis time labels ────────────────────────────────────────────
+
+function AxisRow({
+  axis,
+  xLabelShown,
+}: {
+  axis: string[];
+  xLabelShown: boolean[];
+}) {
+  const ticks: ReactNode[] = [];
+  for (let i = 0; i < axis.length; i++) {
+    if (!xLabelShown[i]) continue;
+    const isLast = i === axis.length - 1;
+    const pct = ((i + 0.5) / axis.length) * 100;
+    ticks.push(
+      <span
+        key={i}
+        className={`svt-tick${isLast ? " now" : ""}`}
+        style={{ left: `${pct}%` }}
+      >
+        {formatMinuteLabel(axis[i])}
+      </span>,
+    );
+  }
+  return (
+    <div className="svt-axis">
+      <div className="svt-axis-pad" />
+      <div className="svt-axis-ticks">{ticks}</div>
+      <div className="svt-axis-pad" />
+    </div>
+  );
+}
+
+// ── Empty state ───────────────────────────────────────────────────
+
+function EmptyState({ message }: { message: string }) {
   return (
     <div
       style={{
-        position: "absolute",
-        top: HEATMAP_GRID_TOP,
-        bottom: HEATMAP_GRID_BOTTOM,
-        right: 0,
-        width: TOTAL_LABEL_WIDTH,
-        pointerEvents: "none",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
+        background: colors.bgPanel,
+        border: `1px solid ${colors.borderDim}`,
+        borderRadius: 4,
+        padding: "28px 18px",
+        textAlign: "center",
+        color: colors.textMuted,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        letterSpacing: "0.04em",
       }}
     >
-      {strikes.map((strike) => {
-        const entry = rowTotals.get(strike) ?? { total: 0, hasSpike: false };
-        return (
-          <div
-            key={strike}
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              paddingRight: 8,
-              fontFamily: fonts.mono,
-              fontSize: 11,
-              color: entry.hasSpike ? colors.accentRed : colors.textPrimary,
-              fontWeight: entry.hasSpike ? 600 : 400,
-            }}
-          >
-            {formatVolume(entry.total)}
-          </div>
-        );
-      })}
+      {message}
     </div>
   );
 }
 
-// Re-export so consumers (and tests) can still import VelocityStrike
-// from the helpers if needed; future-proofs the API surface.
-export type { VelocityStrike };
