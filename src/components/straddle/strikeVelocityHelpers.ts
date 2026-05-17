@@ -65,9 +65,13 @@ export function densify(
 
 /** Resolve the final strike-ordering for the rendered rows.
  *  `strikeOrder` from the parent (the chart's y-axis order) wins so
- *  rows line up with the chart; we filter it to strikes the tape
- *  actually carries. When the chart hasn't yet emitted an order
- *  (cold-start), fall back to the tape's own strikes sorted descending. */
+ *  the panel reads in the same direction as the chart; we filter it
+ *  to strikes the tape actually carries (the tape is a focused ATM
+ *  cluster subset, not the full chart axis). This is NOT a row-by-row
+ *  lockstep alignment — the panel uses its own per-row pixel density,
+ *  independent of how the chart packs its strikes. When the chart
+ *  hasn't yet emitted an order (cold-start), fall back to the tape's
+ *  own strikes sorted descending. */
 export function resolveStrikeOrder(
   tape: VelocityTape,
   strikeOrder: number[] | undefined,
@@ -84,4 +88,48 @@ export function resolveStrikeOrder(
  *  identically to the on-screen scalar. */
 export function rowTotalVolume(strike: VelocityStrike): number {
   return sumVolume(strike.call_minutes) + sumVolume(strike.put_minutes);
+}
+
+/** Describe which spike glyphs render at a single minute on the spike
+ *  glyph row. Returns one entry per side that fires (so a same-minute
+ *  call+put double-spike returns BOTH entries — call as ▲, put as ▼).
+ *  The `position` flag tells the renderer whether to draw the glyph
+ *  at the full-row baseline (single-side fire) or stacked in the
+ *  upper/lower half (both sides fire at the same minute).
+ *
+ *  Exposed as a helper so the test can pin "both glyphs render when
+ *  the call and put both spike at the same minute" without mounting
+ *  the SVG. The pre-fix renderer used `isCall ? "▲" : "▼"` which
+ *  silently dropped the put glyph on collision. */
+export type SpikeGlyph = {
+  side: "call" | "put";
+  glyph: "▲" | "▼";
+  position: "full" | "top" | "bottom";
+};
+
+export function spikeGlyphsAt(
+  ts: string,
+  callSpikes: ReadonlySet<string>,
+  putSpikes: ReadonlySet<string>,
+): SpikeGlyph[] {
+  const isCall = callSpikes.has(ts);
+  const isPut = putSpikes.has(ts);
+  if (!isCall && !isPut) return [];
+  const both = isCall && isPut;
+  const out: SpikeGlyph[] = [];
+  if (isCall) {
+    out.push({
+      side: "call",
+      glyph: "▲",
+      position: both ? "top" : "full",
+    });
+  }
+  if (isPut) {
+    out.push({
+      side: "put",
+      glyph: "▼",
+      position: both ? "bottom" : "full",
+    });
+  }
+  return out;
 }

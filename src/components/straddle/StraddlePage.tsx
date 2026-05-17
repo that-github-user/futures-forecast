@@ -18,6 +18,7 @@
  *     doesn't mistake synthetic data for live SPX positioning.
  */
 
+import { useMemo } from "react";
 import type { ProgramFlowEvent } from "../../api/terminalTypes";
 import { useStraddleData } from "../../hooks/useStraddleData";
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
@@ -37,6 +38,23 @@ import "./StraddlePage.css";
 
 export function StraddlePage() {
   const { data, loading, demoMode, refetch, refreshing } = useStraddleData();
+
+  // Memoize the strikeOrder list so `StrikeVelocityTape`'s downstream
+  // useMemo dependencies don't invalidate every poll. `data.strikes` is
+  // itself a fresh array on each poll, so this memo will rebuild on
+  // each poll too — but the resulting array becomes a single new
+  // reference instead of two, reducing churn one level. Tightening
+  // further would require value-equality memoization at the hook level.
+  // (We depend on `data` rather than `data?.strikes` so the React
+  // Compiler can preserve the manual memoization — its inferred
+  // dependency is the broader `data` reference.)
+  const strikeOrder = useMemo(
+    () =>
+      data?.strikes
+        ? [...data.strikes].map((s) => s.strike).sort((a, b) => b - a)
+        : undefined,
+    [data],
+  );
 
   // Cold-start: snapshotter hasn't yet written a row today. Headline
   // metric fields are null but `program_flow` is still populated, so
@@ -106,22 +124,21 @@ export function StraddlePage() {
                   </div>
                 )}
                 {/* Strike Velocity Tape — frozen Friday-close trade-tick
-                    replay. Renders independently of the live snapshot
-                    so it surfaces even during cold-start when the
-                    chart is hidden. The component renders its own
+                    replay shown as an independent ATM-cluster panel
+                    next to the chart. Not a row-by-row alignment with
+                    the chart's strike axis — the panel uses its own
+                    fixed row height sized for legible sparklines, so
+                    "strike 7505" can sit at different y-positions in
+                    the two columns. Renders independently of the live
+                    snapshot so it surfaces even during cold-start when
+                    the chart is hidden. The component renders its own
                     "(no replay available)" placeholder when the
                     backend hasn't run the replay script yet. */}
                 {data?.velocity_tape !== undefined && (
                   <div className="straddle-velocity-cell">
                     <StrikeVelocityTape
                       tape={data?.velocity_tape ?? null}
-                      strikeOrder={
-                        data?.strikes
-                          ? [...data.strikes]
-                              .map((s) => s.strike)
-                              .sort((a, b) => b - a)
-                          : undefined
-                      }
+                      strikeOrder={strikeOrder}
                       height={540}
                     />
                   </div>
