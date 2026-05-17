@@ -222,7 +222,7 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
         </li>
         <li>
           Hover any bar for the full call/put split — OI, volume, IV, Δ,
-          fresh-flow — plus spot proximity and a WITHIN EM badge when the
+          fresh-flow — plus spot proximity and an <b>EM</b> badge when the
           strike is inside today's expected move.
         </li>
       </ul>
