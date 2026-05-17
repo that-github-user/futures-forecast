@@ -59,7 +59,12 @@ import {
 const ROW_HEIGHT = 36;                  // per-strike row total height
 const SPARK_HEIGHT = 14;                // height of each call/put sparkline
 const SPARK_GAP = 2;                    // vertical gap between call and put rows
-const SPIKE_GLYPH_HEIGHT = 8;           // glyph row above the call sparkline
+const SPIKE_GLYPH_HEIGHT = 11;          // glyph row above the call sparkline
+                                        // (was 8 — bumped so the stacked
+                                        // collision case has room for two
+                                        // glyphs at ≥6px fontSize, which
+                                        // is the practical legibility
+                                        // floor for ▲/▼ on most displays)
 const SPOT_OVERLAY_HEIGHT = 36;
 const STRIKE_LABEL_WIDTH = 56;
 const VOLUME_LABEL_WIDTH = 56;
@@ -117,7 +122,7 @@ function Sparkline({
       width={width}
       height={SPARK_HEIGHT}
       style={{ display: "block" }}
-      aria-label={`Strike ${strike} ${side} per-minute volume sparkline`}
+      aria-label={`Per-minute ${side} volume at strike ${strike}`}
     >
       {axis.map((ts, i) => {
         const v = values[i];
@@ -194,7 +199,7 @@ function SpikeGlyphRow({
       width={width}
       height={SPIKE_GLYPH_HEIGHT}
       style={{ display: "block" }}
-      aria-label={`Strike ${strike} spike-minute markers`}
+      aria-label={`Spike-minute markers at strike ${strike}`}
     >
       {axis.map((ts, i) => {
         const glyphs = spikeGlyphsAt(ts, callSpikes, putSpikes);
@@ -206,7 +211,7 @@ function SpikeGlyphRow({
           // Stacked fire → top half (▲) and bottom half (▼) so neither
           //                side is silently dropped.
           let y: number;
-          if (g.position === "top") y = halfRow - 1;
+          if (g.position === "top") y = halfRow;
           else if (g.position === "bottom") y = SPIKE_GLYPH_HEIGHT - 1;
           else y = SPIKE_GLYPH_HEIGHT - 1;
           const fill = g.side === "call" ? callGlyphColor : putGlyphColor;
@@ -216,7 +221,12 @@ function SpikeGlyphRow({
               x={cx}
               y={y}
               fill={fill}
-              fontSize={stacked ? 5 : 7}
+              // Bump stacked fontSize from 5→6 — 5px is below the
+              // legibility floor for ▲/▼ on most displays. 6px in mono
+              // is still small but resolves the arrow direction at a
+              // glance. SPIKE_GLYPH_HEIGHT was bumped 8→11 in tandem
+              // so both halves fit.
+              fontSize={stacked ? 6 : 8}
               fontFamily={fonts.mono}
               textAnchor="middle"
             >
@@ -346,7 +356,7 @@ export function StrikeVelocityTape({
       // inputs instead of throwing — guard explicitly so we don't
       // leak the raw ISO string when an upstream feed gets weird.
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return "(window unknown)";
+        return "(replay window unavailable)";
       }
       const fmt = (d: Date) =>
         d.toLocaleTimeString("en-US", {
@@ -365,7 +375,7 @@ export function StrikeVelocityTape({
     } catch {
       // Defensive — current toLocale* paths shouldn't throw on a
       // valid Date, but operator shouldn't see raw ISO either way.
-      return "(window unknown)";
+      return "(replay window unavailable)";
     }
   }, [tape]);
 
