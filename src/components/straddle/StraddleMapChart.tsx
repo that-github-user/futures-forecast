@@ -12,9 +12,15 @@
  *     descending with `inverse: true` so the highest strike sits at
  *     the TOP of the chart — matching how operators read option
  *     chains (calls/upside above, puts/downside below the ATM line).
- *   - Dashed yAxis `markLine`s at em_upper / em_lower; solid at spot.
- *     Positioned by fractional category index so they interpolate
- *     correctly when the value falls between two rendered strikes.
+ *   - Spot + EM reference lines are drawn as ECharts `graphic`
+ *     overlays in pixel space (see `applyReferenceLines`). They were
+ *     previously `markLine` entries with fractional `yAxis` values,
+ *     but ECharts 6.x's `OrdinalScale.parse` rounds those via
+ *     `Math.round`, mis-aligning the lines by up to ±half a strike
+ *     interval (#321). The graphic overlay bypasses the data-axis
+ *     coord pipeline by computing pixel positions via
+ *     `chart.convertToPixel` between integer category indices and
+ *     interpolating fractionally.
  *   - Bar color follows hemisphere convention: call-dominant
  *     (right) → accentBlue, put-dominant (left) → accentAmber.
  *   - Net fresh-flow glyph (▲ green opening / ▼ red closing) overlaid
@@ -36,6 +42,7 @@ import type { StraddleChainResponse } from "../../api/terminalTypes";
 import {
   buildReferenceLineIndices,
   buildStraddleMapOption,
+  STRADDLE_MAP_GRID,
 } from "./straddleMapHelpers";
 
 interface Props {
@@ -174,24 +181,28 @@ function applyReferenceLines(
   const topPx = chart.convertToPixel({ yAxisIndex: 0 }, 0);
   const botPx = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
   if (!Array.isArray(topPx) || !Array.isArray(botPx)) {
-    // Chart not laid out yet — bail and the next setOption / resize
-    // will retry.
+    // Chart not laid out yet (race between resize and next layout
+    // frame, or pre-first-paint). Clear any stale graphics so a
+    // previous-frame overlay doesn't ghost at the wrong pixel y
+    // after a resize; the next setOption/resize cycle will retry
+    // and re-render the lines at the correct position (#321 R2 nit).
+    chart.setOption({ graphic: [] }, { replaceMerge: ["graphic"] });
     return;
   }
   const yTop = topPx[1];
   const yBot = botPx[1];
-  // x-extent of the plot area: convertToPixel with x=0 gives the
-  // axis baseline; we want the full grid width. Read the grid
-  // bounds off the chart's coordinate system option instead — they
-  // were set as fixed pixel margins (`left: 60, right: 60`) in
-  // buildStraddleMapOption.
+  // x-extent of the plot area sourced from the same STRADDLE_MAP_GRID
+  // constant that buildStraddleMapOption applies to the chart's grid
+  // config. Changing one side without the other would render the
+  // overlay lines outside the data area.
   const width = chart.getWidth();
-  const xLeft = 60;
-  const xRight = width - 60;
+  const xLeft = STRADDLE_MAP_GRID.left;
+  const xRight = width - STRADDLE_MAP_GRID.right;
 
   function pxForIndex(idx: number | null): number | null {
     if (idx == null) return null;
-    if (N === 1) return yTop;
+    // N >= 2 enforced by the early-return above, so the linear
+    // interpolation is safe.
     const frac = idx / (N - 1);
     return yTop + frac * (yBot - yTop);
   }
@@ -248,8 +259,11 @@ function applyReferenceLines(
   if (ySpot != null && data.spot != null) {
     pushLine(ySpot, "spot", `SPOT ${data.spot.toFixed(2)}`);
   }
-  // `replaceMerge: ["graphic"]` so a shrinking strike set or cold-
-  // start path correctly clears stale lines instead of layering.
+  // `replaceMerge: ["graphic"]` ensures the RESIZE path (which doesn't
+  // do a notMerge setOption) replaces the previous frame's graphics
+  // rather than merging on top. The data-update path's preceding
+  // `setOption(option, { notMerge: true })` already wipes graphics
+  // before this runs, so the merge mode there is harmless.
   chart.setOption(
     { graphic: graphics },
     { replaceMerge: ["graphic"] },

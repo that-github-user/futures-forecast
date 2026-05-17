@@ -159,13 +159,10 @@ export function buildStraddleMapOption(
     backgroundColor: "transparent",
     animation: false,
     grid: {
-      left: 60,
-      right: 60,
-      // Top padding leaves room for both the legend strip (overlaid in
-      // the upper-left at y≈12) and the EM-band labels rendered at
-      // `insideEndTop` near the plot's right edge.
-      top: 36,
-      bottom: 36,
+      // Sourced from STRADDLE_MAP_GRID so the component-side
+      // applyReferenceLines stays in pixel-lockstep without
+      // hardcoding the same numbers in two places (#321 R1+R2 nit).
+      ...STRADDLE_MAP_GRID,
       containLabel: false,
     },
     tooltip: {
@@ -284,6 +281,13 @@ export function buildStraddleMapOption(
 
   return option;
 }
+
+/** Plot-area inset margins for the chart's `grid` config. Exported so
+ *  `StraddleMapChart.applyReferenceLines` consumes the same numbers
+ *  when computing pixel x-bounds for the spot/EM overlay lines —
+ *  otherwise a future change to grid margins here would silently
+ *  render the lines outside the data area (#321 R1+R2 nit 2). */
+export const STRADDLE_MAP_GRID = { left: 60, right: 60, top: 36, bottom: 36 };
 
 /** Fractional category indices for the spot + EM lines, computed
  *  off the strike list inside `buildStraddleMapOption`. Exposed for

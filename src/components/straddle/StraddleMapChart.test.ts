@@ -2,15 +2,21 @@
  * Tests for the StraddleMapChart option-builder.
  *
  * The React component is a thin wrapper over `buildStraddleMapOption`
- * — we pin the option-builder directly since the project has no
- * @testing-library/react setup and rendering ECharts under happy-dom
- * requires a real canvas. The builder is pure, so the markLines /
- * series shape can be asserted without any DOM.
+ * and the `buildReferenceLineIndices` helper — we pin both directly
+ * since the project has no @testing-library/react setup and rendering
+ * ECharts under happy-dom requires a real canvas.
  *
  * Coverage (single-bar net-OI layout):
- *   - empty / cold-start payloads return null
- *   - em_upper / em_lower / spot all surface as markLine entries with
- *     the right dash style
+ *   - empty / cold-start payloads return null from the option builder
+ *   - reference-line fractional indices (spot / em_upper / em_lower)
+ *     produced by `buildReferenceLineIndices` — on-strike, clamp
+ *     above/below the visible window, fractional interpolation, and
+ *     per-field null handling for cold-start. The component-side
+ *     `applyReferenceLines` consumes these and uses
+ *     `chart.convertToPixel` between integer indices to render the
+ *     reference lines as `graphic` overlays in pixel space (#321).
+ *   - absence-of-markLine guard: the option builder no longer emits
+ *     a markLine on the net-OI series (#321).
  *   - single net-OI series carries `[call_oi - put_oi, strike]` tuples
  *   - bar tint follows hemisphere convention (positive net → blue,
  *     negative net → amber)
