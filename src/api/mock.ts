@@ -692,6 +692,10 @@ function mockVelocityTape(
       put_minutes: putMinutes,
       call_spike_minutes: callSpikeMinutes,
       put_spike_minutes: [],
+      // Undercount flags — the mock represents a clean replay where
+      // no contract hit IBKR's 1000-tick cap, so both sides are False.
+      call_undercount: false,
+      put_undercount: false,
     };
   });
 
