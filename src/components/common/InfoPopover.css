@@ -1,0 +1,107 @@
+/* InfoPopover shared styles (#334).
+ *
+ * Owns the button visual + popover visual ONLY. Positioning is
+ * consumer-controlled — each chart panel scopes `.info-popover-btn`
+ * and `.info-popover-panel` from its own CSS to control where they
+ * sit (top-right of chart vs bottom-left under title vs etc.).
+ *
+ * Colors consume CSS variables from src/styles/globals.css directly
+ * so token drift propagates automatically. */
+
+.info-popover-btn {
+  appearance: none;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms, color 80ms, border-color 80ms;
+}
+.info-popover-btn:hover {
+  color: var(--text-bright);
+  border-color: var(--text-muted);
+}
+.info-popover-btn.active {
+  /* TODO(#326): replace `#1a2235` with `var(--bg-panel-head)` once
+   * the alias lands in globals.css. */
+  background: #1a2235;
+  color: var(--text-bright);
+  border-color: var(--accent-amber);
+}
+
+.info-popover-panel {
+  /* Default positioning baseline — consumers override via more-
+   * specific selectors (e.g. `.svt-panel-head .info-popover-panel`).
+   * The minimum guarantee is absolute-positioned at top:100% of
+   * whichever wrapper provides `position: relative`. */
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  z-index: 50;
+  width: min(420px, calc(100vw - 40px));
+  padding: 12px 14px 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-amber);
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  line-height: 1.55;
+  text-transform: none;
+}
+.info-popover-panel ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.info-popover-panel li {
+  margin-bottom: 4px;
+}
+.info-popover-panel li:last-child {
+  margin-bottom: 0;
+}
+.info-popover-panel b {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+/* Inline swatch + glyph helpers commonly used inside help bullets.
+ * Color of each is consumer-overridable via the same selectors. */
+.info-popover-panel .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 4px 0 6px;
+  vertical-align: -1px;
+  border-radius: 1px;
+}
+.info-popover-panel .swatch.call {
+  background: var(--accent-blue);
+}
+.info-popover-panel .swatch.put {
+  background: var(--accent-amber);
+}
+.info-popover-panel .swatch.balanced {
+  background: var(--text-dim);
+}
+.info-popover-panel .glyph {
+  font-weight: 700;
+  margin: 0 2px 0 4px;
+}
+.info-popover-panel .glyph.up {
+  color: var(--accent-green);
+}
+.info-popover-panel .glyph.dn {
+  color: var(--accent-red);
+}

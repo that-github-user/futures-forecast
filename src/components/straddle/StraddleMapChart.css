@@ -1,108 +1,25 @@
-/* StraddleMapChart — info button + help popover (#333).
- *
- * The chart itself is ECharts-rendered into a div; this CSS only
- * covers the React-overlaid info affordance. Classes are
- * StraddleMap-specific (`.smc-*`) so they don't conflict with the
- * velocity-panel info-popover styling (`.svt-*` in
- * StrikeVelocityTape.css). The two patterns ARE near-identical;
- * task #334 tracks extracting a shared `<InfoPopover>` component
- * once we have a third consumer (rule of three — see
- * [[reference_echarts_category_axis_fractional]] for the same
- * principle applied to the chart-axis rounding issue). When the
- * extraction lands BOTH this file and StrikeVelocityTape.css's
- * .svt-info-* / .svt-help-* sections collapse into the shared
- * module. */
-
-.smc-info-btn {
-  appearance: none;
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border-mid);
-  border-radius: 999px;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  font-size: 11px;
-  line-height: 1;
-  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 80ms, color 80ms, border-color 80ms;
-}
-.smc-info-btn:hover {
-  color: var(--text-bright);
-  border-color: var(--text-muted);
-}
-.smc-info-btn.active {
-  /* TODO(#326): replace `#1a2235` with `var(--bg-panel-head)` once
-   * the alias lands in globals.css. Same literal used by
-   * .svt-info-btn.active + .svt-toggle button.active. */
-  background: #1a2235;
-  color: var(--text-bright);
-  border-color: var(--accent-amber);
-}
-
-.smc-help-popover {
-  position: absolute;
-  top: 36px;
-  right: 12px;
-  z-index: 50;
-  width: min(420px, calc(100vw - 40px));
-  padding: 12px 14px 10px 14px;
-  background: var(--bg-panel);
-  border: 1px solid var(--accent-amber);
-  border-radius: 4px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  color: var(--text-primary);
-  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
-  line-height: 1.55;
-}
-.smc-help-popover ul {
-  margin: 0;
-  padding-left: 18px;
-}
-.smc-help-popover li {
-  margin-bottom: 4px;
-}
-.smc-help-popover li:last-child {
-  margin-bottom: 0;
-}
-.smc-help-popover b {
-  color: var(--text-bright);
-  font-weight: 600;
-}
-.smc-help-popover .swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin: 0 4px 0 6px;
-  vertical-align: -1px;
-  border-radius: 1px;
-}
-.smc-help-popover .swatch.call {
-  background: var(--accent-blue);
-}
-.smc-help-popover .swatch.put {
-  background: var(--accent-amber);
-}
-.smc-help-popover .glyph {
-  font-weight: 700;
-  margin: 0 2px 0 4px;
-}
-.smc-help-popover .glyph.up {
-  color: var(--accent-green);
-}
-.smc-help-popover .glyph.dn {
-  color: var(--accent-red);
-}
+/* StraddleMapChart — consumer-specific positioning for the shared
+ * InfoPopover (#334 extraction). Visual styling (button, popover,
+ * swatches, glyph helpers) lives in src/components/common/
+ * InfoPopover.css; this file just anchors the ⓘ + popover within
+ * the chart container.
+ */
 
 .smc-info-anchor {
   position: absolute;
   top: 10px;
   right: 12px;
   z-index: 3; /* above legend (z:2) */
+}
+
+/* Popover anchored RIGHT-aligned to the chart container, opening
+ * below the ⓘ button. The shared default is `top: 100%; left: 0`
+ * (button-anchored, opens left-aligned downward); here we override
+ * to right-align so the panel doesn't hug the button's left edge
+ * and overflow the chart's right margin. */
+.smc-info-anchor .info-popover-panel {
+  top: 28px;
+  right: 0;
+  left: auto;
+  width: min(420px, calc(100vw - 40px));
 }

@@ -1,0 +1,14 @@
+/* PinCandidatesPanel — consumer-specific positioning for the shared
+ * InfoPopover (#334 extraction). The popover anchors to the panel
+ * container (which is position:relative) and renders just below the
+ * header row, aligned with the panel's inline padding.
+ *
+ * Visual styling (button, popover background/border, swatches,
+ * glyphs) lives in src/components/common/InfoPopover.css.
+ */
+
+.pin-candidates-panel .info-popover-panel {
+  top: 32px;
+  left: 14px; /* match panel inline padding */
+  width: min(340px, calc(100vw - 40px));
+}

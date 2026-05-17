@@ -3,17 +3,26 @@
  *
  * Each row shows:
  *   - The strike (large, mono)
- *   - A density bar (0..1 normalized) — visual rank cue
+ *   - A density bar (0..1 normalized) — visual rank cue, with a
+ *     numeric score label so the operator sees both relative AND
+ *     absolute strength
  *   - Distance from spot in pts (signed, so the side is obvious)
- *   - A "WITHIN EM" badge when the strike falls inside the EM band
+ *   - An "EM" badge when the strike falls inside the EM band
  *
  * Top 5 candidates are surfaced (the spec — operators don't need
  * more). When the list is empty (cold-start or no qualifying strikes
  * yet), render an empty-state line so the column doesn't collapse.
+ *
+ * Header carries a shared <InfoPopover> ⓘ (#334) explaining the
+ * panel — what counts as a pin candidate, how density is computed,
+ * what the EM badge means, the call/put color convention on
+ * distance.
  */
 
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import type { PinCandidate } from "../../api/terminalTypes";
+import { InfoPopover } from "../common/InfoPopover";
+import "./PinCandidatesPanel.css";
 
 interface Props {
   candidates: PinCandidate[];
@@ -23,6 +32,7 @@ interface Props {
 export function PinCandidatesPanel({ candidates, spot }: Props) {
   return (
     <div
+      className="pin-candidates-panel"
       style={{
         background: colors.bgPanel,
         border: `1px solid ${colors.borderDim}`,
@@ -31,10 +41,14 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
         display: "flex",
         flexDirection: "column",
         gap: 8,
+        position: "relative", /* anchors the InfoPopover */
       }}
     >
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
           fontFamily: fonts.sans,
           fontSize: 10,
           fontWeight: 700,
@@ -43,7 +57,34 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
           textTransform: "uppercase",
         }}
       >
-        Pin Candidates
+        <span>Pin Candidates</span>
+        <InfoPopover label="How to read pin candidates">
+          <ul>
+            <li>
+              <b>Pin candidates</b> are strikes most likely to anchor SPX's
+              close. Ranking blends open interest + recent volume into a
+              normalized <b>density score</b> (0–1); higher = more contracts
+              concentrated at that strike.
+            </li>
+            <li>
+              The <b>density bar</b> shows the score visually; the small
+              numeric label after it is the exact value. Top 5 strikes are
+              surfaced.
+            </li>
+            <li>
+              <b>Distance from spot</b> is signed: <span className="swatch call" />
+              positive (call side, above spot), <span className="swatch put" />
+              negative (put side, below spot). Color matches the chart's
+              hemisphere convention.
+            </li>
+            <li>
+              The green <b>EM</b> pill marks strikes inside today's
+              expected-move band. EM-bounded strikes are the actionable pin
+              candidates for the close; out-of-EM strikes still rank but
+              require an unusual move to pin.
+            </li>
+          </ul>
+        </InfoPopover>
       </div>
       {candidates.length === 0 && (
         <div
@@ -73,12 +114,23 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
               : distance < 0
                 ? colors.accentAmber
                 : colors.textPrimary;
+        // Density score displayed as 0.00–1.00 (two decimals — finer
+        // resolution lets the operator distinguish 0.71 from 0.74 when
+        // the bar widths are visually close). Native browser tooltip
+        // (`title` attribute on the row) carries the same value as a
+        // belt-and-suspenders cue for keyboard / screen-reader users.
+        const scoreClamped = Math.max(0, Math.min(1, c.density_score));
+        const scoreLabel = scoreClamped.toFixed(2);
+        const rowTitle = `Density ${scoreLabel}${
+          c.within_em ? " · within EM" : ""
+        }`;
         return (
           <div
             key={c.strike}
+            title={rowTitle}
             style={{
               display: "grid",
-              gridTemplateColumns: "auto 1fr auto",
+              gridTemplateColumns: "auto 1fr auto auto",
               alignItems: "center",
               gap: 10,
               padding: "4px 0",
@@ -109,12 +161,24 @@ export function PinCandidatesPanel({ candidates, spot }: Props) {
                 style={{
                   position: "absolute",
                   inset: 0,
-                  width: `${Math.max(0, Math.min(1, c.density_score)) * 100}%`,
+                  width: `${scoreClamped * 100}%`,
                   background: c.within_em ? colors.accentGreen : colors.textMuted,
                   borderRadius: 3,
                 }}
               />
             </div>
+            <span
+              style={{
+                fontFamily: fonts.mono,
+                fontSize: 10,
+                color: c.within_em ? colors.accentGreen : colors.textMuted,
+                fontVariantNumeric: "tabular-nums",
+                minWidth: 28,
+                textAlign: "right",
+              }}
+            >
+              {scoreLabel}
+            </span>
             <div
               style={{
                 display: "flex",
