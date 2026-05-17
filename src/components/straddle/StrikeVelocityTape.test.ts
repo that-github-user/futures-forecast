@@ -367,6 +367,51 @@ describe("dominanceColor", () => {
   });
 });
 
+// ── Cold-start (all-null headlines) integration smoke ─────────────
+
+describe("cold-start: all-null headlines", () => {
+  // Per the snapshotter contract documented in StrikeVelocityTape.tsx
+  // (automated-dc-entry/futures_terminal/systems/straddle_chain.py:822-823),
+  // `spot`/`emUpper`/`emLower`/`atmStrike` populate atomically — either
+  // all are non-null (live snapshot) or all are null (cold-start).
+  // These tests pin that the helpers produce sensible output for the
+  // all-null shape so the panel renders the replay window without
+  // crashing or producing misleading visuals.
+  const ts1 = "2026-05-15T15:30:00-04:00";
+  const t = tape({
+    strikes: [
+      strike({ strike: 7510, call_minutes: [minute(ts1, 80)], put_minutes: [] }),
+      strike({ strike: 7500, call_minutes: [minute(ts1, 100)], put_minutes: [minute(ts1, 50)] }),
+      strike({ strike: 7490, call_minutes: [], put_minutes: [minute(ts1, 60)] }),
+    ],
+  });
+  it("selectVisibleStrikes falls back to the median tape strike when atmStrike is null", () => {
+    // Median of [7510, 7500, 7490] is 7500. With maxRows=15 > 3 strikes,
+    // returns all sorted descending — the fallback never kicks in
+    // because there's nothing to clip.
+    expect(selectVisibleStrikes(t, null, 15)).toEqual([7510, 7500, 7490]);
+  });
+  it("selectVisibleStrikes still centers on the median when capped under maxRows", () => {
+    const wide = tape({
+      strikes: Array.from({ length: 20 }, (_, i) =>
+        strike({ strike: 7400 + i * 5 }),
+      ),
+    });
+    // All strikes equidistant; median is 7450 (idx 10, since sorted
+    // ascending input is the array order). Take 5 closest to 7450 → 7440–7460.
+    const visible = selectVisibleStrikes(wide, null, 5);
+    expect(visible).toEqual([7460, 7455, 7450, 7445, 7440]);
+  });
+  it("priceToY returns 0 when no strikes are visible", () => {
+    expect(priceToY(7500, [], ROW_H)).toBe(0);
+  });
+  it("rowMaxVol and panelMaxVol remain >= 1 even on empty data", () => {
+    const empty = tape({ strikes: [] });
+    expect(panelMaxVol(empty, [])).toBe(1);
+    expect(rowMaxVol(strike({ call_minutes: [], put_minutes: [] }))).toBe(1);
+  });
+});
+
 // ── Geometry constants are exported for CSS coordination ──────────
 
 describe("layout constants", () => {

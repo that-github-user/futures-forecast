@@ -110,13 +110,13 @@ export function buildMinuteAxis(tape: VelocityTape): string[] {
 /** Format an ISO8601-with-offset timestamp as a "HH:MM" wall-clock
  *  label (in the timestamp's own timezone — we trust the snapshotter
  *  to emit ET). Returns the raw string on parse failure so an
- *  upstream format drift doesn't render the axis silent. */
+ *  upstream format drift doesn't render the axis silent.
+ *
+ *  Extracted directly from the ISO string rather than via Date —
+ *  Date would re-apply the LOCAL browser timezone, but we want the
+ *  wall-clock minute the snapshotter emitted (ET, regardless of
+ *  where the browser is). */
 export function formatMinuteLabel(ts: string): string {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  // The Date constructor parses the offset, but we want to render in
-  // the WALL-CLOCK timezone the snapshotter emitted (ET). Extract HH:MM
-  // directly from the string rather than re-applying the local TZ.
   const m = /T(\d{2}):(\d{2})/.exec(ts);
   if (!m) return ts;
   return `${m[1]}:${m[2]}`;
@@ -255,10 +255,15 @@ export function dominanceColor(call: number, put: number): string {
  *  otherwise. Keep in sync with the CSS `.lane-row { height: 44px }`. */
 export const ROW_H = 44;
 
-/** Strike column width — must match CSS `.lane-row` grid-template
- *  column 1 width at the default breakpoint. The triangle overlay
- *  positions at `left: 0; width: STRIKE_COL_W` so it overlaps the
- *  strike column exactly. */
+/** Strike column width AT THE DESKTOP BREAKPOINT only — must match
+ *  CSS `.svt-row` grid-template column 1 width. The triangle overlay
+ *  positions at `left: 0; width: 96px` (default) so it overlaps the
+ *  strike column exactly. CSS media queries override the width to
+ *  78px (≤720px) and 64px (≤480px) for the overlay AND the grid
+ *  column in lockstep; those responsive variants are owned by the
+ *  CSS file and NOT reflected here. TS code does not consume this
+ *  constant for any geometry computation — it's exported only to
+ *  give the test suite a manual-discipline anchor against the CSS. */
 export const STRIKE_COL_W = 96;
 
 /** Max strike rows shown — caps panel height regardless of how many

@@ -69,16 +69,30 @@ const SPIKE_STROKE_W = 1.5;
 
 export interface StrikeVelocityTapeProps {
   tape: VelocityTape | null;
-  /** Current spot price. When null (cold-start), no spot triangle. */
+  /** Current spot price. */
   spot: number | null;
-  /** Expected-move upper bound. When null, no EM-up triangle. */
+  /** Expected-move upper bound. */
   emUpper: number | null;
-  /** Expected-move lower bound. When null, no EM-down triangle. */
+  /** Expected-move lower bound. */
   emLower: number | null;
   /** ATM strike — used to center the visible strike window and to
-   *  amber-highlight that row. When null, panel uses the median tape
-   *  strike as the center and no row is amber-highlighted. */
+   *  amber-highlight that row. */
   atmStrike: number | null;
+  // ── Cold-start contract ──────────────────────────────────────────
+  // Per the snapshotter
+  // (automated-dc-entry/futures_terminal/systems/straddle_chain.py:822-823),
+  // `em_upper = spot + atm_straddle_mid` and `em_lower = spot -
+  // atm_straddle_mid` — all four headline fields (spot, emUpper,
+  // emLower, atmStrike) are populated atomically. Either every field
+  // is non-null (live snapshot) or every field is null (cold-start
+  // before the first snapshot of the session). The component handles
+  // both shapes:
+  //   - All non-null: triangles + ATM amber highlight + numeric chips.
+  //   - All null: panel still renders the replay lanes (replay tape
+  //     is independent of today's session). A "cold-start" notice in
+  //     the panel head explicitly cues the operator that spot + EM
+  //     are unavailable; readout chips show "—" instead of values.
+  //     `selectVisibleStrikes` falls back to the median tape strike.
 }
 
 type ScaleMode = "row" | "panel";
@@ -211,13 +225,21 @@ function PanelHead({
   scaleMode: ScaleMode;
   onScaleChange: (m: ScaleMode) => void;
 }) {
+  // Cold-start (per the snapshotter contract documented at the top
+  // of this file): all four headline fields populate atomically, so
+  // `spot == null` is the single indicator that the live session
+  // hasn't begun. Render an explicit notice so the operator doesn't
+  // mistake the missing triangles + ATM highlight for a rendering
+  // bug — the chips show "—" too, but the notice is the louder cue.
+  const isColdStart = spot == null;
   return (
     <div className="svt-panel-head">
       <div>
         <h3 className="svt-title">Strike Velocity Tape</h3>
         <div className="svt-sub">
-          Per minute: one block. Height = total volume · color = which side
-          dominates · outline = spike (≥3σ MAD).
+          {isColdStart
+            ? "Replay window shown · spot + EM marks unavailable until session open"
+            : "Per minute: one block. Height = total volume · color = which side dominates · outline = spike (≥3σ MAD)."}
         </div>
       </div>
       <div className="svt-controls">
@@ -282,6 +304,7 @@ function ScaleToggle({
       <button
         type="button"
         className={mode === "row" ? "active" : ""}
+        aria-pressed={mode === "row"}
         onClick={() => onChange("row")}
       >
         per row
@@ -289,6 +312,7 @@ function ScaleToggle({
       <button
         type="button"
         className={mode === "panel" ? "active" : ""}
+        aria-pressed={mode === "panel"}
         onClick={() => onChange("panel")}
       >
         panel

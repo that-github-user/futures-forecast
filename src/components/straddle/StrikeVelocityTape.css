@@ -5,58 +5,50 @@
  * express cleanly: the CSS grid template for rows, the absolutely-
  * positioned triangle overlay, and the responsive media queries.
  *
- * All colors / fonts go through CSS variables sourced from styles/
- * tokens.ts at the top of the file so the velocity tape stays in
- * theme-lockstep without each rule re-declaring values. Keep these
- * synced when tokens.ts changes.
- */
-
-/* ── Token aliases (sync with src/styles/tokens.ts) ───────────────*/
-.svt-lane-grid,
-.svt-row,
-.svt-panel-head,
-.svt-axis,
-.svt-readout,
-.svt-toggle,
-.svt-gutter-overlay {
-  --svt-bg-panel: #111827;
-  --svt-bg-elev: #1a2235;
-  --svt-border-dim: #1e293b;
-  --svt-border-mid: #334155;
-  --svt-ink-100: #f8fafc;
-  --svt-ink-80: #e2e8f0;
-  --svt-ink-60: #94a3b8;
-  --svt-ink-40: #64748b;
-  --svt-ink-30: #475569;
-  --svt-blue: #3b82f6;
-  --svt-blue-mid: #60a5fa;
-  --svt-amber: #f59e0b;
-  --svt-amber-mid: #fbbf24;
-  --svt-amber-dim: #b45309;
-}
+ * All colors consume CSS variables from src/styles/globals.css
+ * directly — no per-component redeclaration so token drift in
+ * globals.css carries through automatically.
+ *
+ * Variables used:
+ *   --bg-panel       (panel surface)
+ *   --bg-elevated    (panel head + button hover)
+ *   --border-dim     (row dividers, panel border)
+ *   --border-mid     (chip + toggle outlines)
+ *   --text-bright    (strike numbers, primary text, spike outline)
+ *   --text-primary
+ *   --text-secondary (ink-60)
+ *   --text-muted     (ink-40 — minor labels)
+ *   --text-dim       (ink-40 deeper — chip labels)
+ *   --accent-blue    (call dominance)
+ *   --accent-amber   (put dominance, ATM highlight, EM triangle)
+ *
+ * Local color literals are used only for hues that don't have a
+ * globals.css alias (e.g., the lighter `blue-mid`/`amber-mid` shades
+ * used on the session-split text). Keep those inline so a future
+ * search for "f59e0b" / "3b82f6" still finds them here. */
 
 /* ── Panel head ───────────────────────────────────────────────────*/
 .svt-panel-head {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--svt-border-dim);
+  border-bottom: 1px solid var(--border-dim);
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 14px;
-  background: var(--svt-bg-elev);
+  background: #1a2235;
 }
 .svt-title {
   margin: 0;
   font-size: 11px;
   font-weight: 700;
-  color: var(--svt-ink-100);
+  color: var(--text-bright);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .svt-sub {
   font-size: 10.5px;
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   letter-spacing: 0.04em;
 }
 .svt-controls {
@@ -64,7 +56,7 @@
   gap: 14px;
   align-items: center;
   font-size: 10.5px;
-  color: var(--svt-ink-60);
+  color: var(--text-secondary);
   flex-wrap: wrap;
 }
 
@@ -82,13 +74,13 @@
   align-items: baseline;
   gap: 5px;
   padding: 3px 7px;
-  border: 1px solid var(--svt-border-mid);
+  border: 1px solid var(--border-mid);
   border-radius: 2px;
-  background: var(--svt-bg-panel);
-  color: var(--svt-ink-80);
+  background: var(--bg-panel);
+  color: var(--text-primary);
 }
 .svt-chip-lbl {
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   font-size: 9px;
 }
 .svt-chip-val {
@@ -97,37 +89,37 @@
 }
 .svt-chip-spot .svt-chip-lbl,
 .svt-chip-spot .svt-chip-val {
-  color: var(--svt-ink-100);
+  color: var(--text-bright);
 }
 .svt-chip-em .svt-chip-lbl,
 .svt-chip-em .svt-chip-val {
-  color: var(--svt-amber);
+  color: var(--accent-amber);
 }
 .svt-chip-tri {
   display: inline-block;
   width: 0;
   height: 0;
-  border-left: 6px solid var(--svt-ink-100);
+  border-left: 6px solid var(--text-bright);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   margin-right: 1px;
 }
 .svt-chip-em .svt-chip-tri {
-  border-left-color: var(--svt-amber);
+  border-left-color: var(--accent-amber);
 }
 
 /* ── Scale toggle ─────────────────────────────────────────────────*/
 .svt-toggle {
   display: inline-flex;
-  border: 1px solid var(--svt-border-mid);
+  border: 1px solid var(--border-mid);
   border-radius: 3px;
   overflow: hidden;
-  background: var(--svt-bg-panel);
+  background: var(--bg-panel);
 }
 .svt-toggle button {
   appearance: none;
   background: transparent;
-  color: var(--svt-ink-60);
+  color: var(--text-secondary);
   border: none;
   padding: 4px 9px;
   font-size: 10px;
@@ -138,18 +130,18 @@
   transition: background 80ms, color 80ms;
 }
 .svt-toggle button:hover {
-  color: var(--svt-ink-100);
+  color: var(--text-bright);
 }
 .svt-toggle button.active {
-  background: var(--svt-bg-elev);
-  color: var(--svt-ink-100);
-  box-shadow: inset 0 0 0 1px var(--svt-amber-dim);
+  background: #1a2235;
+  color: var(--text-bright);
+  box-shadow: inset 0 0 0 1px #b45309;
 }
 .svt-toggle-lbl {
   font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   padding: 0 8px 0 4px;
   align-self: center;
 }
@@ -167,7 +159,7 @@
   grid-template-columns: 96px 1fr clamp(0px, 14vw, 120px);
   align-items: stretch;
   column-gap: 0;
-  border-bottom: 1px solid var(--svt-border-dim);
+  border-bottom: 1px solid var(--border-dim);
   height: 44px;
 }
 .svt-row:last-child {
@@ -179,9 +171,9 @@
   padding: 0 10px 0 24px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--svt-ink-80);
+  color: var(--text-primary);
   letter-spacing: 0.02em;
-  border-right: 1px solid var(--svt-border-dim);
+  border-right: 1px solid var(--border-dim);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -192,12 +184,12 @@
 }
 .svt-strike-vol {
   font-size: 10px;
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   font-weight: 400;
   letter-spacing: 0;
 }
 .svt-row.atm .svt-strike-px {
-  color: var(--svt-amber);
+  color: var(--accent-amber);
 }
 
 /* Lane cell: min-width:0 + svg width:100% so the SVG scales with the
@@ -220,13 +212,13 @@
  * template, collapses entirely below 720px. */
 .svt-session {
   padding: 0 8px 0 10px;
-  border-left: 1px solid var(--svt-border-dim);
+  border-left: 1px solid var(--border-dim);
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
   font-size: 10px;
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
   overflow: hidden;
@@ -235,30 +227,30 @@
 .svt-split-bar {
   height: 5px;
   width: 100%;
-  background: var(--svt-bg-elev);
+  background: #1a2235;
   border-radius: 1px;
   overflow: hidden;
   display: flex;
 }
 .svt-split-call {
-  background: var(--svt-blue);
+  background: var(--accent-blue);
   height: 100%;
 }
 .svt-split-put {
-  background: var(--svt-amber);
+  background: var(--accent-amber);
   height: 100%;
 }
 .svt-session-nums {
   display: flex;
   justify-content: space-between;
   font-size: 9.5px;
-  color: var(--svt-ink-60);
+  color: var(--text-secondary);
 }
 .svt-session-nums .c {
-  color: var(--svt-blue-mid);
+  color: #60a5fa;
 }
 .svt-session-nums .p {
-  color: var(--svt-amber-mid);
+  color: #fbbf24;
 }
 
 /* ── Gutter triangle overlay (overlaps strike column) ─────────────*/
@@ -280,11 +272,11 @@
   pointer-events: none;
 }
 .svt-tri-spot {
-  fill: var(--svt-ink-100);
+  fill: var(--text-bright);
   stroke: none;
 }
 .svt-tri-em {
-  fill: var(--svt-amber);
+  fill: var(--accent-amber);
   stroke: none;
 }
 
@@ -302,7 +294,7 @@
 .svt-axis-ticks {
   height: 16px;
   position: relative;
-  color: var(--svt-ink-40);
+  color: var(--text-muted);
   font-size: 9.5px;
   letter-spacing: 0.04em;
   min-width: 0;
@@ -314,7 +306,7 @@
   white-space: nowrap;
 }
 .svt-tick.now {
-  color: var(--svt-ink-100);
+  color: var(--text-bright);
   font-weight: 600;
 }
 
