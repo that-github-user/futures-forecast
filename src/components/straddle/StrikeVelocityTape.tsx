@@ -98,9 +98,12 @@ interface Props {
    *  chart's per-strike pixel density. When null/empty, falls back to
    *  the tape's own strike order (descending by strike). */
   strikeOrder?: number[];
-  /** Container height, typically passed in to match the chart's height
-   *  so the two columns occupy the same vertical band. Spot overlay +
-   *  rows are laid out proportionally within. */
+  /** Optional container height. When omitted (the default), the panel
+   *  sizes to its content — the right behavior for the major-panel
+   *  promotion (#319), where forcing a fixed 540px caused an internal
+   *  scrollbar because 11 strikes × 48px ROW_HEIGHT + header + spot
+   *  overlay ≈ 680px exceeds 540. Pass an explicit number to cap (e.g.,
+   *  if embedding in a side panel that needs a fixed band). */
   height?: number;
 }
 
@@ -207,60 +210,70 @@ function SpikeGlyphRow({
   putSpikes: Set<string>;
   strike: number;
 }) {
-  const slot = axis.length > 0 ? LOGICAL_WIDTH / axis.length : LOGICAL_WIDTH;
   // Color convention: call spikes pop in red (the emphasis hue used
   // for the spike bar itself), put spikes use the amber put accent so
   // the operator can still tell sides apart when both fire at the
   // same minute.
   const callGlyphColor = colors.accentRed;
   const putGlyphColor = colors.accentAmber;
-  // Half-row offsets used when both sides fire at the same minute. The
-  // top half is the call ▲, the bottom half is the put ▼.
-  const halfRow = SPIKE_GLYPH_HEIGHT / 2;
+  // RENDER AS HTML, NOT SVG — when the panel widens past LOGICAL_WIDTH
+  // (1000px) and we used `preserveAspectRatio="none"` on the SVG, the
+  // ▲/▼ text glyphs got horizontally stretched along with the bars,
+  // breaking the legibility floor that motivated the size bump in the
+  // first place. Rendering glyphs as absolutely-positioned HTML spans
+  // anchored by percentage left lets them scale POSITION horizontally
+  // (matching the bar columns below) without distorting their NATIVE
+  // font shape. Bars in Sparkline can still stretch — that's intended
+  // for the bar visualization. Glyphs are text, they shouldn't stretch.
+  const axisLen = axis.length;
   return (
-    <svg
-      width="100%"
-      height={SPIKE_GLYPH_HEIGHT}
-      viewBox={`0 0 ${LOGICAL_WIDTH} ${SPIKE_GLYPH_HEIGHT}`}
-      preserveAspectRatio="none"
-      style={{ display: "block" }}
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: SPIKE_GLYPH_HEIGHT,
+      }}
+      role="img"
       aria-label={`Spike-minute markers at strike ${strike}`}
     >
       {axis.map((ts, i) => {
         const glyphs = spikeGlyphsAt(ts, callSpikes, putSpikes);
         if (glyphs.length === 0) return null;
-        const cx = i * slot + slot / 2;
+        // Center the glyph in its bucket: ((i + 0.5) / N) * 100%.
+        const leftPct = ((i + 0.5) / axisLen) * 100;
         const stacked = glyphs.length === 2;
         return glyphs.map((g) => {
-          // Single-side fire → glyph sits on the row baseline.
-          // Stacked fire → top half (▲) and bottom half (▼) so neither
-          //                side is silently dropped.
-          let y: number;
-          if (g.position === "top") y = halfRow;
-          else if (g.position === "bottom") y = SPIKE_GLYPH_HEIGHT - 1;
-          else y = SPIKE_GLYPH_HEIGHT - 1;
+          // Single-side fire → glyph sits on the row baseline (bottom).
+          // Stacked fire → call ▲ in the top half, put ▼ in the bottom.
+          let topPx: number;
+          if (g.position === "top") topPx = 0;
+          else topPx = stacked ? Math.floor(SPIKE_GLYPH_HEIGHT / 2) : 0;
           const fill = g.side === "call" ? callGlyphColor : putGlyphColor;
           return (
-            <text
+            <span
               key={`${ts}-${g.side}`}
-              x={cx}
-              y={y}
-              fill={fill}
-              // Bump stacked fontSize from 5→6 — 5px is below the
-              // legibility floor for ▲/▼ on most displays. 6px in mono
-              // is still small but resolves the arrow direction at a
-              // glance. SPIKE_GLYPH_HEIGHT was bumped 8→11 in tandem
-              // so both halves fit.
-              fontSize={stacked ? 6 : 8}
-              fontFamily={fonts.mono}
-              textAnchor="middle"
+              style={{
+                position: "absolute",
+                left: `${leftPct}%`,
+                top: topPx,
+                transform: "translateX(-50%)",
+                color: fill,
+                // Stacked fontSize 6 fits two glyphs in 11px. Single-side
+                // gets 8px for legibility. Mono font keeps width
+                // consistent across digits / glyphs.
+                fontSize: stacked ? 6 : 8,
+                fontFamily: fonts.mono,
+                lineHeight: 1,
+                pointerEvents: "none",
+                userSelect: "none",
+              }}
             >
               {g.glyph}
-            </text>
+            </span>
           );
         });
       })}
-    </svg>
+    </div>
   );
 }
 
@@ -349,7 +362,7 @@ function SpotOverlay({
 export function StrikeVelocityTape({
   tape,
   strikeOrder,
-  height = 540,
+  height,
 }: Props) {
   // All hooks must run unconditionally to satisfy React's hook order.
   // The empty/null contract is rendered AFTER memoization via a
@@ -470,7 +483,10 @@ export function StrikeVelocityTape({
       }}
     >
       {/* Section header — major-panel treatment marks this as a peer
-          of the chart, not a sidebar. Eyebrow + section title + subline. */}
+          of the chart, not a sidebar. Title + subline. The "Frozen
+          Replay" eyebrow was dropped because the word "Frozen" already
+          appeared in the title tail ("Frozen Friday-close replay") —
+          redundant on adjacent lines (R2 round-2 review). */}
       <div
         style={{
           display: "flex",
@@ -479,37 +495,38 @@ export function StrikeVelocityTape({
           marginBottom: 10,
         }}
       >
-        <div
-          style={{
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            color: colors.accentAmber,
-            textTransform: "uppercase",
-          }}
-        >
-          Frozen Replay
-        </div>
         {/* Section title — slightly larger, semibold, mixed-weight so
             the panel reads as a peer of the chart. The dot-separated
             tail spells out the panel's framing: this is a focused
-            ATM-cluster view, NOT a row-aligned mirror of the chart. */}
+            ATM-cluster view, NOT a row-aligned mirror of the chart.
+            Flex-wrap lets the tail drop to a second line on narrow
+            viewports instead of breaking mid-phrase. */}
         <div
           style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "baseline",
+            columnGap: 8,
+            rowGap: 2,
             fontFamily: fonts.sans,
-            fontSize: 14,
-            fontWeight: 600,
             letterSpacing: "0.04em",
-            color: colors.textBright,
             textTransform: "uppercase",
           }}
         >
-          Trade Velocity
           <span
             style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: colors.textBright,
+            }}
+          >
+            Trade Velocity
+          </span>
+          <span
+            style={{
+              fontSize: 12,
               color: colors.textSecondary,
               fontWeight: 400,
-              marginLeft: 8,
             }}
           >
             · ATM ± 5 cluster · Frozen Friday-close replay

@@ -151,11 +151,17 @@ export function StraddlePage() {
                 its own "(no replay available)" placeholder when the
                 backend hasn't run the replay script yet. */}
             {data?.velocity_tape !== undefined && (
-              <section className="straddle-velocity-panel">
+              <section
+                className="straddle-velocity-panel"
+                aria-label="Strike velocity tape"
+              >
+                {/* Omit `height` — the major panel sizes to content
+                    (11 strikes × 48px row + header ≈ 680px). Capping
+                    at 540 forced an internal scrollbar, undercutting
+                    the peer-of-the-chart premise. */}
                 <StrikeVelocityTape
                   tape={data?.velocity_tape ?? null}
                   strikeOrder={strikeOrder}
-                  height={540}
                 />
               </section>
             )}
