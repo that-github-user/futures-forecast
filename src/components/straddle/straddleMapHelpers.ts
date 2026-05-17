@@ -103,35 +103,6 @@ export function buildStraddleMapOption(
   }
   const xExtent = Math.max(1, Math.ceil(maxAbsNet * 1.1));
 
-  // Helper: given a numeric strike, return its fractional category
-  // index along the (descending) strike axis. Used to position the
-  // spot / EM-band markLines between strikes when the value doesn't
-  // line up with an exact strike row. Out-of-range values clamp to
-  // the nearest edge; missing values return null (caller skips line).
-  function categoryIndex(value: number | null): number | null {
-    if (value == null) return null;
-    if (sortedRows.length === 0) return null;
-    // Strikes are sorted descending so index 0 = highest strike.
-    // Walk down to find the first strike <= value, then interpolate.
-    const topStrike = sortedRows[0].strike;
-    const bottomStrike = sortedRows[sortedRows.length - 1].strike;
-    if (value >= topStrike) return 0;
-    if (value <= bottomStrike) return sortedRows.length - 1;
-    for (let i = 0; i < sortedRows.length - 1; i++) {
-      const hi = sortedRows[i].strike;
-      const lo = sortedRows[i + 1].strike;
-      if (value <= hi && value >= lo) {
-        const span = hi - lo;
-        if (span === 0) return i;
-        // Descending order: index increases as strike decreases. So
-        // a value at hi is index i; at lo is index i+1.
-        const frac = (hi - value) / span;
-        return i + frac;
-      }
-    }
-    return null;
-  }
-
   // Single net-OI series. Each bar's value sign drives length (positive
   // right, negative left) and tint (blue / amber). Net fresh-flow glyph
   // is overlaid on bars whose |net flow| exceeds the threshold; glyph
@@ -169,84 +140,29 @@ export function buildStraddleMapOption(
     };
   });
 
-  // markLine entries. Spec: dashed for em_upper/em_lower, solid for
-  // spot. yAxis is now a category axis (strikes as labels), so we
-  // position markLines by FRACTIONAL category index — letting ECharts
-  // interpolate between strike rows when the value (e.g. spot=7501.24)
-  // falls between two strikes. Each entry sets `yAxis` to the index;
-  // the label still shows the underlying numeric value.
-  const markLineData: Array<Record<string, unknown>> = [];
-  const emUpperIdx = categoryIndex(data.em_upper);
-  const emLowerIdx = categoryIndex(data.em_lower);
-  const spotIdx = categoryIndex(data.spot);
-
-  if (emUpperIdx != null && data.em_upper != null) {
-    markLineData.push({
-      yAxis: emUpperIdx,
-      name: "em_upper",
-      lineStyle: {
-        type: "dashed",
-        color: colors.accentAmber,
-        width: 1.2,
-      },
-      label: {
-        formatter: `EM+ ${data.em_upper.toFixed(0)}`,
-        color: colors.accentAmber,
-        fontFamily: fonts.mono,
-        fontSize: 10,
-        position: "insideEndTop",
-      },
-    });
-  }
-  if (emLowerIdx != null && data.em_lower != null) {
-    markLineData.push({
-      yAxis: emLowerIdx,
-      name: "em_lower",
-      lineStyle: {
-        type: "dashed",
-        color: colors.accentAmber,
-        width: 1.2,
-      },
-      label: {
-        formatter: `EM- ${data.em_lower.toFixed(0)}`,
-        color: colors.accentAmber,
-        fontFamily: fonts.mono,
-        fontSize: 10,
-        position: "insideEndBottom",
-      },
-    });
-  }
-  if (spotIdx != null && data.spot != null) {
-    markLineData.push({
-      yAxis: spotIdx,
-      name: "spot",
-      lineStyle: {
-        type: "solid",
-        color: colors.textBright,
-        width: 1.6,
-      },
-      label: {
-        formatter: `SPOT ${data.spot.toFixed(2)}`,
-        color: colors.textBright,
-        fontFamily: fonts.mono,
-        fontSize: 11,
-        fontWeight: "bold",
-        position: "insideEndTop",
-      },
-    });
-  }
+  // Spot + EM reference lines are NOT drawn as `markLine` entries
+  // here (#321). ECharts 6.x's `OrdinalScale.parse` does
+  // `Math.round(val)` on numeric input, so a `yAxis: <fractional
+  // index>` on a CATEGORY axis snaps to the nearest integer band —
+  // the line then renders ON a strike row instead of between two
+  // strikes (verified against `node_modules/echarts/lib/scale/
+  // Ordinal.js`). Operator was seeing spot/EM mis-aligned by up to
+  // ±half a strike interval. Same bug class as #320 round-3 B1.
+  //
+  // The component overlays `graphic` line elements as a post-render
+  // step using `chart.convertToPixel` for precise placement — see
+  // `applyReferenceLines` in StraddleMapChart.tsx. The fractional
+  // indices computed here are surfaced separately so the component
+  // can interpolate pixel positions.
 
   const option: EChartsOption = {
     backgroundColor: "transparent",
     animation: false,
     grid: {
-      left: 60,
-      right: 60,
-      // Top padding leaves room for both the legend strip (overlaid in
-      // the upper-left at y≈12) and the EM-band labels rendered at
-      // `insideEndTop` near the plot's right edge.
-      top: 36,
-      bottom: 36,
+      // Sourced from STRADDLE_MAP_GRID so the component-side
+      // applyReferenceLines stays in pixel-lockstep without
+      // hardcoding the same numbers in two places (#321 R1+R2 nit).
+      ...STRADDLE_MAP_GRID,
       containLabel: false,
     },
     tooltip: {
@@ -355,14 +271,64 @@ export function buildStraddleMapOption(
         // Bar thickness (height of each row) is auto-sized by ECharts
         // based on category count.
         barWidth: "70%",
-        markLine: {
-          symbol: "none",
-          silent: true,
-          data: markLineData as never,
-        },
+        // markLine intentionally absent — reference lines are drawn
+        // as `graphic` overlays in StraddleMapChart's
+        // `applyReferenceLines`, fed by `buildReferenceLineIndices`
+        // (#321).
       },
     ],
   };
 
   return option;
+}
+
+/** Plot-area inset margins for the chart's `grid` config. Exported so
+ *  `StraddleMapChart.applyReferenceLines` consumes the same numbers
+ *  when computing pixel x-bounds for the spot/EM overlay lines —
+ *  otherwise a future change to grid margins here would silently
+ *  render the lines outside the data area (#321 R1+R2 nit 2). */
+export const STRADDLE_MAP_GRID = { left: 60, right: 60, top: 36, bottom: 36 };
+
+/** Fractional category indices for the spot + EM lines, computed
+ *  off the strike list inside `buildStraddleMapOption`. Exposed for
+ *  the component-side `applyReferenceLines` post-render step which
+ *  converts these to pixel y-coords via `chart.convertToPixel`
+ *  between integer indices (avoids the ECharts `OrdinalScale.parse`
+ *  rounding bug — see #321). Returns null entries when the headline
+ *  field is null (cold-start) so the caller skips that line. */
+export interface ReferenceLineIndices {
+  spot: number | null;
+  emUpper: number | null;
+  emLower: number | null;
+}
+
+export function buildReferenceLineIndices(
+  data: StraddleChainResponse | null,
+): ReferenceLineIndices {
+  if (!data || data.strikes.length === 0) {
+    return { spot: null, emUpper: null, emLower: null };
+  }
+  const sorted = [...data.strikes].sort((a, b) => b.strike - a.strike);
+  const top = sorted[0].strike;
+  const bottom = sorted[sorted.length - 1].strike;
+  function idx(value: number | null): number | null {
+    if (value == null || sorted.length === 0) return null;
+    if (value >= top) return 0;
+    if (value <= bottom) return sorted.length - 1;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const hi = sorted[i].strike;
+      const lo = sorted[i + 1].strike;
+      if (value <= hi && value >= lo) {
+        const span = hi - lo;
+        if (span === 0) return i;
+        return i + (hi - value) / span;
+      }
+    }
+    return null;
+  }
+  return {
+    spot: idx(data.spot),
+    emUpper: idx(data.em_upper),
+    emLower: idx(data.em_lower),
+  };
 }

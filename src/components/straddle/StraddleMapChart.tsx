@@ -12,9 +12,15 @@
  *     descending with `inverse: true` so the highest strike sits at
  *     the TOP of the chart — matching how operators read option
  *     chains (calls/upside above, puts/downside below the ATM line).
- *   - Dashed yAxis `markLine`s at em_upper / em_lower; solid at spot.
- *     Positioned by fractional category index so they interpolate
- *     correctly when the value falls between two rendered strikes.
+ *   - Spot + EM reference lines are drawn as ECharts `graphic`
+ *     overlays in pixel space (see `applyReferenceLines`). They were
+ *     previously `markLine` entries with fractional `yAxis` values,
+ *     but ECharts 6.x's `OrdinalScale.parse` rounds those via
+ *     `Math.round`, mis-aligning the lines by up to ±half a strike
+ *     interval (#321). The graphic overlay bypasses the data-axis
+ *     coord pipeline by computing pixel positions via
+ *     `chart.convertToPixel` between integer category indices and
+ *     interpolating fractionally.
  *   - Bar color follows hemisphere convention: call-dominant
  *     (right) → accentBlue, put-dominant (left) → accentAmber.
  *   - Net fresh-flow glyph (▲ green opening / ▼ red closing) overlaid
@@ -33,7 +39,11 @@ import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { StraddleChainResponse } from "../../api/terminalTypes";
-import { buildStraddleMapOption } from "./straddleMapHelpers";
+import {
+  buildReferenceLineIndices,
+  buildStraddleMapOption,
+  STRADDLE_MAP_GRID,
+} from "./straddleMapHelpers";
 
 interface Props {
   data: StraddleChainResponse | null;
@@ -43,13 +53,22 @@ interface Props {
 export function StraddleMapChart({ data, height = 540 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  // Hold the most recent data on a ref so the ResizeObserver callback
+  // can re-apply reference lines after a resize without rebuilding
+  // the whole option object.
+  const dataRef = useRef<StraddleChainResponse | null>(null);
 
   // ── Init once ────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = echarts.init(containerRef.current);
     chartRef.current = chart;
-    const ro = new ResizeObserver(() => chart.resize());
+    const ro = new ResizeObserver(() => {
+      chart.resize();
+      // Resize invalidates the grid pixel positions used to place
+      // the spot/EM lines — recompute against the current data.
+      applyReferenceLines(chart, dataRef.current);
+    });
     ro.observe(containerRef.current);
     return () => {
       ro.disconnect();
@@ -65,7 +84,9 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
     // notMerge so removing a series (e.g. strikes shrink) actually
     // clears prior data; clearing on every setOption is overkill.
     chartRef.current.setOption(option, { notMerge: true });
-  }, [option]);
+    dataRef.current = data;
+    applyReferenceLines(chartRef.current, data);
+  }, [option, data]);
 
   const hasStrikes = !!data && data.strikes.length > 0;
 
@@ -113,6 +134,139 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Overlay the spot + EM reference lines using ECharts `graphic`
+ *  elements positioned by computed pixel y-coordinates. This is the
+ *  fix for #321 — `markLine` with a fractional `yAxis` on a
+ *  category axis silently rounded to the nearest integer band via
+ *  `OrdinalScale.parse`, which mis-aligned the operator's reference
+ *  lines by up to ±half a strike interval.
+ *
+ *  Strategy: `chart.convertToPixel({yAxisIndex: 0}, integerIdx)`
+ *  works correctly on category axes — it returns the band-CENTER
+ *  pixel for an integer data index. We query two adjacent integer
+ *  indices and linearly interpolate to get the pixel position for
+ *  any fractional index. Then we draw a line via the `graphic`
+ *  component, which lives in pixel-space and bypasses the data-axis
+ *  pipeline entirely.
+ *
+ *  Called from:
+ *    - the data-update effect, after every `setOption` call;
+ *    - the ResizeObserver, after `chart.resize()` invalidates the
+ *      previous grid layout.
+ */
+function applyReferenceLines(
+  chart: echarts.ECharts,
+  data: StraddleChainResponse | null,
+): void {
+  const indices = buildReferenceLineIndices(data);
+  if (!data || data.strikes.length === 0) {
+    // Clear any leftover graphic elements (e.g. when transitioning
+    // from a live snapshot to cold-start).
+    chart.setOption({ graphic: [] });
+    return;
+  }
+  const N = data.strikes.length;
+  if (N < 2) {
+    // Need at least two strikes to interpolate. Single-strike case
+    // is degenerate enough to just skip the reference lines.
+    chart.setOption({ graphic: [] });
+    return;
+  }
+  // Linear interpolation anchors: pixel y of strike index 0 (top)
+  // and strike index N-1 (bottom). `convertToPixel` returns
+  // [x, y]; we want the y.
+  const topPx = chart.convertToPixel({ yAxisIndex: 0 }, 0);
+  const botPx = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
+  if (!Array.isArray(topPx) || !Array.isArray(botPx)) {
+    // Chart not laid out yet (race between resize and next layout
+    // frame, or pre-first-paint). Clear any stale graphics so a
+    // previous-frame overlay doesn't ghost at the wrong pixel y
+    // after a resize; the next setOption/resize cycle will retry
+    // and re-render the lines at the correct position (#321 R2 nit).
+    chart.setOption({ graphic: [] }, { replaceMerge: ["graphic"] });
+    return;
+  }
+  const yTop = topPx[1];
+  const yBot = botPx[1];
+  // x-extent of the plot area sourced from the same STRADDLE_MAP_GRID
+  // constant that buildStraddleMapOption applies to the chart's grid
+  // config. Changing one side without the other would render the
+  // overlay lines outside the data area.
+  const width = chart.getWidth();
+  const xLeft = STRADDLE_MAP_GRID.left;
+  const xRight = width - STRADDLE_MAP_GRID.right;
+
+  function pxForIndex(idx: number | null): number | null {
+    if (idx == null) return null;
+    // N >= 2 enforced by the early-return above, so the linear
+    // interpolation is safe.
+    const frac = idx / (N - 1);
+    return yTop + frac * (yBot - yTop);
+  }
+
+  type GraphicEl = {
+    type: "line" | "text";
+    z?: number;
+    silent?: boolean;
+    shape?: { x1: number; y1: number; x2: number; y2: number };
+    style?: Record<string, unknown>;
+    position?: [number, number];
+  };
+  const graphics: GraphicEl[] = [];
+  function pushLine(
+    y: number,
+    cls: "em-upper" | "em-lower" | "spot",
+    labelText: string,
+  ) {
+    const isSpot = cls === "spot";
+    graphics.push({
+      type: "line",
+      z: 50,
+      silent: true,
+      shape: { x1: xLeft, y1: y, x2: xRight, y2: y },
+      style: {
+        stroke: isSpot ? colors.textBright : colors.accentAmber,
+        lineWidth: isSpot ? 1.6 : 1.2,
+        lineDash: isSpot ? undefined : [4, 3],
+      },
+    });
+    graphics.push({
+      type: "text",
+      z: 51,
+      silent: true,
+      position: [xRight - 6, y + (cls === "em-lower" ? 4 : -14)],
+      style: {
+        text: labelText,
+        fill: isSpot ? colors.textBright : colors.accentAmber,
+        font: `${isSpot ? "bold " : ""}${isSpot ? 11 : 10}px ${fonts.mono}`,
+        textAlign: "right",
+      },
+    });
+  }
+
+  const yUp = pxForIndex(indices.emUpper);
+  const yLow = pxForIndex(indices.emLower);
+  const ySpot = pxForIndex(indices.spot);
+  if (yUp != null && data.em_upper != null) {
+    pushLine(yUp, "em-upper", `EM+ ${data.em_upper.toFixed(0)}`);
+  }
+  if (yLow != null && data.em_lower != null) {
+    pushLine(yLow, "em-lower", `EM- ${data.em_lower.toFixed(0)}`);
+  }
+  if (ySpot != null && data.spot != null) {
+    pushLine(ySpot, "spot", `SPOT ${data.spot.toFixed(2)}`);
+  }
+  // `replaceMerge: ["graphic"]` ensures the RESIZE path (which doesn't
+  // do a notMerge setOption) replaces the previous frame's graphics
+  // rather than merging on top. The data-update path's preceding
+  // `setOption(option, { notMerge: true })` already wipes graphics
+  // before this runs, so the merge mode there is harmless.
+  chart.setOption(
+    { graphic: graphics },
+    { replaceMerge: ["graphic"] },
   );
 }
 
