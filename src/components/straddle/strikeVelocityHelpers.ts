@@ -389,3 +389,35 @@ export const STRIKE_COL_W = 96;
 /** Max strike rows shown — caps panel height regardless of how many
  *  strikes the snapshotter returns. */
 export const MAX_ROWS = 15;
+
+/** Resolve the σ-magnitude for a (row, ts) spike cell (#330).
+ *
+ *  σ-magnitude is `(volume - median) / scale` where scale is the
+ *  σ-estimator the backend used for the threshold (1.4826·MAD in
+ *  the canonical path, 1.2533·MeanAD in the fallback). A
+ *  threshold spike has σ≈3 by construction; outsized bursts come
+ *  through as 5σ / 8σ / etc., so the tooltip can triage
+ *  threshold-grazers from real outliers.
+ *
+ *  When both call and put sides flag the same minute, the larger
+ *  σ wins — that's the side the operator should see in the
+ *  tooltip footer. Returns `null` for non-spike cells AND when
+ *  the backend payload predates #330 (the sigma maps are empty
+ *  even though the spike timestamps populate normally); the
+ *  tooltip falls back to the generic `⚠ Spike (≥3σ MAD)` label
+ *  in the null case.
+ *
+ *  Kept module-level so mouse and keyboard paths share the same
+ *  resolution rule. Exported for unit-testability. */
+export function resolveSpikeSigma(
+  callSpikeSigmas: Map<string, number>,
+  putSpikeSigmas: Map<string, number>,
+  ts: string,
+): number | null {
+  const c = callSpikeSigmas.get(ts);
+  const p = putSpikeSigmas.get(ts);
+  if (c == null && p == null) return null;
+  if (c == null) return p ?? null;
+  if (p == null) return c;
+  return Math.max(c, p);
+}

@@ -358,6 +358,15 @@ export interface VelocityMinute {
  *  sparkline with an amber glyph so operators can scan for unusual
  *  flow visually.
  *
+ *  `call_spike_sigmas` / `put_spike_sigmas` are parallel ts → σ-magnitude
+ *  maps (introduced in PR #195 / task #330). σ = `(volume - median) / scale`,
+ *  where scale is `1.4826 * MAD` in the canonical path or `1.2533 * MeanAD`
+ *  in the fallback. A threshold spike has σ ≈ 3; outsized bursts come
+ *  through as 5σ / 8σ / etc. so the tooltip can triage threshold-grazers
+ *  from real outliers. Optional because older persisted replays
+ *  (pre-#330 backend) don't carry these keys — the tooltip falls back
+ *  to the generic "≥3σ MAD" label when the map is absent.
+ *
  *  `call_undercount` / `put_undercount` flag (strike, side) pairs
  *  where the backend's `reqHistoricalTicksAsync` hit IBKR's 1000-tick
  *  server cap before reaching `window_start` — the EARLIEST minutes
@@ -372,6 +381,8 @@ export interface VelocityStrike {
   put_minutes: VelocityMinute[];
   call_spike_minutes: string[];
   put_spike_minutes: string[];
+  call_spike_sigmas?: Record<string, number>;
+  put_spike_sigmas?: Record<string, number>;
   call_undercount?: boolean;
   put_undercount?: boolean;
 }
