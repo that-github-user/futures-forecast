@@ -126,15 +126,38 @@ export function formatMinuteLabel(ts: string): string {
  *  wall-clock 5-min strides (`:00`/`:05`/.../`:55`) AND always shows
  *  the rightmost (live) label so the operator can read the current
  *  minute regardless of stride alignment. Parse failure → true
- *  (better to show garbage than have the axis go silent). */
+ *  (better to show garbage than have the axis go silent).
+ *
+ *  Collision avoidance (#322): when the live-minute label is NOT on a
+ *  5-min stride AND the penultimate index IS on a stride, the two
+ *  labels would sit one minute apart (e.g., `15:55` + `15:56 NOW`)
+ *  and overlap visually at typical axis widths. In that case we
+ *  suppress the penultimate stride label so the live-minute label
+ *  reads cleanly. The dropped stride is at most one minute off the
+ *  next surviving stride below (`15:50`), so the operator loses
+ *  almost no temporal anchoring. Real-world frequency: ~1 minute out
+ *  of every 5 = ~20% of replay windows that don't end exactly on a
+ *  stride. */
 export function buildXLabelMask(axis: string[]): boolean[] {
   const lastIdx = axis.length - 1;
+  if (lastIdx < 0) return [];
+  // Determine the last minute's stride status — drives collision check.
+  const lastLabel = formatMinuteLabel(axis[lastIdx]);
+  const lastMatch = /:(\d{2})$/.exec(lastLabel);
+  // Parse-failure on the last index → treat as "non-stride" to be safe
+  // (won't suppress an arbitrary penultimate).
+  const lastIsStride = lastMatch ? Number(lastMatch[1]) % 5 === 0 : false;
   return axis.map((ts, i) => {
     if (i === lastIdx) return true;
     const label = formatMinuteLabel(ts);
     const m = /:(\d{2})$/.exec(label);
     if (!m) return true;
-    return Number(m[1]) % 5 === 0;
+    const isStride = Number(m[1]) % 5 === 0;
+    // Suppress the penultimate stride label when the live-minute label
+    // is a non-stride one minute away — without this guard the two
+    // labels overlap at typical 10px mono font widths.
+    if (i === lastIdx - 1 && isStride && !lastIsStride) return false;
+    return isStride;
   });
 }
 

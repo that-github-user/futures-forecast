@@ -226,6 +226,47 @@ describe("buildXLabelMask", () => {
     ];
     expect(buildXLabelMask(axis)).toEqual([false, false, false, true, false, true]);
   });
+  it("suppresses the penultimate stride label when adjacent to a non-stride live label (#322)", () => {
+    // Replay window ends at :56 (non-stride). The penultimate index
+    // is :55 (stride). Without collision avoidance both labels
+    // render one minute apart and overlap at typical axis widths.
+    // After #322: the penultimate stride is dropped; the live-minute
+    // label reads cleanly.
+    const axis = [
+      "2026-05-15T15:53:00-04:00", // :53 → false
+      "2026-05-15T15:54:00-04:00", // :54 → false
+      "2026-05-15T15:55:00-04:00", // :55 stride, but PENULTIMATE → suppressed
+      "2026-05-15T15:56:00-04:00", // :56 non-stride live → force-true
+    ];
+    expect(buildXLabelMask(axis)).toEqual([false, false, false, true]);
+  });
+
+  it("keeps the penultimate stride when the live label IS on a stride (no collision)", () => {
+    // Window ends at :40 (stride). Penultimate :35 is stride — both
+    // are 5 minutes apart, no visual collision. Both survive.
+    const axis = [
+      "2026-05-15T15:31:00-04:00",
+      "2026-05-15T15:32:00-04:00",
+      "2026-05-15T15:35:00-04:00", // stride
+      "2026-05-15T15:36:00-04:00",
+      "2026-05-15T15:40:00-04:00", // stride + live
+    ];
+    expect(buildXLabelMask(axis)).toEqual([false, false, true, false, true]);
+  });
+
+  it("keeps a penultimate non-stride when live is non-stride (no collision to suppress)", () => {
+    // Window ends at :04 (non-stride). Penultimate :03 is non-stride
+    // — already false; no special-case suppression to apply.
+    const axis = [
+      "2026-05-15T16:00:00-04:00", // stride
+      "2026-05-15T16:01:00-04:00",
+      "2026-05-15T16:02:00-04:00",
+      "2026-05-15T16:03:00-04:00",
+      "2026-05-15T16:04:00-04:00", // live, non-stride
+    ];
+    expect(buildXLabelMask(axis)).toEqual([true, false, false, false, true]);
+  });
+
   it("force-shows the rightmost label as the live-minute cue", () => {
     const axis = [
       "2026-05-15T15:31:00-04:00",
@@ -240,18 +281,22 @@ describe("buildXLabelMask", () => {
   it("empty axis → empty mask", () => {
     expect(buildXLabelMask([])).toEqual([]);
   });
-  it("hour wraparound: :55 stride / :00 stride / :01 force-last", () => {
+  it("hour wraparound: :55 stride / :00 penultimate-stride suppressed / :01 force-last", () => {
+    // Hour boundary case: :55 stride survives (5 min away from live);
+    // :00 stride would render alongside :01 live (non-stride) — both
+    // sit one minute apart → visual collision → suppressed by #322
+    // collision-avoidance.
     const axis = [
       "2026-05-15T15:55:00-04:00", // stride
       "2026-05-15T15:56:00-04:00",
       "2026-05-15T15:57:00-04:00",
       "2026-05-15T15:58:00-04:00",
       "2026-05-15T15:59:00-04:00",
-      "2026-05-15T16:00:00-04:00", // stride
+      "2026-05-15T16:00:00-04:00", // penultimate stride — suppressed (#322)
       "2026-05-15T16:01:00-04:00", // force-last
     ];
     expect(buildXLabelMask(axis)).toEqual([
-      true, false, false, false, false, true, true,
+      true, false, false, false, false, false, true,
     ]);
   });
 });
