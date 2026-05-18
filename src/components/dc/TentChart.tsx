@@ -60,6 +60,17 @@ const COLOR_POLE = colors.textDim;          // dim — short-strike markers
 const COLOR_DEBIT_LINE = withAlpha(colors.textMuted, 0.4);
 const COLOR_AT_EXPIRY = colors.accentRed;   // at-expiry: canonical "two tents" shape
 
+// Tier Y positions (px from chart top) for the graphic-overlay labels
+// (#347). Matches the grid `top: 60` reservation: 8 + 18 (= 26) + 18
+// (= 44) keeps adjacent tiers 18px apart and the bottommost tier
+// ~16px clear of the data area. Module-scoped so the values aren't
+// re-allocated on every render.
+const TIER_Y: Record<"spx" | "be" | "pole", number> = {
+  spx: 8,
+  be: 26,
+  pole: 44,
+};
+
 
 export function TentChart({
   frozenCurve,
@@ -425,16 +436,6 @@ export function TentChart({
     return { option: result, labels: verticalLabels };
   }, [frozenCurve, liveCurve, atExpiryCurve, compact]);
 
-  // Tier Y positions (px from chart top). Match the grid `top: 60`
-  // reservation: 8 + 18 (= 26) + 18 (= 44) keeps adjacent tiers 18px
-  // apart and the bottommost tier ~16px clear of the data area. See
-  // grid.top comment for the math.
-  const TIER_Y: Record<"spx" | "be" | "pole", number> = {
-    spx: 8,
-    be: 26,
-    pole: 44,
-  };
-
   // Post-render graphic overlay positioning (#347). markLine labels
   // can't be staggered via padding (CSS-internal, not anchor offset),
   // so we draw labels as `graphic.text` elements with pixel-exact
@@ -442,53 +443,69 @@ export function TentChart({
   // every render-finished event so resize / data-update / tab-switch
   // (which all change the xAxis pixel mapping) stay correct.
   const chartRef = useRef<ReactECharts | null>(null);
+  // Cache key of last-applied graphic state — labels content + their
+  // resolved pixel positions joined into a single string. The
+  // `'finished'` event fires asynchronously after each render, so
+  // an `updating` flag can't guard against async re-entry: setOption
+  // would render → fire 'finished' → handler runs again → setOption →
+  // hot loop. The cache key breaks the loop: if the labels haven't
+  // moved (same content + same pixels), skip the setOption entirely.
+  // QA OBS-1 fix.
+  const lastAppliedRef = useRef<string>("");
   const labels = memo?.labels;
   useEffect(() => {
     const inst = chartRef.current?.getEchartsInstance();
-    if (!inst || !labels || labels.length === 0) return;
+    if (!inst) return;
 
-    let updating = false;
     const updateGraphic = () => {
-      if (updating) return; // guard against recursive setOption → 'finished' loops
-      updating = true;
-      try {
-        const graphics = labels
-          .map((lbl) => {
-            const px = inst.convertToPixel({ xAxisIndex: 0 }, lbl.xValue);
-            if (px == null || !Number.isFinite(px)) return null;
-            return {
-              type: "text" as const,
-              x: px,
-              y: TIER_Y[lbl.tier],
-              silent: true,
-              z: 100,
-              style: {
-                text: lbl.text,
-                fill: lbl.color,
-                font: `11px ${fonts.mono}`,
-                // EC5 canonical alignment names (NOT textAlign /
-                // textVerticalAlign — those are EC4 legacy aliases
-                // that work today via runtime shim but could be
-                // dropped in a future ECharts major).
-                align: "center" as const,
-                verticalAlign: "top" as const,
-              },
-            };
-          })
-          .filter((g): g is NonNullable<typeof g> => g != null);
-        inst.setOption(
-          { graphic: graphics },
-          { replaceMerge: ["graphic"] },
-        );
-      } finally {
-        updating = false;
-      }
+      const graphics = (labels ?? [])
+        .map((lbl) => {
+          const px = inst.convertToPixel({ xAxisIndex: 0 }, lbl.xValue);
+          if (px == null || !Number.isFinite(px)) return null;
+          return {
+            type: "text" as const,
+            x: px,
+            y: TIER_Y[lbl.tier],
+            silent: true,
+            z: 100,
+            style: {
+              text: lbl.text,
+              fill: lbl.color,
+              font: `11px ${fonts.mono}`,
+              // EC5 canonical alignment names (NOT textAlign /
+              // textVerticalAlign — those are EC4 legacy aliases
+              // that work today via runtime shim but could be
+              // dropped in a future ECharts major).
+              align: "center" as const,
+              verticalAlign: "top" as const,
+            },
+          };
+        })
+        .filter((g): g is NonNullable<typeof g> => g != null);
+      // Cache key: serialize the load-bearing fields so a no-op render
+      // (same labels at same pixels) doesn't trigger a setOption that
+      // would re-fire 'finished' → infinite loop. Position rounded to
+      // 1px because sub-pixel jitter from convertToPixel isn't worth
+      // re-rendering.
+      const key = graphics
+        .map((g) => `${g.style.text}@${Math.round(g.x)},${g.y}:${g.style.fill}`)
+        .join("|");
+      if (key === lastAppliedRef.current) return;
+      lastAppliedRef.current = key;
+      inst.setOption(
+        { graphic: graphics },
+        { replaceMerge: ["graphic"] },
+      );
     };
 
     updateGraphic();
     inst.on("finished", updateGraphic);
     return () => {
       inst.off("finished", updateGraphic);
+      // QA OBS-3: explicit clear on unmount-or-empty so stale graphic
+      // elements can't linger if labels become [] between renders.
+      // lastAppliedRef is component-scoped so it resets on remount.
+      lastAppliedRef.current = "";
     };
   }, [labels]);
 
