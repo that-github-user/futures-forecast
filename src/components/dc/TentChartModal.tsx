@@ -76,13 +76,15 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
   // initializer already gives the correct loading state on mount.
   const [frozen, setFrozen] = useState<DCTentResponse | null>(null);
   const [live, setLive] = useState<DCTentResponse | null>(null);
-  // Evolution overlays — same iv_source as live (latest snapshot) but
-  // with as_of advanced to midway/at-expiry. Lets operators see how
-  // the tent shape evolves over time, especially the "two tents"
-  // double-peak at front expiry. Optional — null until phase 2 fetch
-  // completes, or stays null when front expiry is too close to render
-  // meaningful evolution curves.
-  const [halfway, setHalfway] = useState<DCTentResponse | null>(null);
+  // Evolution overlay — same iv_source as live (latest snapshot) but
+  // with as_of advanced to front expiry. Renders the "two tents"
+  // double-peak shape operators recognize from OptionStrat-style time
+  // sliders. Optional — stays null when front expiry is too close for
+  // meaningful evolution. Pre-#338 we also tracked a `halfway` curve
+  // (as_of = now + DTE/2) but convexity / exponential theta made it
+  // visually indistinguishable from Today, so it was removed; the
+  // bundle still ships a `halfway` field for backend compatibility
+  // until #339 strips it, but we drop it on read.
   const [atExpiry, setAtExpiry] = useState<DCTentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
       }
       setFrozen(bundle.frozen);
       setLive(bundle.today);
-      setHalfway(bundle.halfway);
+      // bundle.halfway intentionally dropped (#338 — see comment above)
       setAtExpiry(bundle.at_expiry);
       // No primary curve present at all → error state. If at least
       // one of frozen/today rendered, the chart is usable.
@@ -299,7 +301,6 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
           <TentChart
             frozenCurve={frozen}
             liveCurve={live}
-            halfwayCurve={halfway}
             atExpiryCurve={atExpiry}
             height={360}
           />

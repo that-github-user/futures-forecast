@@ -38,14 +38,6 @@ export interface TentChartProps {
    */
   liveCurve?: DCTentResponse | null;
   /**
-   * Live-IV curve at "halfway to front expiry" — same IVs as
-   * `liveCurve` but with as_of advanced. Shows the tent mid-life.
-   * Optional; rendered as a subtle bridge overlay between today
-   * and at-expiry. Suppressed when DTE is too small for a
-   * meaningful midpoint.
-   */
-  halfwayCurve?: DCTentResponse | null;
-  /**
    * Live-IV curve at "just before front expiry" — the canonical
    * "two tents" shape. Operators expect this view (OptionStrat-style
    * time slider) and the at-expiry breakevens are the operationally
@@ -66,14 +58,12 @@ const COLOR_SPX = colors.accentGreen;       // green — current SPX marker
 const COLOR_BREAKEVEN = colors.textMuted;   // muted — zero P&L verticals
 const COLOR_POLE = colors.textDim;          // dim — short-strike markers
 const COLOR_DEBIT_LINE = withAlpha(colors.textMuted, 0.4);
-const COLOR_HALFWAY = colors.textSecondary; // bridge curve: mid-life snapshot
 const COLOR_AT_EXPIRY = colors.accentRed;   // at-expiry: canonical "two tents" shape
 
 
 export function TentChart({
   frozenCurve,
   liveCurve,
-  halfwayCurve = null,
   atExpiryCurve = null,
   height = 340,
   compact = false,
@@ -170,17 +160,40 @@ export function TentChart({
       },
     });
 
-    // Current SPX — only when broker_state sidecar gave us a value.
-    // Tier 1: just below pole labels.
-    if (
-      frozenCurve.current_spx != null &&
-      frozenCurve.current_spx_source === "broker_state"
-    ) {
+    // Current SPX vertical. Render whenever the backend gave us a
+    // non-null value, regardless of source. Backend sources are:
+    //   - "index"             RTH SPX cash (most accurate)
+    //   - "es_proxy"          ETH ES→SPX proxy with fresh basis
+    //   - "es_proxy_stale"    ETH proxy w/ stale basis (12-72h old)
+    //   - "fallback_midstrike" SpxProxy ran but produced nothing;
+    //                         backend centered tent on strike midpoint
+    // Pre-#338 we gated on `=== "broker_state"`, a literal string the
+    // backend never actually produces — leftover from an early doc
+    // draft. Result: SPX vertical never rendered, even during RTH.
+    // Now: render unconditionally on non-null SPX; degraded sources
+    // get a dashed line + parenthetical label so the operator can
+    // distinguish authoritative SPX from a proxy.
+    if (frozenCurve.current_spx != null) {
+      const isDegraded =
+        frozenCurve.current_spx_source === "es_proxy_stale" ||
+        frozenCurve.current_spx_source === "fallback_midstrike";
+      const sourceTag =
+        frozenCurve.current_spx_source === "es_proxy"
+          ? " (ES)"
+          : frozenCurve.current_spx_source === "es_proxy_stale"
+            ? " (ES~)"
+            : frozenCurve.current_spx_source === "fallback_midstrike"
+              ? " (est)"
+              : ""; // "index" or unknown → no tag (authoritative)
       verticals.push({
         xAxis: frozenCurve.current_spx,
-        lineStyle: { color: COLOR_SPX, width: 2, type: "solid" },
+        lineStyle: {
+          color: COLOR_SPX,
+          width: 2,
+          type: isDegraded ? "dashed" : "solid",
+        },
         label: {
-          formatter: `SPX ${frozenCurve.current_spx.toFixed(0)}`,
+          formatter: `SPX ${frozenCurve.current_spx.toFixed(0)}${sourceTag}`,
           color: COLOR_SPX,
           position: "end",
           padding: TIER_SPX,
@@ -292,32 +305,22 @@ export function TentChart({
       });
     }
 
-    // Evolution overlays — same IV source as live, advanced as_of.
-    // Shows how the tent reshapes over time. The at-expiry curve is
-    // the canonical "two tents" shape operators recognize from
-    // OptionStrat-style time sliders. Dotted to read as "future
-    // projection, not measured value". Rendered AFTER live so they
-    // sit visually on top.
-    const showHalfway =
-      halfwayCurve != null &&
-      halfwayCurve.iv_source === "latest" &&
-      halfwayCurve.points.length > 0;
+    // Evolution overlay — same IV source as live, anchored at front
+    // expiry. The at-expiry curve is the canonical "two tents" shape
+    // operators recognize from OptionStrat-style time sliders. Dashed
+    // to read as "future projection, not measured value". Rendered
+    // AFTER live so it sits visually on top.
+    //
+    // (Halfway curve removed in #338 — convexity / exponential theta
+    // decay made it visually collapse onto Today; precomputer cycles
+    // continued for one tick post-deploy because the backend keeps
+    // computing it until #339 lands, but the prop is no longer
+    // consumed.)
     const showAtExpiry =
       atExpiryCurve != null &&
       atExpiryCurve.iv_source === "latest" &&
       atExpiryCurve.points.length > 0;
 
-    if (showHalfway) {
-      series.push({
-        name: "Halfway",
-        type: "line",
-        data: halfwayCurve!.points.map((p) => [p.spx, p.value]),
-        smooth: true,
-        symbol: "none",
-        itemStyle: { color: COLOR_HALFWAY },
-        lineStyle: { color: COLOR_HALFWAY, width: 1.5, type: "dotted" as const },
-      });
-    }
     if (showAtExpiry) {
       series.push({
         name: "At front expiry",
@@ -361,7 +364,6 @@ export function TentChart({
             data: [
               ...(showFrozen ? ["Frozen IV (entry)"] : []),
               ...(showLive ? ["Live IV"] : []),
-              ...(showHalfway ? ["Halfway"] : []),
               ...(showAtExpiry ? ["At front expiry"] : []),
             ],
             textStyle: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11 },
@@ -424,7 +426,12 @@ export function TentChart({
       },
       series,
     };
-  }, [frozenCurve, liveCurve, compact]);
+    // atExpiryCurve is read for BE label source + at-expiry series
+    // (lines above). Pre-#338 the deps array missed it, so a lazy
+    // atExpiryCurve fetch wouldn't re-run the memo and the BE labels
+    // could render stale ("BE" instead of "BE@exp", stale x-coords).
+    // Retro-QA B1.
+  }, [frozenCurve, liveCurve, atExpiryCurve, compact]);
 
   if (option == null) {
     return (

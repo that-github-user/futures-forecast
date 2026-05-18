@@ -559,12 +559,28 @@ export interface DCExitAlert {
 //   "intrinsic"      — no IVs anywhere; tent is intrinsic-only
 //                      (frontend MUST surface the warning).
 //
-// `current_spx_source`:
-//   "broker_state"        — live SPX feed available; render the
-//                           "you are here" marker.
-//   "fallback_midstrike"  — broker_state.json missing; tent is
-//                           centered on strike midpoint and the
-//                           operator should NOT see a SPX marker.
+// `current_spx_source` (#338 — backend values were drifting from
+// the pre-#338 stub; gathered from `api/app.py:_read_current_spx`):
+//   "index"               — RTH SPX cash from broker_state, authoritative.
+//   "es_proxy"             — ETH proxy: ES front-month - fresh basis
+//                            (<12h old). Render SPX marker with "(ES)" tag.
+//   "es_proxy_stale"       — ES proxy with basis >12h old (weekend gap,
+//                            extended /terminal outage). Render SPX
+//                            marker dashed + "(ES~)" tag.
+//   "fallback_midstrike"   — SpxProxy ran but produced nothing AND no
+//                            sidecar value; tent centered on strike
+//                            midpoint. Render SPX marker dashed +
+//                            "(est)" tag so operator sees a placeholder
+//                            without being misled into thinking it's real.
+//   "unavailable"          — daemon's SpxProxy returned no value at all;
+//                            tent centered on strike midpoint; SPX
+//                            marker suppressed.
+//
+// Pre-#338 this was typed as `"broker_state" | "fallback_midstrike"`,
+// which was a stale stub from the original tent PR — the backend
+// never produced "broker_state" as a literal value. Resulting frontend
+// bug: the SPX vertical never rendered because the gate compared
+// against the never-emitted "broker_state" string. Fixed in #338.
 //
 // `phantom: true` → render with dashed border + "would-have-entered"
 //                   pill so operators can tell phantoms from real
@@ -572,7 +588,12 @@ export interface DCExitAlert {
 //
 // `warnings`: human-readable degradation strings — banner candidates.
 export type DCTentIVSource = "entry" | "latest" | "entry_fallback" | "intrinsic";
-export type DCTentSpxSource = "broker_state" | "fallback_midstrike";
+export type DCTentSpxSource =
+  | "index"
+  | "es_proxy"
+  | "es_proxy_stale"
+  | "fallback_midstrike"
+  | "unavailable";
 
 export interface DCTentPoint {
   spx: number;
