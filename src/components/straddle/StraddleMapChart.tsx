@@ -188,9 +188,18 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
  *    - the ResizeObserver, after `chart.resize()` invalidates the
  *      previous grid layout.
  */
+// Bound the retry loop in case the chart never lays out (e.g., it
+// got disposed between the data effect and the next animation
+// frame, or the container's measured size stays zero because the
+// `/straddle` tab is rendered but hidden). 6 frames at ~16ms = ~100ms
+// of layout-settle headroom; in practice the chart is laid out on
+// the first or second frame.
+const MAX_REFERENCE_LINE_RETRIES = 6;
+
 function applyReferenceLines(
   chart: echarts.ECharts,
   data: StraddleChainResponse | null,
+  retriesLeft: number = MAX_REFERENCE_LINE_RETRIES,
 ): void {
   const indices = buildReferenceLineIndices(data);
   if (!data || data.strikes.length === 0) {
@@ -209,19 +218,45 @@ function applyReferenceLines(
   // Linear interpolation anchors: pixel y of strike index 0 (top)
   // and strike index N-1 (bottom). `convertToPixel` returns
   // [x, y]; we want the y.
-  const topPx = chart.convertToPixel({ yAxisIndex: 0 }, 0);
-  const botPx = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
-  if (!Array.isArray(topPx) || !Array.isArray(botPx)) {
-    // Chart not laid out yet (race between resize and next layout
-    // frame, or pre-first-paint). Clear any stale graphics so a
-    // previous-frame overlay doesn't ghost at the wrong pixel y
-    // after a resize; the next setOption/resize cycle will retry
-    // and re-render the lines at the correct position (#321 R2 nit).
+  let yTopRaw: number | undefined;
+  let yBotRaw: number | undefined;
+  try {
+    const t = chart.convertToPixel({ yAxisIndex: 0 }, 0);
+    const b = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
+    if (Array.isArray(t)) yTopRaw = (t as number[])[1];
+    if (Array.isArray(b)) yBotRaw = (b as number[])[1];
+  } catch {
+    // convertToPixel can throw if the chart's internal model hasn't
+    // been built yet (race between init/setOption and the layout
+    // pipeline). Fall through to the retry path below.
+  }
+  if (
+    yTopRaw === undefined ||
+    yBotRaw === undefined ||
+    !Number.isFinite(yTopRaw) ||
+    !Number.isFinite(yBotRaw)
+  ) {
+    // Chart not laid out yet — convertToPixel returns [NaN, NaN] when
+    // the model's been rebuilt by `notMerge: true` but the layout
+    // pipeline hasn't run yet, OR when the container has zero
+    // measured size. Clear any stale graphics and retry on the next
+    // animation frame, by which point layout will have completed.
+    // Without this retry, the EM/spot lines silently never render
+    // because the first applyReferenceLines call writes NaN-positioned
+    // graphics (which echarts drops), and there's no later trigger
+    // to redraw unless the user resizes the window.
     chart.setOption({ graphic: [] }, { replaceMerge: ["graphic"] });
+    if (retriesLeft > 0) {
+      requestAnimationFrame(() => {
+        // Re-enter with the same data; layout typically completes
+        // within 1-2 frames after setOption with `notMerge: true`.
+        applyReferenceLines(chart, data, retriesLeft - 1);
+      });
+    }
     return;
   }
-  const yTop = topPx[1];
-  const yBot = botPx[1];
+  const yTop = yTopRaw;
+  const yBot = yBotRaw;
   // x-extent of the plot area sourced from the same STRADDLE_MAP_GRID
   // constant that buildStraddleMapOption applies to the chart's grid
   // config. Changing one side without the other would render the
