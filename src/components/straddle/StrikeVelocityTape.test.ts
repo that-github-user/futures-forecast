@@ -20,6 +20,7 @@ import {
   buildXLabelMask,
   cellIndexFromX,
   dominanceColor,
+  nextFocusedCell,
   formatMinuteLabel,
   formatVolume,
   MAX_ROWS,
@@ -455,6 +456,111 @@ describe("cellIndexFromX", () => {
     expect(cellIndexFromX(NaN, rect, N)).toBe(-1);
     expect(cellIndexFromX(300, { left: NaN, width: 600 }, N)).toBe(-1);
     expect(cellIndexFromX(300, { left: 100, width: NaN }, N)).toBe(-1);
+  });
+});
+
+// ── #331 keyboard nav (nextFocusedCell) ──────────────────────────
+
+describe("nextFocusedCell", () => {
+  const MAX_ROW = 4;
+  const MAX_COL = 9;
+
+  it("returns 'init' when no cell is focused and a nav key is pressed", () => {
+    expect(nextFocusedCell("ArrowLeft", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("ArrowRight", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("ArrowUp", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("ArrowDown", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("Home", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("End", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("PageUp", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+    expect(nextFocusedCell("PageDown", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "init" });
+  });
+
+  it("returns 'unchanged' for non-nav keys with no focus (Tab still works)", () => {
+    expect(nextFocusedCell("Tab", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("a", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("Enter", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+  });
+
+  it("Escape always returns 'clear', regardless of focus state", () => {
+    expect(nextFocusedCell("Escape", null, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "clear" });
+    expect(nextFocusedCell("Escape", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "clear" });
+  });
+
+  it("arrow keys move within bounds — left / right", () => {
+    expect(nextFocusedCell("ArrowLeft", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: 4 });
+    expect(nextFocusedCell("ArrowRight", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: 6 });
+  });
+
+  it("arrow keys move within bounds — up / down", () => {
+    expect(nextFocusedCell("ArrowUp", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 1, colIdx: 5 });
+    expect(nextFocusedCell("ArrowDown", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 3, colIdx: 5 });
+  });
+
+  it("clamps at edges (left/top/right/bottom) — no wrap-around", () => {
+    expect(nextFocusedCell("ArrowLeft", { rowIdx: 2, colIdx: 0 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: 0 });
+    expect(nextFocusedCell("ArrowUp", { rowIdx: 0, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 0, colIdx: 5 });
+    expect(nextFocusedCell("ArrowRight", { rowIdx: 2, colIdx: MAX_COL }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: MAX_COL });
+    expect(nextFocusedCell("ArrowDown", { rowIdx: MAX_ROW, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: MAX_ROW, colIdx: 5 });
+  });
+
+  it("Home / End jump to row-start / row-end", () => {
+    expect(nextFocusedCell("Home", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: 0 });
+    expect(nextFocusedCell("End", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 2, colIdx: MAX_COL });
+  });
+
+  it("PageUp / PageDown jump to first / last row", () => {
+    expect(nextFocusedCell("PageUp", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: 0, colIdx: 5 });
+    expect(nextFocusedCell("PageDown", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "move", rowIdx: MAX_ROW, colIdx: 5 });
+  });
+
+  it("returns 'unchanged' for non-nav keys with focus set (lets Tab through)", () => {
+    expect(nextFocusedCell("Tab", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("Enter", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+  });
+
+  it("returns 'unchanged' on degenerate grid (no rows or no cols)", () => {
+    // Empty axis or empty row list → degenerate grid; nav must
+    // refuse to init / move (avoids colIdx=-1 from the init path).
+    expect(nextFocusedCell("ArrowRight", null, -1, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("ArrowRight", null, MAX_ROW, -1))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("Home", { rowIdx: 0, colIdx: 0 }, MAX_ROW, -1))
+      .toEqual({ kind: "unchanged" });
+  });
+
+  it("Escape still clears focus even on degenerate grid", () => {
+    // Escape should always work — defensive dismiss path.
+    expect(nextFocusedCell("Escape", { rowIdx: 0, colIdx: 0 }, -1, -1))
+      .toEqual({ kind: "clear" });
   });
 });
 

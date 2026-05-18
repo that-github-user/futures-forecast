@@ -36,10 +36,13 @@
 
 import {
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type TouchEvent as ReactTouchEvent,
 } from "react";
 import type { VelocityTape } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
@@ -52,6 +55,7 @@ import {
   formatMinuteLabel,
   formatVolume,
   MAX_ROWS,
+  nextFocusedCell,
   panelMaxVol,
   priceToY,
   rowMaxVol,
@@ -130,6 +134,32 @@ interface HoveredCell {
   rowPutSession: number;
 }
 
+/** Keyboard-focus cell coordinates (#331). Roving-tabindex pattern —
+ *  the lane grid is a single tabstop; arrow keys move the focused
+ *  cell. Decoupled from `HoveredCell` because:
+ *   - Focus is index-based (rowIdx, colIdx) so the keyboard handler
+ *     can do bounded arithmetic without re-looking-up strike/ts.
+ *   - Hover and focus can coexist (hover wins for tooltip rendering
+ *     if both are set; focus drives the focus ring + aria-live).
+ *   - Touch also writes to focus (not hover) so a tap-then-arrow-key
+ *     flow works on mobile/tablet without a mouse.
+ *
+ *  `mouseX`/`mouseY` are captured at the moment of dispatch (keyboard
+ *  arrow press OR touch tap) by reading the lane-cell's
+ *  `getBoundingClientRect` inside the EVENT HANDLER (where reading
+ *  refs is legal). Storing them on the state shape means the render
+ *  path never touches refs — fixes the #331 R1 blocker about ref
+ *  reads during render returning stale rects on first paint after
+ *  focus change. Trade-off: a window resize while a cell is focused
+ *  leaves the tooltip at the pre-resize coords until next focus
+ *  change. Acceptable; mouse hover is unaffected (uses live cursor). */
+interface FocusedCell {
+  rowIdx: number;
+  colIdx: number;
+  mouseX: number;
+  mouseY: number;
+}
+
 export function StrikeVelocityTape({
   tape,
   spot,
@@ -149,6 +179,15 @@ export function StrikeVelocityTape({
   // (tooltip hidden). Position is in client coords; the tooltip renders
   // with `position: fixed` so it can escape any panel overflow clipping.
   const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
+
+  // Keyboard-focus state (#331). Roving-tabindex over the lane grid:
+  // the grid wrapper is the single tabstop; arrow keys move the
+  // focused cell within bounds. Touch tap also writes here (not
+  // hovered) so the tooltip stays visible after the finger lifts.
+  // Tooltip rendering uses focused-cell coords as a fallback when
+  // no cell is hovered — see render path below.
+  const [focusedCell, setFocusedCell] = useState<FocusedCell | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
 
   // Pre-compute the things every row needs. `tape` is the only data
@@ -203,6 +242,131 @@ export function StrikeVelocityTape({
     return <EmptyState message="No replay activity for this window." />;
   }
 
+  // Derive a HoveredCell from focusedCell so the existing
+  // MinuteTooltip component renders for keyboard users too. Pure
+  // index/text lookup — the mouseX/Y already live on focusedCell,
+  // captured at dispatch time (see computeFocusCoords + the
+  // event handlers below). The render path NEVER reads refs (#331
+  // R1 BLOCKER fix).
+  const focusCellRow = focusedCell ? layout.rows[focusedCell.rowIdx] : null;
+  const focusCellTs =
+    focusedCell != null ? layout.axis[focusedCell.colIdx] : null;
+  const focusCellPayload: HoveredCell | null =
+    !focusedCell || !focusCellRow || focusCellTs == null
+      ? null
+      : {
+          strike: focusCellRow.strike,
+          ts: focusCellTs,
+          callVol: focusCellRow.callMap.get(focusCellTs) ?? 0,
+          putVol: focusCellRow.putMap.get(focusCellTs) ?? 0,
+          isSpike:
+            focusCellRow.callSpikes.has(focusCellTs) ||
+            focusCellRow.putSpikes.has(focusCellTs),
+          mouseX: focusedCell.mouseX,
+          mouseY: focusedCell.mouseY,
+          rowCallSession: focusCellRow.split.call,
+          rowPutSession: focusCellRow.split.put,
+        };
+
+  // Compute client coords for a focused cell by querying the
+  // corresponding lane-cell's DOM rect. Called from EVENT HANDLERS
+  // (keyboard, touch) where reading refs is legal. Uses the actual
+  // `.svt-lane-cell` element for the row so the math doesn't depend
+  // on hardcoded grid-column widths — survives the responsive
+  // session-column collapse at narrow viewports (#331 R1 nit 3).
+  const computeFocusCoords = (
+    rowIdx: number,
+    colIdx: number,
+  ): { mouseX: number; mouseY: number } => {
+    const grid = gridRef.current;
+    if (!grid) return { mouseX: 0, mouseY: 0 };
+    const cells = grid.querySelectorAll<HTMLElement>(".svt-lane-cell");
+    const cell = cells[rowIdx];
+    if (!cell) return { mouseX: 0, mouseY: 0 };
+    const r = cell.getBoundingClientRect();
+    return {
+      mouseX: r.left + ((colIdx + 0.5) / layout.axis.length) * r.width,
+      mouseY: r.top + r.height / 2,
+    };
+  };
+  // Hover wins over focus for tooltip rendering — the operator's
+  // active mouse takes precedence over a stale keyboard focus.
+  const tooltipCell = hoveredCell ?? focusCellPayload;
+
+  // Roving-tabindex keyboard handler. Navigation arithmetic lives
+  // in the pure `nextFocusedCell` helper so the bounded math is
+  // testable; this wrapper just routes the result into React state.
+  const handleGridKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const result = nextFocusedCell(
+      e.key,
+      focusedCell,
+      layout.rows.length - 1,
+      layout.axis.length - 1,
+    );
+    switch (result.kind) {
+      case "init": {
+        // First nav-key press — initialize focus at the live minute
+        // of the ATM row (or median if no ATM). Matches where the
+        // operator's eye would land first.
+        const atmRowIdx = layout.rows.findIndex((r) => r.strike === atmStrike);
+        const startRow = atmRowIdx >= 0
+          ? atmRowIdx
+          : Math.floor(layout.rows.length / 2);
+        const colIdx = layout.axis.length - 1;
+        const coords = computeFocusCoords(startRow, colIdx);
+        setFocusedCell({ rowIdx: startRow, colIdx, ...coords });
+        e.preventDefault();
+        return;
+      }
+      case "move": {
+        const coords = computeFocusCoords(result.rowIdx, result.colIdx);
+        setFocusedCell({
+          rowIdx: result.rowIdx,
+          colIdx: result.colIdx,
+          ...coords,
+        });
+        e.preventDefault();
+        return;
+      }
+      case "clear":
+        setFocusedCell(null);
+        gridRef.current?.blur();
+        e.preventDefault();
+        return;
+      case "unchanged":
+        // Enter / Space / Tab / letter keys fall through. Tab moves
+        // focus away from the grid (browser default). Enter / Space
+        // are no-ops today (no per-cell activation) but we
+        // preventDefault on them defensively so the grid being
+        // nested in a future form doesn't accidentally submit on a
+        // cell selection. Tab and other keys still bubble.
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+        }
+        return;
+    }
+  };
+
+  // aria-live announcement text for the focused cell. Screen readers
+  // announce this on focus change. Includes strike, minute, total,
+  // call/put split, spike flag — same content as the visual tooltip.
+  const liveAnnouncement = (() => {
+    if (focusCellPayload == null) return "";
+    const total = focusCellPayload.callVol + focusCellPayload.putVol;
+    const minLabel = formatMinuteLabel(focusCellPayload.ts);
+    if (total === 0) {
+      return `Strike ${focusCellPayload.strike}, ${minLabel}, no activity`;
+    }
+    const spikeWord = focusCellPayload.isSpike ? ", spike" : "";
+    return (
+      `Strike ${focusCellPayload.strike}, ${minLabel}, ` +
+      `total ${formatVolume(total)}, ` +
+      `${formatVolume(focusCellPayload.callVol)} calls, ` +
+      `${formatVolume(focusCellPayload.putVol)} puts` +
+      spikeWord
+    );
+  })();
+
   return (
     <div
       role="img"
@@ -228,15 +392,66 @@ export function StrikeVelocityTape({
         onScaleChange={setScaleMode}
       />
       <div style={{ padding: "12px 14px 6px 14px" }}>
-        <div className="svt-lane-grid">
-          {layout.rows.map((row) => (
+        <div
+          ref={gridRef}
+          className="svt-lane-grid"
+          // Roving-tabindex: the GRID is the single tabstop (#331).
+          // Arrow keys / Home / End / PageUp / PageDown move focus
+          // within the cell matrix; Escape blurs. aria-label
+          // describes the navigation surface; per-cell content
+          // updates flow through the aria-live region below.
+          tabIndex={0}
+          role="grid"
+          aria-label={
+            "Strike velocity cells. Use arrow keys to navigate; Escape to exit."
+          }
+          aria-rowcount={layout.rows.length}
+          aria-colcount={layout.axis.length}
+          aria-activedescendant={
+            focusedCell
+              ? `svt-cell-${focusedCell.rowIdx}-${focusedCell.colIdx}`
+              : undefined
+          }
+          onKeyDown={handleGridKeyDown}
+          onBlur={(e) => {
+            // Clear focus when focus moves OUTSIDE the grid. The
+            // grid currently contains no inner focusable elements,
+            // but the relatedTarget check is defensive for any
+            // future additions (e.g., per-row buttons) — without
+            // it, an internal focus shift would dismiss the
+            // tooltip in addition to whatever the new focus did.
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setFocusedCell(null);
+            }
+          }}
+        >
+          {layout.rows.map((row, rowIdx) => (
             <LaneRow
               key={row.strike}
               row={row}
+              rowIdx={rowIdx}
               axis={layout.axis}
               scale={scaleMode === "row" ? row.rowMax : layout.panelMax}
               isAtm={row.strike === atmStrike}
+              focusedColIdx={
+                focusedCell?.rowIdx === rowIdx ? focusedCell.colIdx : null
+              }
               onCellHover={setHoveredCell}
+              onCellTouch={(touchedCol, touchX, touchY) => {
+                // Touch tap pins focus, not hover — finger-up
+                // shouldn't dismiss the tooltip. The grid takes
+                // keyboard focus so subsequent arrow keys work.
+                // Coords come from the touch event directly (real
+                // client-space pixels), not synthesized — most
+                // precise placement of any input mode.
+                setFocusedCell({
+                  rowIdx,
+                  colIdx: touchedCol,
+                  mouseX: touchX,
+                  mouseY: touchY,
+                });
+                gridRef.current?.focus();
+              }}
             />
           ))}
           <GutterOverlay
@@ -248,7 +463,18 @@ export function StrikeVelocityTape({
         </div>
         <AxisRow axis={layout.axis} xLabelShown={layout.xLabelShown} />
       </div>
-      {hoveredCell && <MinuteTooltip cell={hoveredCell} />}
+      {/* Tooltip: hover takes precedence, keyboard-focus is the
+          fallback. Lets mouse + keyboard coexist without state
+          contention. */}
+      {tooltipCell && <MinuteTooltip cell={tooltipCell} />}
+      {/* aria-live region for screen-reader announcements as the
+          keyboard focus moves through cells. Visually hidden via
+          the `.svt-sr-only` utility class. `polite` so it doesn't
+          interrupt; per-focus-change updates are paced naturally by
+          arrow-key cadence. */}
+      <div role="status" aria-live="polite" className="svt-sr-only">
+        {liveAnnouncement}
+      </div>
     </div>
   );
 }
@@ -400,12 +626,23 @@ function ScaleToggle({
 
 // ── Per-strike lane row ────────────────────────────────────────────
 
+// IMPORTANT (#331): this component MUST render exactly one
+// `.svt-lane-cell` at the top level. The panel's
+// `computeFocusCoords` does `querySelectorAll(".svt-lane-cell")[rowIdx]`
+// to derive client coords for the keyboard-focused tooltip, and
+// relies on (a) the class name being unique to LaneRow's lane area
+// and (b) the DOM order matching React render order. A future
+// refactor that virtualizes rows, renames the class, or wraps the
+// cell in another layer must update `computeFocusCoords` in lockstep.
 function LaneRow({
   row,
+  rowIdx,
   axis,
   scale,
   isAtm,
+  focusedColIdx,
   onCellHover,
+  onCellTouch,
 }: {
   row: {
     strike: number;
@@ -417,19 +654,34 @@ function LaneRow({
     split: { call: number; put: number; total: number };
     total: number;
   };
+  rowIdx: number;
   axis: string[];
   scale: number;
   isAtm: boolean;
+  focusedColIdx: number | null;
   onCellHover: (cell: HoveredCell | null) => void;
+  onCellTouch: (colIdx: number, touchX: number, touchY: number) => void;
 }) {
   return (
-    <div className={`svt-row${isAtm ? " atm" : ""}`}>
+    <div
+      className={`svt-row${isAtm ? " atm" : ""}`}
+      role="row"
+      aria-rowindex={rowIdx + 1}
+    >
       <div className="svt-strike">
         <div className="svt-strike-px">{row.strike}</div>
         <div className="svt-strike-vol">{formatVolume(row.total)} vol</div>
       </div>
       <div className="svt-lane-cell">
-        <LaneSvg row={row} axis={axis} scale={scale} onCellHover={onCellHover} />
+        <LaneSvg
+          row={row}
+          rowIdx={rowIdx}
+          axis={axis}
+          scale={scale}
+          focusedColIdx={focusedColIdx}
+          onCellHover={onCellHover}
+          onCellTouch={onCellTouch}
+        />
       </div>
       <SessionSplit split={row.split} />
     </div>
@@ -438,9 +690,12 @@ function LaneRow({
 
 function LaneSvg({
   row,
+  rowIdx,
   axis,
   scale,
+  focusedColIdx,
   onCellHover,
+  onCellTouch,
 }: {
   row: {
     strike: number;
@@ -450,9 +705,12 @@ function LaneSvg({
     putSpikes: Set<string>;
     split: { call: number; put: number; total: number };
   };
+  rowIdx: number;
   axis: string[];
   scale: number;
+  focusedColIdx: number | null;
   onCellHover: (cell: HoveredCell | null) => void;
+  onCellTouch: (colIdx: number, touchX: number, touchY: number) => void;
 }) {
   const W = LANE_VIEWBOX_W;
   const H = LANE_VIEWBOX_H;
@@ -524,6 +782,56 @@ function LaneSvg({
       rowPutSession: row.split.put,
     });
   };
+  // Touch handler (#331): same column-detection logic as mouse,
+  // dispatched to onCellTouch (which the panel routes into focus
+  // state, NOT hover state). A tap pins the cell; the next tap
+  // outside the grid clears focus via the grid's onBlur. We
+  // preventDefault to suppress the synthetic mouse events the
+  // browser would otherwise fire on tap end (incl. iOS Safari's
+  // 300ms double-tap-to-zoom delay — `touch-action: manipulation`
+  // in the lane SVG's CSS is the belt-and-suspenders).
+  const handleTouchStart = (e: ReactTouchEvent<SVGSVGElement>) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    // preventDefault unconditionally — even off-cell taps in the
+    // lane SVG should not generate synthetic mouse events that
+    // would trigger the hover path on adjacent SVG elements
+    // (#331 R1 nit 2).
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const colIdx = cellIndexFromX(touch.clientX, rect, axis.length);
+    if (colIdx < 0) return;
+    // Pass the touch's real client coords through — most precise
+    // anchor for the tooltip flip logic of any input mode.
+    onCellTouch(colIdx, touch.clientX, touch.clientY);
+  };
+  // Focus-ring overlay (#331): when this row contains the focused
+  // cell, render a bright outline at the cell's column position.
+  // Always-on-top via a final rect drawn AFTER the data blocks so
+  // it isn't obscured by adjacent spike borders or block fills.
+  // Cell width/x match the data-cell geometry above so the ring
+  // tracks block positions at every viewport width.
+  const focusRing =
+    focusedColIdx != null && focusedColIdx >= 0 && focusedColIdx < axis.length
+      ? (() => {
+          const x = focusedColIdx * cellW + LANE_CELL_PAD - 0.5;
+          const w = cellW - 2 * LANE_CELL_PAD + 1;
+          return (
+            <rect
+              key="focus"
+              x={x}
+              y={0.5}
+              width={w}
+              height={H - 1}
+              fill="none"
+              stroke={colors.accentAmber}
+              strokeWidth={1.5}
+              rx={1}
+              id={`svt-cell-${rowIdx}-${focusedColIdx}`}
+            />
+          );
+        })()
+      : null;
   return (
     <svg
       className="svt-lane-svg"
@@ -531,6 +839,7 @@ function LaneSvg({
       preserveAspectRatio="none"
       onMouseMove={handleMove}
       onMouseLeave={() => onCellHover(null)}
+      onTouchStart={handleTouchStart}
     >
       <rect
         x={0}
@@ -540,6 +849,7 @@ function LaneSvg({
         fill={withAlpha(colors.textBright, 0.02)}
       />
       {blocks}
+      {focusRing}
     </svg>
   );
 }

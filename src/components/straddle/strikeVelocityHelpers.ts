@@ -273,6 +273,74 @@ export function dominanceColor(call: number, put: number): string {
   return "#475569";
 }
 
+// ── Keyboard navigation (#331) ───────────────────────────────────
+
+/** Compute the next focused cell given a key press + bounds.
+ *
+ *  Pure helper extracted from the component-side keyboard handler so
+ *  the bounding arithmetic + key-mapping can be pinned in tests
+ *  without mounting React. Returns:
+ *    - the new `FocusedCell` to set
+ *    - `"unchanged"` if the key isn't a nav key (caller doesn't
+ *      preventDefault — the event bubbles to default browser
+ *      behavior like Tab moving focus elsewhere)
+ *    - `"clear"` if Escape was pressed (caller clears focus state +
+ *      blurs the grid)
+ *    - `"init"` if no cell is focused yet AND the key is a nav key
+ *      (caller initializes at the live cell of the ATM row)
+ *
+ *  Bounds: rowIdx ∈ [0, maxRow], colIdx ∈ [0, maxCol]. Movement past
+ *  an edge clamps; doesn't wrap (predictable navigation, no
+ *  surprise jumps).
+ */
+export type NavResult =
+  | { kind: "move"; rowIdx: number; colIdx: number }
+  | { kind: "clear" }
+  | { kind: "init" }
+  | { kind: "unchanged" };
+
+export function nextFocusedCell(
+  key: string,
+  current: { rowIdx: number; colIdx: number } | null,
+  maxRow: number,
+  maxCol: number,
+): NavResult {
+  const NAV_KEYS = new Set([
+    "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+    "Home", "End", "PageUp", "PageDown",
+  ]);
+  if (key === "Escape") return { kind: "clear" };
+  // Defensive: degenerate grid (no rows / no cols) — refuse to init
+  // or move. Caller falls through to unchanged behavior. Without this
+  // guard a degenerate `maxCol === -1` would let the `init` path
+  // synthesize a colIdx of -1 (#331 R1 nit 1).
+  if (maxRow < 0 || maxCol < 0) return { kind: "unchanged" };
+  if (current == null) {
+    return NAV_KEYS.has(key) ? { kind: "init" } : { kind: "unchanged" };
+  }
+  const { rowIdx, colIdx } = current;
+  switch (key) {
+    case "ArrowLeft":
+      return { kind: "move", rowIdx, colIdx: Math.max(0, colIdx - 1) };
+    case "ArrowRight":
+      return { kind: "move", rowIdx, colIdx: Math.min(maxCol, colIdx + 1) };
+    case "ArrowUp":
+      return { kind: "move", rowIdx: Math.max(0, rowIdx - 1), colIdx };
+    case "ArrowDown":
+      return { kind: "move", rowIdx: Math.min(maxRow, rowIdx + 1), colIdx };
+    case "Home":
+      return { kind: "move", rowIdx, colIdx: 0 };
+    case "End":
+      return { kind: "move", rowIdx, colIdx: maxCol };
+    case "PageUp":
+      return { kind: "move", rowIdx: 0, colIdx };
+    case "PageDown":
+      return { kind: "move", rowIdx: maxRow, colIdx };
+    default:
+      return { kind: "unchanged" };
+  }
+}
+
 // ── Hover-tooltip geometry ────────────────────────────────────────
 
 /** Map a mouse client-X coordinate to a column index inside a lane
