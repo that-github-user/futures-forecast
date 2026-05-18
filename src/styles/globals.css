@@ -57,6 +57,14 @@
   --bg-panel: var(--paper-elev);
   --bg-elevated: #0d1117;
   --bg-inset: var(--paper-deep);
+  /* --bg-panel-head: a slightly lighter elevated tone than --bg-panel
+   * for panel headers, active toggle states, and the elevated-light
+   * surfaces under top-of-panel chrome. Distinct from --bg-elevated
+   * (which is DARKER than --bg-panel — used for inset surfaces). Used
+   * by InfoPopover.css, StrikeVelocityTape.css (panel head, active
+   * toggle, split-bar), and consumers that want this elevated-light
+   * tone. */
+  --bg-panel-head: #1a2235;
   --border-dim: var(--ink-20);
   --border-mid: #334155;
   --border-bright: #475569;
