@@ -103,30 +103,32 @@ export function TentChart({
       ? liveCurve!.points.map((p) => [p.spx, p.value])
       : [];
 
-    // Vertical-label stagger (#337): pre-#337 ALL labels (SPX / P-pole
-    // / C-pole / BE@exp_low / BE@exp_high) anchored to the top of
-    // their markLine ("end") with no vertical offset. When two
+    // Vertical-label stagger (#337 → #344). Pre-#337 ALL labels (SPX /
+    // P-pole / C-pole / BE@exp_low / BE@exp_high) anchored to the top
+    // of their markLine ("end") with no vertical offset. When two
     // markLines sat close in X (e.g. SPX near a pole, or a tight
     // at-expiry BE near a strike on a low-cushion trade), the labels
-    // collided into illegible mush.
+    // collided into illegible mush. #337 introduced a 3-tier stagger;
+    // #344 reordered + widened the tiers because operators reported
+    // the labels still read as a mush at 14px spacing.
     //
-    // Three-tier top-anchored layout (vertical bands via padding,
-    // measured top → down):
-    //   tier 0 (offset  0px): Poles    — strike reference, dim
-    //   tier 1 (offset 14px): SPX      — operator's "you are here", prominent
-    //   tier 2 (offset 28px): BE@exp   — risk zones, muted
-    // Padding moves the label box DOWN by N px from the line's
-    // top endpoint without changing the line endpoint itself, so
-    // X-collision in markLine geometry no longer implies overlap of
-    // the label text boxes. The chart grid `top: 48` (both compact
-    // and full modes — see grid config below) reserves the band
-    // these labels occupy with ~8px headroom over tier 2's bottom
-    // edge.
+    // Three-tier layout, ordered VISUALLY from chart-edge upward:
+    //   tier 0 (offset 36px): Poles    — closest to chart (dim, dotted)
+    //   tier 1 (offset 18px): BE@exp   — middle row (muted, dashed)
+    //   tier 2 (offset  0px): SPX      — top, furthest from chart (prominent)
+    //
+    // Padding moves the label box DOWN by N px from the line's top
+    // endpoint (i.e. higher offset = closer to chart in screen coords).
+    // 18px between tiers exceeds the ~14px default label text height
+    // so adjacent tiers don't visually touch even when colors clash.
+    // The chart grid `top: 56` (both compact and full modes — see
+    // grid config below) reserves the band these labels occupy with
+    // a small headroom over tier 0's bottom edge.
     type LabelPosition = "start" | "middle" | "end";
     type Padding = [number, number, number, number]; // [top, right, bottom, left]
-    const TIER_POLE: Padding = [0, 0, 0, 0];
-    const TIER_SPX: Padding = [14, 0, 0, 0];
-    const TIER_BE: Padding = [28, 0, 0, 0];
+    const TIER_SPX: Padding = [0, 0, 0, 0];
+    const TIER_BE: Padding = [18, 0, 0, 0];
+    const TIER_POLE: Padding = [36, 0, 0, 0];
     const verticals: Array<{
       xAxis: number;
       lineStyle: { color: string; type?: "solid" | "dashed" | "dotted"; width?: number };
@@ -339,20 +341,17 @@ export function TentChart({
       grid: {
         left: compact ? 36 : 56,
         right: compact ? 16 : 32,
-        // Top reserves the three-tier label band (Poles | SPX | BE@exp)
-        // staggered via per-tier padding (#337). Tier offsets are
-        // 0/14/28 px, plus ~12 px text height for the bottommost tier
-        // = ~40 px needed. Both compact (small-multiples on the Tent
-        // tab) and full mode get 48 px — at compact height=180 (per
-        // DCTentTab), this trades ~5% of vertical data resolution for
-        // labels that don't bleed into the data area. R1 flagged that
-        // the previously-tighter 32 px in compact left BE@exp ~8 px
-        // inside the plot area; harmless for tent shape but
-        // distracting for an operator scanning the small-multiples
-        // grid. Pre-#337 this was 16/32 with all labels stacked at
-        // the same top position; operators reported collisions when
-        // SPX sat near a pole.
-        top: 48,
+        // Top reserves the three-tier label band, visually ordered
+        // SPX (top) → BE@exp → Poles (closest to chart). #344 widened
+        // the tier spacing from 0/14/28 to 0/18/36 so adjacent tiers
+        // don't visually touch even when colors clash (operators
+        // reported the 14px spacing still read as a mush — see #344
+        // discussion). Tier 0 (poles) occupies pixels 36-50; reserving
+        // 56 leaves a small headroom buffer over the data area.
+        // Same value for both compact and full modes — at compact
+        // height=180 (per DCTentTab), this consumes ~31% of vertical
+        // resolution but is the cost of three distinct readable rows.
+        top: 56,
         // Bottom needs to clear: x-axis name "SPX" (~24px) + the
         // moved-from-top legend strip (~24px) + a little padding.
         // Compact mode: legend is hidden so revert to tight bottom.
