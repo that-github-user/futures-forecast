@@ -106,15 +106,65 @@ function App() {
   );
 }
 
+/** Self-healing reload (#348). A plain `location.reload()` doesn't
+ *  bust the service worker registration or browser/SW caches, which
+ *  means a stale `index.html` (cached with `max-age=600` per GH Pages
+ *  defaults) gets served again with the same dead chunk references →
+ *  the error boundary fires again → infinite loop. The original
+ *  Reload button reproduced this loop in prod after #347 deploy
+ *  (operator-reported on mobile + desktop).
+ *
+ *  Steps:
+ *  1. Unregister all service workers — the dashboard's SW is
+ *     content-less (PWA-install enabler only, no fetch handler) but
+ *     having one registered can sticky the controlled-page state on
+ *     some browsers, blocking the HTML cache from being revalidated.
+ *  2. Clear all `caches` — same reason; even though we don't use the
+ *     Cache API today, future SW code might, and a stale cache from
+ *     a prior deploy could be poisoning navigations.
+ *  3. Replace the URL with a cache-busting query param — guarantees
+ *     the browser fetches a fresh `index.html` from the origin (or
+ *     CDN edge with a different cache key) instead of any cached
+ *     copy of the bare URL.
+ *
+ *  All steps `try/catch` individually so a failure in one (e.g.
+ *  navigator.serviceWorker undefined on very old browsers) doesn't
+ *  block the reload itself.
+ */
+async function selfHealAndReload(): Promise<void> {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations()) ?? [];
+    await Promise.all(regs.map((r) => r.unregister()));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("Service worker unregister failed:", e);
+  }
+  try {
+    if (typeof caches !== "undefined") {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("Cache clear failed:", e);
+  }
+  // location.replace (vs assign) avoids leaving the broken page in
+  // the browser's history; the query param forces the HTTP cache
+  // to treat this as a fresh URL.
+  const url = new URL(window.location.href);
+  url.searchParams.set("_v", Date.now().toString());
+  window.location.replace(url.toString());
+}
+
 /** Catches dynamic-import failures from `React.lazy` chunks. The
  *  failure mode this guards against: after a deploy, a user with a
  *  cached `index.js` from the prior deploy tries to fetch a hashed
  *  chunk that no longer exists at the expected URL. The lazy import
  *  rejects, Suspense bubbles the error, and without a boundary above
  *  it the user gets a white screen + console error. The boundary
- *  catches the rejection and prompts a reload, which fetches the
- *  fresh `index.js` referencing the current chunk hashes (R2
- *  flagged this). */
+ *  catches the rejection and prompts a reload via `selfHealAndReload`
+ *  (#348) which clears SW + caches + cache-busts the URL so the
+ *  reload actually fetches a fresh `index.html` and breaks the loop. */
 class ChunkLoadErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean }
@@ -158,7 +208,7 @@ class ChunkLoadErrorBoundary extends Component<
           </p>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={selfHealAndReload}
             style={{
               marginTop: 4,
               padding: "8px 16px",
