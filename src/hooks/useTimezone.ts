@@ -98,6 +98,7 @@ const TZ_IANA: Record<Exclude<TZOption, "local">, string> = {
 const chartFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 const chartFormattersSec = new Map<TZOption, Intl.DateTimeFormat>();
 const chartDayFormatters = new Map<TZOption, Intl.DateTimeFormat>();
+const chartCrosshairFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 const positionDateTimeFormatters = new Map<TZOption, Intl.DateTimeFormat>();
 
 function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeFormat {
@@ -114,6 +115,23 @@ function buildChartFormatter(tz: TZOption, withSeconds: boolean): Intl.DateTimeF
 function buildChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
   const opts: Intl.DateTimeFormatOptions = {
     day: "2-digit",
+    ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
+  };
+  return new Intl.DateTimeFormat("en-GB", opts);
+}
+
+// "DD MMM HH:MM" (e.g. "18 May 19:15") in the active TZ. Used by the
+// lightweight chart's `localization.timeFormatter` for the bottom-axis
+// crosshair label (#336). en-GB ordering matches the visual style the
+// operator already sees in the tooltip's time row; hourCycle h23
+// keeps midnight as "00:00" (en-US would emit "24:00" on some impls).
+function buildChartCrosshairFormatter(tz: TZOption): Intl.DateTimeFormat {
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
     ...(tz !== "local" ? { timeZone: TZ_IANA[tz] } : {}),
   };
   return new Intl.DateTimeFormat("en-GB", opts);
@@ -161,6 +179,15 @@ function getChartDayFormatter(tz: TZOption): Intl.DateTimeFormat {
   return f;
 }
 
+function getChartCrosshairFormatter(tz: TZOption): Intl.DateTimeFormat {
+  let f = chartCrosshairFormatters.get(tz);
+  if (!f) {
+    f = buildChartCrosshairFormatter(tz);
+    chartCrosshairFormatters.set(tz, f);
+  }
+  return f;
+}
+
 function getPositionDateTimeFormatter(tz: TZOption): Intl.DateTimeFormat {
   let f = positionDateTimeFormatters.get(tz);
   if (!f) {
@@ -190,6 +217,14 @@ export interface TimezoneApi {
    * day-of-month differing from the previous bar).
    */
   formatChartDay: (iso: string) => string;
+  /**
+   * Format an ISO UTC timestamp as "DD MMM HH:MM" (e.g. "18 May 19:15")
+   * in the user's selected timezone. Used by the lightweight chart's
+   * `localization.timeFormatter` for the bottom-axis crosshair label
+   * (#336) — distinct from `formatChartDay` which the day-changeover
+   * tickMarkFormatter intentionally needs bare "DD" for.
+   */
+  formatChartCrosshair: (iso: string) => string;
   /**
    * Format an ISO UTC timestamp as "Apr 27, 09:45" in the user's
    * selected timezone. Used by the DC positions table so the entry-
@@ -260,6 +295,18 @@ export function useTimezone(): TimezoneApi {
     [tz],
   );
 
+  const formatChartCrosshair = useCallback(
+    (iso: string): string => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      // V8 emits "24:00" at midnight under some impls; matches the
+      // safety net in formatChartTime above. en-GB defaults to h23
+      // which avoids the issue, but the replace stays defensive.
+      return getChartCrosshairFormatter(tz).format(d).replace(/ 24:/, " 00:");
+    },
+    [tz],
+  );
+
   const formatPositionDateTime = useCallback(
     (iso: string): string => {
       const d = new Date(iso);
@@ -273,6 +320,6 @@ export function useTimezone(): TimezoneApi {
 
   return {
     tz, setTz, formatTime, formatChartTime, formatChartDay,
-    formatPositionDateTime, tzLabel,
+    formatChartCrosshair, formatPositionDateTime, tzLabel,
   };
 }

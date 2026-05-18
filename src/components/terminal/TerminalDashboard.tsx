@@ -376,7 +376,7 @@ function formatRegime(label: string): React.ReactNode {
 function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
   const [overlays, setOverlays] = useState<OverlayState>(DEFAULT_OVERLAYS);
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
-  const { tz, setTz, formatChartTime, formatChartDay, tzLabel } = useTimezone();
+  const { tz, setTz, formatChartTime, formatChartDay, formatChartCrosshair, tzLabel } = useTimezone();
   const { density, setDensity } = useDensity();
   // PR 2 of the mobile-chart series (AVWAP multi-anchor, Opening
   // Range bands, ETH session shading) is now live, so the AVWAP
@@ -448,6 +448,7 @@ function MiddleBand({ data }: { data: TerminalSnapshot | null }) {
           timeframe={timeframe}
           formatBarTime={formatChartTime}
           formatBarDay={formatChartDay}
+          formatBarCrosshair={formatChartCrosshair}
           tzLabel={tzLabel}
         />
       </div>
