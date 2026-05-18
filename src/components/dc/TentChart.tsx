@@ -20,7 +20,7 @@
  * the full panel and a small-multiples grid can give it ~200.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { DCTentResponse } from "../../api/dcTypes";
@@ -443,17 +443,21 @@ export function TentChart({
   // every render-finished event so resize / data-update / tab-switch
   // (which all change the xAxis pixel mapping) stay correct.
   const chartRef = useRef<ReactECharts | null>(null);
-  // Cache key of last-applied graphic state — labels content + their
-  // resolved pixel positions joined into a single string. The
-  // `'finished'` event fires asynchronously after each render, so
-  // an `updating` flag can't guard against async re-entry: setOption
-  // would render → fire 'finished' → handler runs again → setOption →
-  // hot loop. The cache key breaks the loop: if the labels haven't
-  // moved (same content + same pixels), skip the setOption entirely.
-  // QA OBS-1 fix.
+  // Cache key of last-applied graphic state.
   const lastAppliedRef = useRef<string>("");
+  // Chart-ready signal — `chartRef.current.getEchartsInstance()` returns
+  // a non-null instance from the moment ReactECharts' componentDidMount
+  // runs, but ECharts' internal coordinate-system model isn't populated
+  // until AFTER the first render+layout pass. Calling convertToPixel
+  // before that pass throws "can't access property queryComponents, r
+  // is undefined" (operator-reported, hotfix follow-up). Gate the
+  // effect on the `onChartReady` callback which fires after the first
+  // setOption+render completes, guaranteeing the model exists.
+  const [chartReady, setChartReady] = useState(false);
+  const handleChartReady = useCallback(() => setChartReady(true), []);
   const labels = memo?.labels;
   useEffect(() => {
+    if (!chartReady) return;
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
 
@@ -546,7 +550,7 @@ export function TentChart({
       // lastAppliedRef is component-scoped so it resets on remount.
       lastAppliedRef.current = "";
     };
-  }, [labels]);
+  }, [labels, chartReady]);
 
   if (memo == null) {
     return (
@@ -568,6 +572,7 @@ export function TentChart({
     <ReactECharts
       ref={chartRef}
       option={memo.option}
+      onChartReady={handleChartReady}
       style={{ height, width: "100%" }}
       // replaceMerge['series'] (was: notMerge) — wipe stale series
       // on data refresh (the original reason for notMerge: prevent
