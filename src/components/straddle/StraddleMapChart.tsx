@@ -93,8 +93,13 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
       } catch {
         // chart disposed mid-resize — no-op
       }
-      // resize() will cause ECharts to re-layout and fire 'finished',
-      // so we don't need to call applyReferenceLines directly here.
+      // With `animation: false` in the chart option, ECharts' 'finished'
+      // event doesn't reliably fire after resize() either. Apply the
+      // reference lines explicitly so a window resize redraws them at
+      // the new plot-area width. The cache key includes xRight so this
+      // call DOES write fresh graphics when width changed (and short-
+      // circuits when nothing did).
+      applyReferenceLines(chart, dataRef.current, lastAppliedRef);
     });
     ro.observe(containerRef.current);
 
