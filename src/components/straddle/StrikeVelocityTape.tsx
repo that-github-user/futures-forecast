@@ -119,6 +119,15 @@ interface HoveredCell {
   isSpike: boolean;
   mouseX: number;
   mouseY: number;
+  // Row's session call/put totals — for computing session % in the
+  // tooltip. e.g., a cell with callVol=150 in a row whose session
+  // call total is 1000 reads as "C 150 (15%)". The percentage is the
+  // signal the cell color CAN'T convey (color shows direction, not
+  // relative magnitude vs the strike's session). Source: row.split
+  // (already pre-computed in the layout memo) — passed through here
+  // so the tooltip closure doesn't have to re-scan minute arrays.
+  rowCallSession: number;
+  rowPutSession: number;
 }
 
 export function StrikeVelocityTape({
@@ -439,6 +448,7 @@ function LaneSvg({
     putMap: Map<string, number>;
     callSpikes: Set<string>;
     putSpikes: Set<string>;
+    split: { call: number; put: number; total: number };
   };
   axis: string[];
   scale: number;
@@ -510,6 +520,8 @@ function LaneSvg({
       isSpike: row.callSpikes.has(ts) || row.putSpikes.has(ts),
       mouseX: e.clientX,
       mouseY: e.clientY,
+      rowCallSession: row.split.call,
+      rowPutSession: row.split.put,
     });
   };
   return (
@@ -682,8 +694,17 @@ function MinuteTooltip({ cell }: { cell: HoveredCell }) {
     zIndex: 1000,
   };
   const total = cell.callVol + cell.putVol;
-  const callPct = total > 0 ? (cell.callVol / total) * 100 : 0;
-  const putPct = total > 0 ? (cell.putVol / total) * 100 : 0;
+  // Session % (#332): the cell's call/put volume as a share of the
+  // STRIKE'S session call/put total (NOT cell total). This is the
+  // signal the cell color CAN'T convey — color shows direction, the
+  // % shows "this minute represented X% of today's call flow at this
+  // strike". Cell-share % was redundant with the color encoding.
+  // Guard against div-by-zero: when the row's call/put session total
+  // is 0 (illiquid side), the % renders as "—".
+  const callSessionPct =
+    cell.rowCallSession > 0 ? (cell.callVol / cell.rowCallSession) * 100 : null;
+  const putSessionPct =
+    cell.rowPutSession > 0 ? (cell.putVol / cell.rowPutSession) * 100 : null;
   return (
     <div className="svt-tooltip" style={style}>
       <div className="svt-tooltip-head">
@@ -696,11 +717,11 @@ function MinuteTooltip({ cell }: { cell: HoveredCell }) {
       <div className="svt-tooltip-split">
         <span className="c">
           C <b>{formatVolume(cell.callVol)}</b>
-          <i>{callPct.toFixed(0)}%</i>
+          <i>{callSessionPct == null ? "—" : `${callSessionPct.toFixed(0)}% sess`}</i>
         </span>
         <span className="p">
           P <b>{formatVolume(cell.putVol)}</b>
-          <i>{putPct.toFixed(0)}%</i>
+          <i>{putSessionPct == null ? "—" : `${putSessionPct.toFixed(0)}% sess`}</i>
         </span>
       </div>
       {cell.isSpike && (
