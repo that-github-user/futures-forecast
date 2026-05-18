@@ -58,6 +58,7 @@ import {
   nextFocusedCell,
   panelMaxVol,
   priceToY,
+  resolveSpikeSigma,
   rowMaxVol,
   rowSplit,
   rowTotalVolume,
@@ -121,6 +122,13 @@ interface HoveredCell {
   callVol: number;
   putVol: number;
   isSpike: boolean;
+  /** σ-magnitude of the spike at this minute (max across call/put if
+   *  both sides flagged) — `(volume - median) / scale`, where scale is
+   *  1.4826·MAD or 1.2533·MeanAD, computed backend-side (PR #195).
+   *  `null` when the cell isn't a spike OR when the backend payload
+   *  predates #330 (no `*_spike_sigmas` map); the tooltip falls back
+   *  to the generic "≥3σ MAD" label in the latter case. */
+  spikeSigma: number | null;
   mouseX: number;
   mouseY: number;
   // Row's session call/put totals — for computing session % in the
@@ -206,6 +214,11 @@ export function StrikeVelocityTape({
       putMap: SideMap;
       callSpikes: Set<string>;
       putSpikes: Set<string>;
+      // ts → σ-magnitude maps. Empty when the backend payload is
+      // pre-#330 (no `*_spike_sigmas` field); the tooltip falls back
+      // to the generic "≥3σ MAD" label in that case.
+      callSpikeSigmas: Map<string, number>;
+      putSpikeSigmas: Map<string, number>;
       rowMax: number;
       split: ReturnType<typeof rowSplit>;
       total: number;
@@ -224,6 +237,8 @@ export function StrikeVelocityTape({
         putMap,
         callSpikes: new Set(s.call_spike_minutes),
         putSpikes: new Set(s.put_spike_minutes),
+        callSpikeSigmas: new Map(Object.entries(s.call_spike_sigmas ?? {})),
+        putSpikeSigmas: new Map(Object.entries(s.put_spike_sigmas ?? {})),
         rowMax: rowMaxVol(s),
         split: rowSplit(s),
         total: rowTotalVolume(s),
@@ -262,6 +277,11 @@ export function StrikeVelocityTape({
           isSpike:
             focusCellRow.callSpikes.has(focusCellTs) ||
             focusCellRow.putSpikes.has(focusCellTs),
+          spikeSigma: resolveSpikeSigma(
+            focusCellRow.callSpikeSigmas,
+            focusCellRow.putSpikeSigmas,
+            focusCellTs,
+          ),
           mouseX: focusedCell.mouseX,
           mouseY: focusedCell.mouseY,
           rowCallSession: focusCellRow.split.call,
@@ -357,7 +377,11 @@ export function StrikeVelocityTape({
     if (total === 0) {
       return `Strike ${focusCellPayload.strike}, ${minLabel}, no activity`;
     }
-    const spikeWord = focusCellPayload.isSpike ? ", spike" : "";
+    const spikeWord = focusCellPayload.isSpike
+      ? focusCellPayload.spikeSigma != null
+        ? `, ${focusCellPayload.spikeSigma.toFixed(1)} sigma spike`
+        : ", spike"
+      : "";
     return (
       `Strike ${focusCellPayload.strike}, ${minLabel}, ` +
       `total ${formatVolume(total)}, ` +
@@ -650,6 +674,8 @@ function LaneRow({
     putMap: Map<string, number>;
     callSpikes: Set<string>;
     putSpikes: Set<string>;
+    callSpikeSigmas: Map<string, number>;
+    putSpikeSigmas: Map<string, number>;
     rowMax: number;
     split: { call: number; put: number; total: number };
     total: number;
@@ -703,6 +729,8 @@ function LaneSvg({
     putMap: Map<string, number>;
     callSpikes: Set<string>;
     putSpikes: Set<string>;
+    callSpikeSigmas: Map<string, number>;
+    putSpikeSigmas: Map<string, number>;
     split: { call: number; put: number; total: number };
   };
   rowIdx: number;
@@ -776,6 +804,7 @@ function LaneSvg({
       callVol,
       putVol,
       isSpike: row.callSpikes.has(ts) || row.putSpikes.has(ts),
+      spikeSigma: resolveSpikeSigma(row.callSpikeSigmas, row.putSpikeSigmas, ts),
       mouseX: e.clientX,
       mouseY: e.clientY,
       rowCallSession: row.split.call,
@@ -1035,7 +1064,11 @@ function MinuteTooltip({ cell }: { cell: HoveredCell }) {
         </span>
       </div>
       {cell.isSpike && (
-        <div className="svt-tooltip-spike">⚠ Spike (≥3σ MAD)</div>
+        <div className="svt-tooltip-spike">
+          {cell.spikeSigma != null
+            ? `⚠ Spike ${cell.spikeSigma.toFixed(1)}σ`
+            : "⚠ Spike (≥3σ MAD)"}
+        </div>
       )}
     </div>
   );

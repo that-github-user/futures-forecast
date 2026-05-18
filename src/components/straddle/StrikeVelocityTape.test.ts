@@ -26,6 +26,7 @@ import {
   MAX_ROWS,
   panelMaxVol,
   priceToY,
+  resolveSpikeSigma,
   ROW_H,
   rowMaxVol,
   rowSplit,
@@ -625,5 +626,50 @@ describe("layout constants", () => {
   });
   it("MAX_ROWS keeps panel height bounded", () => {
     expect(MAX_ROWS).toBe(15);
+  });
+});
+
+// ── resolveSpikeSigma (#330) ──────────────────────────────────────
+
+describe("resolveSpikeSigma", () => {
+  const TS = "2026-05-15T15:35:00-04:00";
+
+  it("returns the call σ when only the call side flagged", () => {
+    const calls = new Map([[TS, 5.2]]);
+    const puts = new Map<string, number>();
+    expect(resolveSpikeSigma(calls, puts, TS)).toBe(5.2);
+  });
+
+  it("returns the put σ when only the put side flagged", () => {
+    const calls = new Map<string, number>();
+    const puts = new Map([[TS, 7.1]]);
+    expect(resolveSpikeSigma(calls, puts, TS)).toBe(7.1);
+  });
+
+  it("returns the MAX of the two when both sides flagged the same minute", () => {
+    // Operator expectation: tooltip shows the larger σ so the
+    // visible value lines up with the dominant side's outlier
+    // magnitude. Lower σ would understate the burst.
+    const calls = new Map([[TS, 5.2]]);
+    const puts = new Map([[TS, 9.4]]);
+    expect(resolveSpikeSigma(calls, puts, TS)).toBe(9.4);
+  });
+
+  it("returns null when neither side has a σ for the ts", () => {
+    // Either a non-spike cell OR a pre-#330 backend payload where
+    // the legacy spike timestamps populated but the σ maps are
+    // empty. Tooltip falls back to the generic label.
+    const calls = new Map<string, number>();
+    const puts = new Map<string, number>();
+    expect(resolveSpikeSigma(calls, puts, TS)).toBeNull();
+  });
+
+  it("returns null when the ts isn't in either map (different minute)", () => {
+    // Sigmas exist for OTHER minutes but not this one — hovering an
+    // un-spiked cell on a row that has spikes elsewhere must still
+    // return null so the tooltip stays silent.
+    const calls = new Map([["other-ts", 5.0]]);
+    const puts = new Map([["another-ts", 6.0]]);
+    expect(resolveSpikeSigma(calls, puts, TS)).toBeNull();
   });
 });
