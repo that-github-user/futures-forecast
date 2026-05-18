@@ -20,7 +20,7 @@
  * the full panel and a small-multiples grid can give it ~200.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import ReactECharts from "echarts-for-react";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { DCTentResponse } from "../../api/dcTypes";
@@ -60,6 +60,17 @@ const COLOR_POLE = colors.textDim;          // dim — short-strike markers
 const COLOR_DEBIT_LINE = withAlpha(colors.textMuted, 0.4);
 const COLOR_AT_EXPIRY = colors.accentRed;   // at-expiry: canonical "two tents" shape
 
+// Tier Y positions (px from chart top) for the graphic-overlay labels
+// (#347). Matches the grid `top: 60` reservation: 8 + 18 (= 26) + 18
+// (= 44) keeps adjacent tiers 18px apart and the bottommost tier
+// ~16px clear of the data area. Module-scoped so the values aren't
+// re-allocated on every render.
+const TIER_Y: Record<"spx" | "be" | "pole", number> = {
+  spx: 8,
+  be: 26,
+  pole: 44,
+};
+
 
 export function TentChart({
   frozenCurve,
@@ -68,7 +79,7 @@ export function TentChart({
   height = 340,
   compact = false,
 }: TentChartProps) {
-  const option = useMemo(() => {
+  const memo = useMemo(() => {
     if (frozenCurve == null) return null;
 
     // Frozen series suppression: when the backend resolved iv_source
@@ -103,63 +114,63 @@ export function TentChart({
       ? liveCurve!.points.map((p) => [p.spx, p.value])
       : [];
 
-    // Vertical-label stagger (#337 → #344). Pre-#337 ALL labels (SPX /
-    // P-pole / C-pole / BE@exp_low / BE@exp_high) anchored to the top
-    // of their markLine ("end") with no vertical offset. When two
-    // markLines sat close in X (e.g. SPX near a pole, or a tight
-    // at-expiry BE near a strike on a low-cushion trade), the labels
-    // collided into illegible mush. #337 introduced a 3-tier stagger;
-    // #344 reordered + widened the tiers because operators reported
-    // the labels still read as a mush at 14px spacing.
+    // #347: ECharts `markLine.label.padding` is CSS-internal padding
+    // (whitespace within the label box), NOT an anchor offset — so the
+    // padding-based "tier stagger" attempted in #337/#344 didn't
+    // actually move labels vertically. They all rendered at the same Y
+    // (the line's top endpoint), just inside differently-sized boxes.
     //
-    // Three-tier layout, ordered VISUALLY from chart-edge upward:
-    //   tier 0 (offset 36px): Poles    — closest to chart (dim, dotted)
-    //   tier 1 (offset 18px): BE@exp   — middle row (muted, dashed)
-    //   tier 2 (offset  0px): SPX      — top, furthest from chart (prominent)
+    // Real fix: strip the labels off the markLine entirely (lines only)
+    // and render label text via a `graphic` overlay with pixel-exact
+    // positions. See the post-render useEffect below that calls
+    // `chart.convertToPixel` to map data-X → pixel-X and writes the
+    // graphic elements onto the chart.
     //
-    // Padding moves the label box DOWN by N px from the line's top
-    // endpoint (i.e. higher offset = closer to chart in screen coords).
-    // 18px between tiers exceeds the ~14px default label text height
-    // so adjacent tiers don't visually touch even when colors clash.
-    // The chart grid `top: 56` (both compact and full modes — see
-    // grid config below) reserves the band these labels occupy with
-    // a small headroom over tier 0's bottom edge.
-    type LabelPosition = "start" | "middle" | "end";
-    type Padding = [number, number, number, number]; // [top, right, bottom, left]
-    const TIER_SPX: Padding = [0, 0, 0, 0];
-    const TIER_BE: Padding = [18, 0, 0, 0];
-    const TIER_POLE: Padding = [36, 0, 0, 0];
-    const verticals: Array<{
+    // Three-tier layout, top-to-bottom (Y in pixels from chart top):
+    //   tier 'spx'  Y =  8: SPX     — top, furthest from chart
+    //   tier 'be'   Y = 26: BE@exp  — middle row
+    //   tier 'pole' Y = 44: Poles   — closest to chart
+    //
+    // The `verticals` list still feeds markLine.data (for the LINES),
+    // but each entry has `label: { show: false }` so ECharts doesn't
+    // draw any text. Parallel `verticalLabels` carries the text data
+    // for the graphic overlay.
+    type Vertical = {
       xAxis: number;
       lineStyle: { color: string; type?: "solid" | "dashed" | "dotted"; width?: number };
-      label: {
-        formatter: string;
-        color: string;
-        position: LabelPosition;
-        padding: Padding;
-      };
-    }> = [];
+      label: { show: false };
+    };
+    type VerticalLabel = {
+      xValue: number;
+      tier: "spx" | "be" | "pole";
+      text: string;
+      color: string;
+    };
+    const verticals: Vertical[] = [];
+    const verticalLabels: VerticalLabel[] = [];
 
-    // Poles — short strikes. Top band (tier 0).
+    // Poles — short strikes.
     verticals.push({
       xAxis: frozenCurve.pole_low,
       lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
-      label: {
-        formatter: `P${frozenCurve.pole_low.toFixed(0)}`,
-        color: COLOR_POLE,
-        position: "end",
-        padding: TIER_POLE,
-      },
+      label: { show: false },
+    });
+    verticalLabels.push({
+      xValue: frozenCurve.pole_low,
+      tier: "pole",
+      text: `P${frozenCurve.pole_low.toFixed(0)}`,
+      color: COLOR_POLE,
     });
     verticals.push({
       xAxis: frozenCurve.pole_high,
       lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
-      label: {
-        formatter: `C${frozenCurve.pole_high.toFixed(0)}`,
-        color: COLOR_POLE,
-        position: "end",
-        padding: TIER_POLE,
-      },
+      label: { show: false },
+    });
+    verticalLabels.push({
+      xValue: frozenCurve.pole_high,
+      tier: "pole",
+      text: `C${frozenCurve.pole_high.toFixed(0)}`,
+      color: COLOR_POLE,
     });
 
     // Current SPX vertical. Render whenever the backend gave us a
@@ -170,11 +181,10 @@ export function TentChart({
     //   - "fallback_midstrike" SpxProxy ran but produced nothing;
     //                         backend centered tent on strike midpoint
     // Pre-#338 we gated on `=== "broker_state"`, a literal string the
-    // backend never actually produces — leftover from an early doc
-    // draft. Result: SPX vertical never rendered, even during RTH.
-    // Now: render unconditionally on non-null SPX; degraded sources
-    // get a dashed line + parenthetical label so the operator can
-    // distinguish authoritative SPX from a proxy.
+    // backend never actually produces. Now: render unconditionally on
+    // non-null SPX; degraded sources get a dashed line + parenthetical
+    // label tag so the operator can distinguish authoritative SPX
+    // from a proxy.
     if (frozenCurve.current_spx != null) {
       const isDegraded =
         frozenCurve.current_spx_source === "es_proxy_stale" ||
@@ -194,47 +204,44 @@ export function TentChart({
           width: 2,
           type: isDegraded ? "dashed" : "solid",
         },
-        label: {
-          formatter: `SPX ${frozenCurve.current_spx.toFixed(0)}${sourceTag}`,
-          color: COLOR_SPX,
-          position: "end",
-          padding: TIER_SPX,
-        },
+        label: { show: false },
+      });
+      verticalLabels.push({
+        xValue: frozenCurve.current_spx,
+        tier: "spx",
+        text: `SPX ${frozenCurve.current_spx.toFixed(0)}${sourceTag}`,
+        color: COLOR_SPX,
       });
     }
 
-    // Breakevens — the canonical DC breakevens are AT-EXPIRY: where
-    // the at-expiry tent crosses entry_debit. Today's curve often has
-    // 0 or 1 breakevens because mid-life the tent peaks haven't yet
-    // grown past entry_debit (back-leg time premium hasn't decoupled
-    // from front-leg yet). Operator-meaningful answer is "where do I
-    // break even AT EXPIRY", which is what the at-expiry curve
-    // computes. Prefer that; fall back to frozen/today's only when
-    // at-expiry curve isn't loaded.
+    // Breakevens — at-expiry preferred; fall back to frozen/today's
+    // breakeven solver result when the at-expiry curve isn't loaded.
     const beSource = atExpiryCurve ?? frozenCurve;
     const beLabel = atExpiryCurve != null ? "BE@exp" : "BE";
     if (beSource.breakeven_low != null) {
       verticals.push({
         xAxis: beSource.breakeven_low,
         lineStyle: { color: COLOR_BREAKEVEN, width: 1, type: "dashed" },
-        label: {
-          formatter: `${beLabel} ${beSource.breakeven_low.toFixed(0)}`,
-          color: COLOR_BREAKEVEN,
-          position: "end",
-          padding: TIER_BE,
-        },
+        label: { show: false },
+      });
+      verticalLabels.push({
+        xValue: beSource.breakeven_low,
+        tier: "be",
+        text: `${beLabel} ${beSource.breakeven_low.toFixed(0)}`,
+        color: COLOR_BREAKEVEN,
       });
     }
     if (beSource.breakeven_high != null) {
       verticals.push({
         xAxis: beSource.breakeven_high,
         lineStyle: { color: COLOR_BREAKEVEN, width: 1, type: "dashed" },
-        label: {
-          formatter: `${beLabel} ${beSource.breakeven_high.toFixed(0)}`,
-          color: COLOR_BREAKEVEN,
-          position: "end",
-          padding: TIER_BE,
-        },
+        label: { show: false },
+      });
+      verticalLabels.push({
+        xValue: beSource.breakeven_high,
+        tier: "be",
+        text: `${beLabel} ${beSource.breakeven_high.toFixed(0)}`,
+        color: COLOR_BREAKEVEN,
       });
     }
 
@@ -335,24 +342,24 @@ export function TentChart({
       });
     }
 
-    return {
+    const result = {
       backgroundColor: "transparent",
       animation: false,
       grid: {
         left: compact ? 36 : 56,
         right: compact ? 16 : 32,
-        // Top reserves the three-tier label band, visually ordered
-        // SPX (top) → BE@exp → Poles (closest to chart). #344 widened
-        // the tier spacing from 0/14/28 to 0/18/36 so adjacent tiers
-        // don't visually touch even when colors clash (operators
-        // reported the 14px spacing still read as a mush — see #344
-        // discussion). Tier 0 (poles) occupies pixels ~36-52 at
-        // default echarts 12px font + ~14-16px line-height; reserving
-        // 56 leaves a 4-6 px headroom buffer over the data area.
-        // Same value for both compact and full modes — at compact
-        // height=180 (per DCTentTab), this consumes ~31% of vertical
-        // resolution but is the cost of three distinct readable rows.
-        top: 56,
+        // Top reserves the three-tier label band populated by the
+        // graphic overlay (#347). Tier Y positions in pixels:
+        //   SPX:    Y =  8
+        //   BE@exp: Y = 26
+        //   Poles:  Y = 44
+        // With default echarts 12px font + ~14px line-height, the
+        // poles tier extends from Y=44 to Y=58. Reserving 60 gives
+        // a small headroom buffer over the data area. Same value
+        // for both compact and full modes — at compact height=180
+        // (per DCTentTab), this consumes ~33% of vertical resolution
+        // but is the cost of three distinct readable rows.
+        top: 60,
         // Bottom needs to clear: x-axis name "SPX" (~24px) + the
         // moved-from-top legend strip (~24px) + a little padding.
         // Compact mode: legend is hidden so revert to tight bottom.
@@ -426,14 +433,83 @@ export function TentChart({
       },
       series,
     };
-    // atExpiryCurve is read for BE label source + at-expiry series
-    // (lines above). Pre-#338 the deps array missed it, so a lazy
-    // atExpiryCurve fetch wouldn't re-run the memo and the BE labels
-    // could render stale ("BE" instead of "BE@exp", stale x-coords).
-    // Retro-QA B1.
+    return { option: result, labels: verticalLabels };
   }, [frozenCurve, liveCurve, atExpiryCurve, compact]);
 
-  if (option == null) {
+  // Post-render graphic overlay positioning (#347). markLine labels
+  // can't be staggered via padding (CSS-internal, not anchor offset),
+  // so we draw labels as `graphic.text` elements with pixel-exact
+  // positions computed from `chart.convertToPixel`. Re-positions on
+  // every render-finished event so resize / data-update / tab-switch
+  // (which all change the xAxis pixel mapping) stay correct.
+  const chartRef = useRef<ReactECharts | null>(null);
+  // Cache key of last-applied graphic state — labels content + their
+  // resolved pixel positions joined into a single string. The
+  // `'finished'` event fires asynchronously after each render, so
+  // an `updating` flag can't guard against async re-entry: setOption
+  // would render → fire 'finished' → handler runs again → setOption →
+  // hot loop. The cache key breaks the loop: if the labels haven't
+  // moved (same content + same pixels), skip the setOption entirely.
+  // QA OBS-1 fix.
+  const lastAppliedRef = useRef<string>("");
+  const labels = memo?.labels;
+  useEffect(() => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+
+    const updateGraphic = () => {
+      const graphics = (labels ?? [])
+        .map((lbl) => {
+          const px = inst.convertToPixel({ xAxisIndex: 0 }, lbl.xValue);
+          if (px == null || !Number.isFinite(px)) return null;
+          return {
+            type: "text" as const,
+            x: px,
+            y: TIER_Y[lbl.tier],
+            silent: true,
+            z: 100,
+            style: {
+              text: lbl.text,
+              fill: lbl.color,
+              font: `11px ${fonts.mono}`,
+              // EC5 canonical alignment names (NOT textAlign /
+              // textVerticalAlign — those are EC4 legacy aliases
+              // that work today via runtime shim but could be
+              // dropped in a future ECharts major).
+              align: "center" as const,
+              verticalAlign: "top" as const,
+            },
+          };
+        })
+        .filter((g): g is NonNullable<typeof g> => g != null);
+      // Cache key: serialize the load-bearing fields so a no-op render
+      // (same labels at same pixels) doesn't trigger a setOption that
+      // would re-fire 'finished' → infinite loop. Position rounded to
+      // 1px because sub-pixel jitter from convertToPixel isn't worth
+      // re-rendering.
+      const key = graphics
+        .map((g) => `${g.style.text}@${Math.round(g.x)},${g.y}:${g.style.fill}`)
+        .join("|");
+      if (key === lastAppliedRef.current) return;
+      lastAppliedRef.current = key;
+      inst.setOption(
+        { graphic: graphics },
+        { replaceMerge: ["graphic"] },
+      );
+    };
+
+    updateGraphic();
+    inst.on("finished", updateGraphic);
+    return () => {
+      inst.off("finished", updateGraphic);
+      // QA OBS-3: explicit clear on unmount-or-empty so stale graphic
+      // elements can't linger if labels become [] between renders.
+      // lastAppliedRef is component-scoped so it resets on remount.
+      lastAppliedRef.current = "";
+    };
+  }, [labels]);
+
+  if (memo == null) {
     return (
       <div style={{
         height,
@@ -451,9 +527,19 @@ export function TentChart({
 
   return (
     <ReactECharts
-      option={option}
+      ref={chartRef}
+      option={memo.option}
       style={{ height, width: "100%" }}
-      notMerge
+      // replaceMerge['series'] (was: notMerge) — wipe stale series
+      // on data refresh (the original reason for notMerge: prevent
+      // the dropped halfway series from lingering when curves
+      // change) WITHOUT wiping the graphic overlay. Pre-#347 fix:
+      // `notMerge: true` wiped the graphic on every parent
+      // re-render → the 'finished' handler re-injected it on the
+      // next frame, producing a 1-frame label flicker at 30s poll
+      // cadence. Switching to selective replaceMerge preserves
+      // graphic across re-renders.
+      replaceMerge={["series"]}
       // SVG renderer (instead of canvas) so the chart stays crisp at
       // any browser zoom level. Canvas renderer bakes in the resolution
       // at mount time and goes blurry at zoom > 100% (operator-reported
