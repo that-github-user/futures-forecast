@@ -466,8 +466,12 @@ export function TentChart({
                 text: lbl.text,
                 fill: lbl.color,
                 font: `11px ${fonts.mono}`,
-                textAlign: "center" as const,
-                textVerticalAlign: "top" as const,
+                // EC5 canonical alignment names (NOT textAlign /
+                // textVerticalAlign — those are EC4 legacy aliases
+                // that work today via runtime shim but could be
+                // dropped in a future ECharts major).
+                align: "center" as const,
+                verticalAlign: "top" as const,
               },
             };
           })
@@ -509,7 +513,16 @@ export function TentChart({
       ref={chartRef}
       option={memo.option}
       style={{ height, width: "100%" }}
-      notMerge
+      // replaceMerge['series'] (was: notMerge) — wipe stale series
+      // on data refresh (the original reason for notMerge: prevent
+      // the dropped halfway series from lingering when curves
+      // change) WITHOUT wiping the graphic overlay. Pre-#347 fix:
+      // `notMerge: true` wiped the graphic on every parent
+      // re-render → the 'finished' handler re-injected it on the
+      // next frame, producing a 1-frame label flicker at 30s poll
+      // cadence. Switching to selective replaceMerge preserves
+      // graphic across re-renders.
+      replaceMerge={["series"]}
       // SVG renderer (instead of canvas) so the chart stays crisp at
       // any browser zoom level. Canvas renderer bakes in the resolution
       // at mount time and goes blurry at zoom > 100% (operator-reported
