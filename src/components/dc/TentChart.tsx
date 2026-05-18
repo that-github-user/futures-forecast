@@ -113,13 +113,65 @@ export function TentChart({
       ? liveCurve!.points.map((p) => [p.spx, p.value])
       : [];
 
+    // Vertical-label stagger (#337): pre-#337 ALL labels (SPX / P-pole
+    // / C-pole / BE@exp_low / BE@exp_high) anchored to the top of
+    // their markLine ("end") with no vertical offset. When two
+    // markLines sat close in X (e.g. SPX near a pole, or a tight
+    // at-expiry BE near a strike on a low-cushion trade), the labels
+    // collided into illegible mush.
+    //
+    // Three-tier top-anchored layout (vertical bands via padding,
+    // measured top → down):
+    //   tier 0 (offset  0px): Poles    — strike reference, dim
+    //   tier 1 (offset 14px): SPX      — operator's "you are here", prominent
+    //   tier 2 (offset 28px): BE@exp   — risk zones, muted
+    // Padding moves the label box DOWN by N px from the line's
+    // top endpoint without changing the line endpoint itself, so
+    // X-collision in markLine geometry no longer implies overlap of
+    // the label text boxes. The chart grid `top: 48` (both compact
+    // and full modes — see grid config below) reserves the band
+    // these labels occupy with ~8px headroom over tier 2's bottom
+    // edge.
+    type LabelPosition = "start" | "middle" | "end";
+    type Padding = [number, number, number, number]; // [top, right, bottom, left]
+    const TIER_POLE: Padding = [0, 0, 0, 0];
+    const TIER_SPX: Padding = [14, 0, 0, 0];
+    const TIER_BE: Padding = [28, 0, 0, 0];
     const verticals: Array<{
       xAxis: number;
       lineStyle: { color: string; type?: "solid" | "dashed" | "dotted"; width?: number };
-      label: { formatter: string; color: string };
+      label: {
+        formatter: string;
+        color: string;
+        position: LabelPosition;
+        padding: Padding;
+      };
     }> = [];
 
+    // Poles — short strikes. Top band (tier 0).
+    verticals.push({
+      xAxis: frozenCurve.pole_low,
+      lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
+      label: {
+        formatter: `P${frozenCurve.pole_low.toFixed(0)}`,
+        color: COLOR_POLE,
+        position: "end",
+        padding: TIER_POLE,
+      },
+    });
+    verticals.push({
+      xAxis: frozenCurve.pole_high,
+      lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
+      label: {
+        formatter: `C${frozenCurve.pole_high.toFixed(0)}`,
+        color: COLOR_POLE,
+        position: "end",
+        padding: TIER_POLE,
+      },
+    });
+
     // Current SPX — only when broker_state sidecar gave us a value.
+    // Tier 1: just below pole labels.
     if (
       frozenCurve.current_spx != null &&
       frozenCurve.current_spx_source === "broker_state"
@@ -130,21 +182,11 @@ export function TentChart({
         label: {
           formatter: `SPX ${frozenCurve.current_spx.toFixed(0)}`,
           color: COLOR_SPX,
+          position: "end",
+          padding: TIER_SPX,
         },
       });
     }
-
-    // Poles — short strikes.
-    verticals.push({
-      xAxis: frozenCurve.pole_low,
-      lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
-      label: { formatter: `P${frozenCurve.pole_low.toFixed(0)}`, color: COLOR_POLE },
-    });
-    verticals.push({
-      xAxis: frozenCurve.pole_high,
-      lineStyle: { color: COLOR_POLE, width: 1, type: "dotted" },
-      label: { formatter: `C${frozenCurve.pole_high.toFixed(0)}`, color: COLOR_POLE },
-    });
 
     // Breakevens — the canonical DC breakevens are AT-EXPIRY: where
     // the at-expiry tent crosses entry_debit. Today's curve often has
@@ -163,6 +205,8 @@ export function TentChart({
         label: {
           formatter: `${beLabel} ${beSource.breakeven_low.toFixed(0)}`,
           color: COLOR_BREAKEVEN,
+          position: "end",
+          padding: TIER_BE,
         },
       });
     }
@@ -173,6 +217,8 @@ export function TentChart({
         label: {
           formatter: `${beLabel} ${beSource.breakeven_high.toFixed(0)}`,
           color: COLOR_BREAKEVEN,
+          position: "end",
+          padding: TIER_BE,
         },
       });
     }
@@ -290,11 +336,20 @@ export function TentChart({
       grid: {
         left: compact ? 36 : 56,
         right: compact ? 16 : 32,
-        // Top stays small — the chart owns this space for markLine
-        // labels (BE@exp / P#### / C####) which render at the top of
-        // each vertical line. Pre-#187 the legend lived here and
-        // collided with the labels at the top of the chart.
-        top: compact ? 16 : 32,
+        // Top reserves the three-tier label band (Poles | SPX | BE@exp)
+        // staggered via per-tier padding (#337). Tier offsets are
+        // 0/14/28 px, plus ~12 px text height for the bottommost tier
+        // = ~40 px needed. Both compact (small-multiples on the Tent
+        // tab) and full mode get 48 px — at compact height=180 (per
+        // DCTentTab), this trades ~5% of vertical data resolution for
+        // labels that don't bleed into the data area. R1 flagged that
+        // the previously-tighter 32 px in compact left BE@exp ~8 px
+        // inside the plot area; harmless for tent shape but
+        // distracting for an operator scanning the small-multiples
+        // grid. Pre-#337 this was 16/32 with all labels stacked at
+        // the same top position; operators reported collisions when
+        // SPX sat near a pole.
+        top: 48,
         // Bottom needs to clear: x-axis name "SPX" (~24px) + the
         // moved-from-top legend strip (~24px) + a little padding.
         // Compact mode: legend is hidden so revert to tight bottom.
