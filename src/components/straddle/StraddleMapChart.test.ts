@@ -280,11 +280,19 @@ describe("buildStraddleMapOption", () => {
  * path (valid pixels, [NaN, NaN], throw, or after-dispose).
  */
 function makeMockChart(opts: {
-  pixels?: [number, number] | "nan" | "throw";
+  // ECharts `convertToPixel({yAxisIndex: 0}, value)` returns a
+  // SCALAR y-pixel (NOT an [x, y] pair) — verified empirically in
+  // production. Tests must mirror that contract or they pass while
+  // the real chart silently drops every render.
+  yPixels?: { top: number; bot: number } | "nan" | "throw";
   width?: number;
   setOptionThrows?: boolean;
 } = {}) {
-  const { pixels = [400, 200], width = 800, setOptionThrows = false } = opts;
+  const {
+    yPixels = { top: 41.625, bot: 480.375 },
+    width = 800,
+    setOptionThrows = false,
+  } = opts;
   const setOption = vi.fn();
   if (setOptionThrows) {
     setOption.mockImplementation(() => {
@@ -292,13 +300,9 @@ function makeMockChart(opts: {
     });
   }
   const convertToPixel = vi.fn((_: unknown, idx: number) => {
-    if (pixels === "throw") throw new Error("model not ready");
-    if (pixels === "nan") return [NaN, NaN];
-    // Linear ramp between top=pixels[1] and bot=pixels[1]+300 for
-    // smoke-test purposes. The shape of the returned array is all
-    // that matters for the production code — values just need to be
-    // finite for the success path.
-    return idx === 0 ? [pixels[0], pixels[1]] : [pixels[0], pixels[1] + 300];
+    if (yPixels === "throw") throw new Error("model not ready");
+    if (yPixels === "nan") return NaN;
+    return idx === 0 ? yPixels.top : yPixels.bot;
   });
   return {
     chart: {
@@ -345,7 +349,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // valid data". Post-fix: the not-ready branch returns without
     // calling setOption({graphic: ...}) so the next 'finished' event
     // gets a clean retry.
-    const { chart, setOption } = makeMockChart({ pixels: "nan" });
+    const { chart, setOption } = makeMockChart({ yPixels: "nan" });
     applyReferenceLines(chart, operatorSnapshot(), stableRef());
     expect(setOption).not.toHaveBeenCalled();
   });
@@ -355,13 +359,13 @@ describe("applyReferenceLines (#351 regression)", () => {
     // ECharts' component model is partially initialized or after
     // dispose (#347 hotfix comment). The function must swallow the
     // throw without calling setOption.
-    const { chart, setOption } = makeMockChart({ pixels: "throw" });
+    const { chart, setOption } = makeMockChart({ yPixels: "throw" });
     applyReferenceLines(chart, operatorSnapshot(), stableRef());
     expect(setOption).not.toHaveBeenCalled();
   });
 
   it("writes graphics with replaceMerge when convertToPixel returns finite pixels", () => {
-    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const { chart, setOption } = makeMockChart({ yPixels: { top: 50, bot: 350 } });
     const ref = stableRef();
     applyReferenceLines(chart, operatorSnapshot(), ref);
     expect(setOption).toHaveBeenCalledTimes(1);
@@ -381,7 +385,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // including the one applyReferenceLines itself makes. Without a
     // cache-key guard this would loop forever. The TentChart precedent
     // (#347) uses the same pattern.
-    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const { chart, setOption } = makeMockChart({ yPixels: { top: 50, bot: 350 } });
     const ref = stableRef();
     applyReferenceLines(chart, operatorSnapshot(), ref);
     expect(setOption).toHaveBeenCalledTimes(1);
@@ -397,7 +401,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // exception up to ChunkLoadErrorBoundary (this caused the Tent-tab
     // self-heal loop pre-#225 — same class of bug).
     const { chart } = makeMockChart({
-      pixels: [50, 100],
+      yPixels: { top: 50, bot: 350 },
       setOptionThrows: true,
     });
     const ref = stableRef();
@@ -409,7 +413,7 @@ describe("applyReferenceLines (#351 regression)", () => {
   });
 
   it("clears graphics (with replaceMerge) on cold-start when previously applied", () => {
-    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const { chart, setOption } = makeMockChart({ yPixels: { top: 50, bot: 350 } });
     const ref = stableRef();
     // First populate.
     applyReferenceLines(chart, operatorSnapshot(), ref);
@@ -430,7 +434,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // (data===null), the component now calls applyReferenceLines with
     // null data directly to perform the clear. This test verifies the
     // null branch behaves identically to the empty-strikes branch.
-    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const { chart, setOption } = makeMockChart({ yPixels: { top: 50, bot: 350 } });
     const ref = stableRef();
     applyReferenceLines(chart, operatorSnapshot(), ref);
     expect(setOption).toHaveBeenCalledTimes(1);
@@ -448,7 +452,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // overhanging the new grid edge. The fix is to include xRight in
     // the cache key.
     const ref = stableRef();
-    const narrowChart = makeMockChart({ pixels: [50, 100], width: 600 });
+    const narrowChart = makeMockChart({ yPixels: { top: 50, bot: 350 }, width: 600 });
     applyReferenceLines(narrowChart.chart, operatorSnapshot(), ref);
     expect(narrowChart.setOption).toHaveBeenCalledTimes(1);
     const keyAfterNarrow = ref.current;
@@ -456,7 +460,7 @@ describe("applyReferenceLines (#351 regression)", () => {
     // Simulate a width change by giving the same ref to a wider mock
     // chart — the cache key should differ on x-extent and trigger a
     // fresh setOption.
-    const wideChart = makeMockChart({ pixels: [50, 100], width: 1200 });
+    const wideChart = makeMockChart({ yPixels: { top: 50, bot: 350 }, width: 1200 });
     applyReferenceLines(wideChart.chart, operatorSnapshot(), ref);
     expect(wideChart.setOption).toHaveBeenCalledTimes(1);
     const keyAfterWide = ref.current;
