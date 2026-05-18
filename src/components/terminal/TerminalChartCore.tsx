@@ -289,7 +289,30 @@ export function TerminalChartCore({
         // extents on every pan/zoom.
         autoScale: true,
       },
-      crosshair: { mode: CrosshairMode.Magnet },
+      // MagnetOHLC (v5.2): snaps the crosshair to the nearest of
+      // O/H/L/C on the candle at the cursor's X, not just the close
+      // (the prior `Magnet` mode always snapped to close, which
+      // operators found unhelpful when reading H/L levels off a
+      // candle's wick). #336.
+      crosshair: { mode: CrosshairMode.MagnetOHLC },
+      localization: {
+        // Override the bottom-axis crosshair time label so it follows
+        // the user's selected TZ (mirrors the tickMarkFormatter pattern
+        // — refs picked up via formatBarTimeRef / formatBarDayRef so a
+        // TZ flip doesn't require a chart rebuild). Without this,
+        // lightweight-charts falls back to its UTC default and the
+        // crosshair label disagrees with the tooltip's local-TZ time.
+        // #336.
+        timeFormatter: (time: Time): string => {
+          if (typeof time !== "number") return "";
+          const iso = new Date((time as number) * 1000).toISOString();
+          return (
+            formatBarDayRef.current(iso)
+            + " "
+            + formatBarTimeRef.current(iso, false)
+          );
+        },
+      },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
       handleScale: {
         // Disable Lightweight Charts' built-in mouse-wheel zoom —
