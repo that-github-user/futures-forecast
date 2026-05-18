@@ -115,7 +115,21 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
   // ── Re-bind options whenever data changes ────────────────────────
   const option = useMemo(() => buildStraddleMapOption(data), [data]);
   useEffect(() => {
-    if (!chartRef.current || !option) return;
+    if (!chartRef.current) return;
+    if (!option) {
+      // Cold-start transition (populated → null/empty). buildStraddle-
+      // MapOption returns null when data is null or strikes is empty.
+      // We can't call setOption(null, …) — that would throw. But we
+      // STILL need to wipe stale reference lines that were drawn on
+      // the previous frame's chart, otherwise EM/spot lines ghost
+      // over the empty placeholder (R2 blocker on round 1 of #226).
+      // Update dataRef so the next 'finished' (if one fires from a
+      // resize) sees null and bails, and call applyReferenceLines
+      // directly to perform the clear right now.
+      dataRef.current = data;
+      applyReferenceLines(chartRef.current, data, lastAppliedRef);
+      return;
+    }
     // notMerge so removing a series (e.g. strikes shrink) actually
     // clears prior data; clearing on every setOption is overkill.
     try {

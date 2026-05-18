@@ -159,17 +159,25 @@ export function applyReferenceLines(
   if (ySpot != null && data.spot != null) {
     pushLine(ySpot, "spot", `SPOT ${data.spot.toFixed(2)}`);
   }
-  // Cache key: serialize positions + label text rounded to 1px so a
-  // no-op re-render (same lines at same pixels) doesn't trigger a
-  // setOption that would re-fire 'finished' → infinite loop. Same
-  // pattern as TentChart's updateGraphic (#347).
-  const key = graphics
-    .map((g) =>
-      g.type === "line"
-        ? `L:${Math.round(g.shape?.y1 ?? NaN)}`
-        : `T:${(g.style?.text as string) ?? ""}@${Math.round(g.position?.[1] ?? NaN)}`,
-    )
-    .join("|");
+  // Cache key: serialize positions + label text + plot-area x-extent
+  // rounded to 1px so a no-op re-render (same lines at same pixels)
+  // doesn't trigger a setOption that would re-fire 'finished' →
+  // infinite loop. Same pattern as TentChart's updateGraphic (#347).
+  //
+  // `W:${xRight}` is included because the line graphics' x1/x2 depend
+  // on plot-area width: on a horizontal-only window resize, y-pixels
+  // stay the same (height unchanged), and without W in the key the
+  // cache would short-circuit, leaving stale lines that don't extend
+  // to the new grid edge (R1 round-2 nit on #226).
+  const key =
+    `W:${Math.round(xRight)}|` +
+    graphics
+      .map((g) =>
+        g.type === "line"
+          ? `L:${Math.round(g.shape?.y1 ?? NaN)}`
+          : `T:${(g.style?.text as string) ?? ""}@${Math.round(g.position?.[1] ?? NaN)}`,
+      )
+      .join("|");
   if (key === lastAppliedRef.current) return;
   lastAppliedRef.current = key;
   // `replaceMerge: ["graphic"]` ensures the resize path (which doesn't

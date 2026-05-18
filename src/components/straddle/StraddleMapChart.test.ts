@@ -424,6 +424,45 @@ describe("applyReferenceLines (#351 regression)", () => {
     expect(ref.current).toBe("");
   });
 
+  it("clears graphics on null-data transition (R2 round-2 blocker regression)", () => {
+    // Specifically protects the data-effect's null-option branch in
+    // StraddleMapChart.tsx: when buildStraddleMapOption returns null
+    // (data===null), the component now calls applyReferenceLines with
+    // null data directly to perform the clear. This test verifies the
+    // null branch behaves identically to the empty-strikes branch.
+    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const ref = stableRef();
+    applyReferenceLines(chart, operatorSnapshot(), ref);
+    expect(setOption).toHaveBeenCalledTimes(1);
+    applyReferenceLines(chart, null, ref);
+    expect(setOption).toHaveBeenCalledTimes(2);
+    const optArg = setOption.mock.calls[1][0] as { graphic: unknown[] };
+    expect(optArg.graphic).toEqual([]);
+    expect(setOption.mock.calls[1][1]).toEqual({ replaceMerge: ["graphic"] });
+  });
+
+  it("includes plot-area width in the cache key so horizontal-only resize re-renders (R1 round-2 nit)", () => {
+    // Cache-key pre-fix: only y-pixels and label text. On a height-
+    // fixed horizontal resize, the y values stay the same → cache hit
+    // → no re-render → stale x1/x2 leave the lines clipped or
+    // overhanging the new grid edge. The fix is to include xRight in
+    // the cache key.
+    const ref = stableRef();
+    const narrowChart = makeMockChart({ pixels: [50, 100], width: 600 });
+    applyReferenceLines(narrowChart.chart, operatorSnapshot(), ref);
+    expect(narrowChart.setOption).toHaveBeenCalledTimes(1);
+    const keyAfterNarrow = ref.current;
+
+    // Simulate a width change by giving the same ref to a wider mock
+    // chart — the cache key should differ on x-extent and trigger a
+    // fresh setOption.
+    const wideChart = makeMockChart({ pixels: [50, 100], width: 1200 });
+    applyReferenceLines(wideChart.chart, operatorSnapshot(), ref);
+    expect(wideChart.setOption).toHaveBeenCalledTimes(1);
+    const keyAfterWide = ref.current;
+    expect(keyAfterWide).not.toBe(keyAfterNarrow);
+  });
+
   it("verifies the operator's exact production indices produce finite pixels (not NaN)", () => {
     // Trace-through of the math: with em_upper=7414.25 between
     // strikes 7415 (idx 13) and 7410 (idx 14), the helper returns
