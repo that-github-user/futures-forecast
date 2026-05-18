@@ -24,7 +24,9 @@
  *     stays suppressed at/below it
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createRef, type MutableRefObject } from "react";
+import type * as echarts from "echarts";
 import type {
   ProgramFlowState,
   StraddleChainResponse,
@@ -41,6 +43,7 @@ import {
   netOi,
   netOiTint,
 } from "./straddleMapHelpers";
+import { applyReferenceLines } from "./applyReferenceLines";
 
 
 function emptyProgramFlow(): ProgramFlowState {
@@ -264,6 +267,183 @@ describe("buildStraddleMapOption", () => {
     expect(xAxis.max).toBeGreaterThanOrEqual(770);
     expect(xAxis.max).toBeLessThanOrEqual(780);
     expect(xAxis.min).toBe(-(xAxis.max as number));
+  });
+});
+
+
+/**
+ * Hand-rolled mock of the slice of `echarts.ECharts` that
+ * `applyReferenceLines` actually touches. happy-dom doesn't simulate
+ * canvas + the ECharts layout pipeline, so we mock at the API
+ * boundary: `convertToPixel`, `getWidth`, and `setOption`. Each test
+ * controls what convertToPixel returns to exercise a specific code
+ * path (valid pixels, [NaN, NaN], throw, or after-dispose).
+ */
+function makeMockChart(opts: {
+  pixels?: [number, number] | "nan" | "throw";
+  width?: number;
+  setOptionThrows?: boolean;
+} = {}) {
+  const { pixels = [400, 200], width = 800, setOptionThrows = false } = opts;
+  const setOption = vi.fn();
+  if (setOptionThrows) {
+    setOption.mockImplementation(() => {
+      throw new Error("chart disposed");
+    });
+  }
+  const convertToPixel = vi.fn((_: unknown, idx: number) => {
+    if (pixels === "throw") throw new Error("model not ready");
+    if (pixels === "nan") return [NaN, NaN];
+    // Linear ramp between top=pixels[1] and bot=pixels[1]+300 for
+    // smoke-test purposes. The shape of the returned array is all
+    // that matters for the production code — values just need to be
+    // finite for the success path.
+    return idx === 0 ? [pixels[0], pixels[1]] : [pixels[0], pixels[1] + 300];
+  });
+  return {
+    chart: {
+      convertToPixel,
+      getWidth: () => width,
+      setOption,
+    } as unknown as echarts.ECharts,
+    setOption,
+    convertToPixel,
+  };
+}
+
+describe("applyReferenceLines (#351 regression)", () => {
+  const stableRef = (): MutableRefObject<string> => {
+    const r = createRef<string>() as MutableRefObject<string>;
+    r.current = "";
+    return r;
+  };
+
+  // Operator's 2026-05-18 11:35 ET production snapshot — verified at
+  // the time as: em_upper=7414.25 / em_lower=7354.15 / spot=7384.2 /
+  // strike grid 7285..7480 step 5. This is the data that failed to
+  // render EM lines on the live page; pinning it as a regression
+  // fixture protects against future helper drift.
+  function operatorSnapshot(): StraddleChainResponse {
+    const strikes: StraddleStrikeRow[] = [];
+    for (let s = 7285; s <= 7480; s += 5) {
+      strikes.push(strike({ strike: s, call_oi: 100, put_oi: 100 }));
+    }
+    return snapshot({
+      spot: 7384.2,
+      atm_strike: 7385,
+      atm_straddle_mid: 30.05,
+      em_upper: 7414.25,
+      em_lower: 7354.15,
+      strikes,
+    });
+  }
+
+  it("does NOT write graphics when convertToPixel returns [NaN, NaN] (root cause of #351)", () => {
+    // Pre-fix: applyReferenceLines proceeded with NaN, propagating
+    // non-finite coords into graphic line shapes which ECharts
+    // silently dropped — visible bug = "EM lines missing despite
+    // valid data". Post-fix: the not-ready branch returns without
+    // calling setOption({graphic: ...}) so the next 'finished' event
+    // gets a clean retry.
+    const { chart, setOption } = makeMockChart({ pixels: "nan" });
+    applyReferenceLines(chart, operatorSnapshot(), stableRef());
+    expect(setOption).not.toHaveBeenCalled();
+  });
+
+  it("does NOT write graphics when convertToPixel throws (disposed/uninit model)", () => {
+    // Same posture as the NaN path — convertToPixel can throw when
+    // ECharts' component model is partially initialized or after
+    // dispose (#347 hotfix comment). The function must swallow the
+    // throw without calling setOption.
+    const { chart, setOption } = makeMockChart({ pixels: "throw" });
+    applyReferenceLines(chart, operatorSnapshot(), stableRef());
+    expect(setOption).not.toHaveBeenCalled();
+  });
+
+  it("writes graphics with replaceMerge when convertToPixel returns finite pixels", () => {
+    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const ref = stableRef();
+    applyReferenceLines(chart, operatorSnapshot(), ref);
+    expect(setOption).toHaveBeenCalledTimes(1);
+    const [optArg, mergeArg] = setOption.mock.calls[0];
+    expect(mergeArg).toEqual({ replaceMerge: ["graphic"] });
+    // 3 reference lines × 2 elements (line + label) = 6 graphic
+    // entries on the operator's snapshot (em_upper + em_lower + spot
+    // are all finite).
+    const graphic = (optArg as { graphic: unknown[] }).graphic;
+    expect(graphic).toHaveLength(6);
+    // Cache key updated so re-entry on identical data short-circuits.
+    expect(ref.current.length).toBeGreaterThan(0);
+  });
+
+  it("short-circuits when the cache key matches (no setOption re-fire)", () => {
+    // Critical: ECharts 'finished' event fires after every setOption
+    // including the one applyReferenceLines itself makes. Without a
+    // cache-key guard this would loop forever. The TentChart precedent
+    // (#347) uses the same pattern.
+    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const ref = stableRef();
+    applyReferenceLines(chart, operatorSnapshot(), ref);
+    expect(setOption).toHaveBeenCalledTimes(1);
+    applyReferenceLines(chart, operatorSnapshot(), ref);
+    // Still 1 — second call detected unchanged graphics via cache key.
+    expect(setOption).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives setOption throwing mid-tick (chart disposed between checks)", () => {
+    // Race: convertToPixel succeeds but the chart is disposed before
+    // the subsequent setOption. The try/catch must swallow the throw
+    // so the 'finished' handler doesn't propagate an unhandled
+    // exception up to ChunkLoadErrorBoundary (this caused the Tent-tab
+    // self-heal loop pre-#225 — same class of bug).
+    const { chart } = makeMockChart({
+      pixels: [50, 100],
+      setOptionThrows: true,
+    });
+    const ref = stableRef();
+    expect(() =>
+      applyReferenceLines(chart, operatorSnapshot(), ref),
+    ).not.toThrow();
+    // Cache reset so a future remount re-applies cleanly.
+    expect(ref.current).toBe("");
+  });
+
+  it("clears graphics (with replaceMerge) on cold-start when previously applied", () => {
+    const { chart, setOption } = makeMockChart({ pixels: [50, 100] });
+    const ref = stableRef();
+    // First populate.
+    applyReferenceLines(chart, operatorSnapshot(), ref);
+    expect(setOption).toHaveBeenCalledTimes(1);
+    // Then transition to cold-start (no strikes).
+    applyReferenceLines(chart, snapshot({ strikes: [] }), ref);
+    expect(setOption).toHaveBeenCalledTimes(2);
+    const [, mergeArg] = setOption.mock.calls[1];
+    expect(mergeArg).toEqual({ replaceMerge: ["graphic"] });
+    const optArg = setOption.mock.calls[1][0] as { graphic: unknown[] };
+    expect(optArg.graphic).toEqual([]);
+    expect(ref.current).toBe("");
+  });
+
+  it("verifies the operator's exact production indices produce finite pixels (not NaN)", () => {
+    // Trace-through of the math: with em_upper=7414.25 between
+    // strikes 7415 (idx 13) and 7410 (idx 14), the helper returns
+    // ~13.15 — well within (0, 39) on the 40-strike fixture. The
+    // pre-fix bug wasn't the math; it was the timing of
+    // convertToPixel. This test asserts the math itself stays
+    // correct: helper → pxForIndex must produce finite y-pixels for
+    // every reference line on the operator's exact snapshot.
+    const data = operatorSnapshot();
+    const indices = buildReferenceLineIndices(data);
+    expect(indices.spot).not.toBeNull();
+    expect(indices.emUpper).not.toBeNull();
+    expect(indices.emLower).not.toBeNull();
+    expect(Number.isFinite(indices.spot!)).toBe(true);
+    expect(Number.isFinite(indices.emUpper!)).toBe(true);
+    expect(Number.isFinite(indices.emLower!)).toBe(true);
+    // em_upper closest to top → small index; em_lower closest to
+    // bottom → large index. Locks the orientation.
+    expect(indices.emUpper!).toBeLessThan(indices.spot!);
+    expect(indices.spot!).toBeLessThan(indices.emLower!);
   });
 });
 

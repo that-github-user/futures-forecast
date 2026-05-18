@@ -39,11 +39,8 @@ import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { StraddleChainResponse } from "../../api/terminalTypes";
-import {
-  buildReferenceLineIndices,
-  buildStraddleMapOption,
-  STRADDLE_MAP_GRID,
-} from "./straddleMapHelpers";
+import { buildStraddleMapOption } from "./straddleMapHelpers";
+import { applyReferenceLines } from "./applyReferenceLines";
 import { InfoPopover } from "../common/InfoPopover";
 import "./StraddleMapChart.css";
 
@@ -55,27 +52,63 @@ interface Props {
 export function StraddleMapChart({ data, height = 540 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  // Hold the most recent data on a ref so the ResizeObserver callback
-  // can re-apply reference lines after a resize without rebuilding
-  // the whole option object.
+  // Hold the most recent data on a ref so the chart's `finished`
+  // event handler (and the ResizeObserver) can re-apply reference
+  // lines against the LATEST data, not the data captured by the
+  // closure at the time the handler was registered. Solves R1+R2's
+  // "stale-data closure" finding.
   const dataRef = useRef<StraddleChainResponse | null>(null);
+  // Cache key of the last successfully applied reference-line
+  // graphics. Breaks the `finished` → setOption({graphic}) →
+  // `finished` re-fire loop the same way TentChart does (#347).
+  const lastAppliedRef = useRef<string>("");
 
   // ── Init once ────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = echarts.init(containerRef.current);
     chartRef.current = chart;
+
+    // ECharts fires 'finished' deterministically after every layout
+    // completes (initial paint, setOption, resize). Hooking the
+    // reference-line application here means we never have to guess
+    // whether `convertToPixel` is ready — it always is by the time
+    // 'finished' fires. Replaces the prior rAF-poll workaround which
+    // R1+R2 flagged for disposed-chart access and stale-closure bugs.
+    const onFinished = () => {
+      // Read the latest data via the ref, not via closure — a new
+      // data poll between setOption and the 'finished' event would
+      // otherwise apply stale EM positions.
+      applyReferenceLines(chart, dataRef.current, lastAppliedRef);
+    };
+    try {
+      chart.on("finished", onFinished);
+    } catch {
+      // chart was disposed between init and event registration — no-op
+    }
+
     const ro = new ResizeObserver(() => {
-      chart.resize();
-      // Resize invalidates the grid pixel positions used to place
-      // the spot/EM lines — recompute against the current data.
-      applyReferenceLines(chart, dataRef.current);
+      try {
+        chart.resize();
+      } catch {
+        // chart disposed mid-resize — no-op
+      }
+      // resize() will cause ECharts to re-layout and fire 'finished',
+      // so we don't need to call applyReferenceLines directly here.
     });
     ro.observe(containerRef.current);
+
     return () => {
       ro.disconnect();
+      try {
+        chart.off("finished", onFinished);
+      } catch {
+        // already disposed — no-op
+      }
       chart.dispose();
       chartRef.current = null;
+      // Reset cache so a remount doesn't think it already applied.
+      lastAppliedRef.current = "";
     };
   }, []);
 
@@ -85,9 +118,21 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
     if (!chartRef.current || !option) return;
     // notMerge so removing a series (e.g. strikes shrink) actually
     // clears prior data; clearing on every setOption is overkill.
-    chartRef.current.setOption(option, { notMerge: true });
+    try {
+      chartRef.current.setOption(option, { notMerge: true });
+    } catch {
+      // chart disposed between option-build and setOption — bail
+      return;
+    }
     dataRef.current = data;
-    applyReferenceLines(chartRef.current, data);
+    // notMerge wipes graphics; the cache key must be reset so the
+    // next 'finished' event re-applies them (otherwise the cache
+    // would short-circuit and the reference lines would stay missing
+    // until the next data poll).
+    lastAppliedRef.current = "";
+    // applyReferenceLines is NOT called inline here — ECharts will
+    // fire 'finished' once layout completes and the handler above
+    // will apply the lines against the (now-current) dataRef.
   }, [option, data]);
 
   const hasStrikes = !!data && data.strikes.length > 0;
@@ -168,173 +213,6 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
   );
 }
 
-/** Overlay the spot + EM reference lines using ECharts `graphic`
- *  elements positioned by computed pixel y-coordinates. This is the
- *  fix for #321 — `markLine` with a fractional `yAxis` on a
- *  category axis silently rounded to the nearest integer band via
- *  `OrdinalScale.parse`, which mis-aligned the operator's reference
- *  lines by up to ±half a strike interval.
- *
- *  Strategy: `chart.convertToPixel({yAxisIndex: 0}, integerIdx)`
- *  works correctly on category axes — it returns the band-CENTER
- *  pixel for an integer data index. We query two adjacent integer
- *  indices and linearly interpolate to get the pixel position for
- *  any fractional index. Then we draw a line via the `graphic`
- *  component, which lives in pixel-space and bypasses the data-axis
- *  pipeline entirely.
- *
- *  Called from:
- *    - the data-update effect, after every `setOption` call;
- *    - the ResizeObserver, after `chart.resize()` invalidates the
- *      previous grid layout.
- */
-// Bound the retry loop in case the chart never lays out (e.g., it
-// got disposed between the data effect and the next animation
-// frame, or the container's measured size stays zero because the
-// `/straddle` tab is rendered but hidden). 6 frames at ~16ms = ~100ms
-// of layout-settle headroom; in practice the chart is laid out on
-// the first or second frame.
-const MAX_REFERENCE_LINE_RETRIES = 6;
-
-function applyReferenceLines(
-  chart: echarts.ECharts,
-  data: StraddleChainResponse | null,
-  retriesLeft: number = MAX_REFERENCE_LINE_RETRIES,
-): void {
-  const indices = buildReferenceLineIndices(data);
-  if (!data || data.strikes.length === 0) {
-    // Clear any leftover graphic elements (e.g. when transitioning
-    // from a live snapshot to cold-start).
-    chart.setOption({ graphic: [] });
-    return;
-  }
-  const N = data.strikes.length;
-  if (N < 2) {
-    // Need at least two strikes to interpolate. Single-strike case
-    // is degenerate enough to just skip the reference lines.
-    chart.setOption({ graphic: [] });
-    return;
-  }
-  // Linear interpolation anchors: pixel y of strike index 0 (top)
-  // and strike index N-1 (bottom). `convertToPixel` returns
-  // [x, y]; we want the y.
-  let yTopRaw: number | undefined;
-  let yBotRaw: number | undefined;
-  try {
-    const t = chart.convertToPixel({ yAxisIndex: 0 }, 0);
-    const b = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
-    if (Array.isArray(t)) yTopRaw = (t as number[])[1];
-    if (Array.isArray(b)) yBotRaw = (b as number[])[1];
-  } catch {
-    // convertToPixel can throw if the chart's internal model hasn't
-    // been built yet (race between init/setOption and the layout
-    // pipeline). Fall through to the retry path below.
-  }
-  if (
-    yTopRaw === undefined ||
-    yBotRaw === undefined ||
-    !Number.isFinite(yTopRaw) ||
-    !Number.isFinite(yBotRaw)
-  ) {
-    // Chart not laid out yet — convertToPixel returns [NaN, NaN] when
-    // the model's been rebuilt by `notMerge: true` but the layout
-    // pipeline hasn't run yet, OR when the container has zero
-    // measured size. Clear any stale graphics and retry on the next
-    // animation frame, by which point layout will have completed.
-    // Without this retry, the EM/spot lines silently never render
-    // because the first applyReferenceLines call writes NaN-positioned
-    // graphics (which echarts drops), and there's no later trigger
-    // to redraw unless the user resizes the window.
-    chart.setOption({ graphic: [] }, { replaceMerge: ["graphic"] });
-    if (retriesLeft > 0) {
-      requestAnimationFrame(() => {
-        // Re-enter with the same data; layout typically completes
-        // within 1-2 frames after setOption with `notMerge: true`.
-        applyReferenceLines(chart, data, retriesLeft - 1);
-      });
-    }
-    return;
-  }
-  const yTop = yTopRaw;
-  const yBot = yBotRaw;
-  // x-extent of the plot area sourced from the same STRADDLE_MAP_GRID
-  // constant that buildStraddleMapOption applies to the chart's grid
-  // config. Changing one side without the other would render the
-  // overlay lines outside the data area.
-  const width = chart.getWidth();
-  const xLeft = STRADDLE_MAP_GRID.left;
-  const xRight = width - STRADDLE_MAP_GRID.right;
-
-  function pxForIndex(idx: number | null): number | null {
-    if (idx == null) return null;
-    // N >= 2 enforced by the early-return above, so the linear
-    // interpolation is safe.
-    const frac = idx / (N - 1);
-    return yTop + frac * (yBot - yTop);
-  }
-
-  type GraphicEl = {
-    type: "line" | "text";
-    z?: number;
-    silent?: boolean;
-    shape?: { x1: number; y1: number; x2: number; y2: number };
-    style?: Record<string, unknown>;
-    position?: [number, number];
-  };
-  const graphics: GraphicEl[] = [];
-  function pushLine(
-    y: number,
-    cls: "em-upper" | "em-lower" | "spot",
-    labelText: string,
-  ) {
-    const isSpot = cls === "spot";
-    graphics.push({
-      type: "line",
-      z: 50,
-      silent: true,
-      shape: { x1: xLeft, y1: y, x2: xRight, y2: y },
-      style: {
-        stroke: isSpot ? colors.textBright : colors.accentAmber,
-        lineWidth: isSpot ? 1.6 : 1.2,
-        lineDash: isSpot ? undefined : [4, 3],
-      },
-    });
-    graphics.push({
-      type: "text",
-      z: 51,
-      silent: true,
-      position: [xRight - 6, y + (cls === "em-lower" ? 4 : -14)],
-      style: {
-        text: labelText,
-        fill: isSpot ? colors.textBright : colors.accentAmber,
-        font: `${isSpot ? "bold " : ""}${isSpot ? 11 : 10}px ${fonts.mono}`,
-        textAlign: "right",
-      },
-    });
-  }
-
-  const yUp = pxForIndex(indices.emUpper);
-  const yLow = pxForIndex(indices.emLower);
-  const ySpot = pxForIndex(indices.spot);
-  if (yUp != null && data.em_upper != null) {
-    pushLine(yUp, "em-upper", `EM+ ${data.em_upper.toFixed(0)}`);
-  }
-  if (yLow != null && data.em_lower != null) {
-    pushLine(yLow, "em-lower", `EM- ${data.em_lower.toFixed(0)}`);
-  }
-  if (ySpot != null && data.spot != null) {
-    pushLine(ySpot, "spot", `SPOT ${data.spot.toFixed(2)}`);
-  }
-  // `replaceMerge: ["graphic"]` ensures the RESIZE path (which doesn't
-  // do a notMerge setOption) replaces the previous frame's graphics
-  // rather than merging on top. The data-update path's preceding
-  // `setOption(option, { notMerge: true })` already wipes graphics
-  // before this runs, so the merge mode there is harmless.
-  chart.setOption(
-    { graphic: graphics },
-    { replaceMerge: ["graphic"] },
-  );
-}
 
 /** Compact single-row legend overlaid in the chart's top-left corner.
  *  Covers the four symbols the chart uses under the single-bar net-OI
