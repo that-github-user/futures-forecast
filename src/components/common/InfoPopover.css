@@ -31,9 +31,7 @@
   border-color: var(--text-muted);
 }
 .info-popover-btn.active {
-  /* TODO(#326): replace `#1a2235` with `var(--bg-panel-head)` once
-   * the alias lands in globals.css. */
-  background: #1a2235;
+  background: var(--bg-panel-head);
   color: var(--text-bright);
   border-color: var(--accent-amber);
 }
