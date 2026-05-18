@@ -310,6 +310,11 @@ export function nextFocusedCell(
     "Home", "End", "PageUp", "PageDown",
   ]);
   if (key === "Escape") return { kind: "clear" };
+  // Defensive: degenerate grid (no rows / no cols) — refuse to init
+  // or move. Caller falls through to unchanged behavior. Without this
+  // guard a degenerate `maxCol === -1` would let the `init` path
+  // synthesize a colIdx of -1 (#331 R1 nit 1).
+  if (maxRow < 0 || maxCol < 0) return { kind: "unchanged" };
   if (current == null) {
     return NAV_KEYS.has(key) ? { kind: "init" } : { kind: "unchanged" };
   }

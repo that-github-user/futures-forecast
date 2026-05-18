@@ -142,10 +142,22 @@ interface HoveredCell {
  *   - Hover and focus can coexist (hover wins for tooltip rendering
  *     if both are set; focus drives the focus ring + aria-live).
  *   - Touch also writes to focus (not hover) so a tap-then-arrow-key
- *     flow works on mobile/tablet without a mouse. */
+ *     flow works on mobile/tablet without a mouse.
+ *
+ *  `mouseX`/`mouseY` are captured at the moment of dispatch (keyboard
+ *  arrow press OR touch tap) by reading the lane-cell's
+ *  `getBoundingClientRect` inside the EVENT HANDLER (where reading
+ *  refs is legal). Storing them on the state shape means the render
+ *  path never touches refs — fixes the #331 R1 blocker about ref
+ *  reads during render returning stale rects on first paint after
+ *  focus change. Trade-off: a window resize while a cell is focused
+ *  leaves the tooltip at the pre-resize coords until next focus
+ *  change. Acceptable; mouse hover is unaffected (uses live cursor). */
 interface FocusedCell {
   rowIdx: number;
   colIdx: number;
+  mouseX: number;
+  mouseY: number;
 }
 
 export function StrikeVelocityTape({
@@ -231,47 +243,52 @@ export function StrikeVelocityTape({
   }
 
   // Derive a HoveredCell from focusedCell so the existing
-  // MinuteTooltip component renders for keyboard users too. The
-  // mouseX/Y here aren't real cursor coords — we point them at the
-  // focused cell's approximate screen position (computed from the
-  // grid's bounding rect, the focused row index, and the column
-  // fraction). The tooltip's flip logic still works because the
-  // coords are real client-space pixels.
+  // MinuteTooltip component renders for keyboard users too. Pure
+  // index/text lookup — the mouseX/Y already live on focusedCell,
+  // captured at dispatch time (see computeFocusCellCoords + the
+  // event handlers below). The render path NEVER reads refs (#331
+  // R1 BLOCKER fix).
   const focusCellRow = focusedCell ? layout.rows[focusedCell.rowIdx] : null;
   const focusCellTs =
     focusedCell != null ? layout.axis[focusedCell.colIdx] : null;
-  const focusCellPayload: HoveredCell | null = (() => {
-    if (!focusedCell || !focusCellRow || focusCellTs == null) return null;
-    const callVol = focusCellRow.callMap.get(focusCellTs) ?? 0;
-    const putVol = focusCellRow.putMap.get(focusCellTs) ?? 0;
-    // Approximate client coords for tooltip placement. The grid
-    // rect gives us the lane area; column index → fractional x,
-    // row index → integer y row center. If the grid hasn't been
-    // measured yet (first render) the tooltip just anchors at
-    // viewport (0,0) for one frame; React rerenders on focus
-    // change so this is invisible to the operator.
-    const rect = gridRef.current?.getBoundingClientRect();
-    const mouseX = rect
-      ? rect.left + 96 + ((focusedCell.colIdx + 0.5) / layout.axis.length) *
-        (rect.width - 96 - 120)
-      : 0;
-    const mouseY = rect
-      ? rect.top + (focusedCell.rowIdx + 0.5) * 44
-      : 0;
+  const focusCellPayload: HoveredCell | null =
+    !focusedCell || !focusCellRow || focusCellTs == null
+      ? null
+      : {
+          strike: focusCellRow.strike,
+          ts: focusCellTs,
+          callVol: focusCellRow.callMap.get(focusCellTs) ?? 0,
+          putVol: focusCellRow.putMap.get(focusCellTs) ?? 0,
+          isSpike:
+            focusCellRow.callSpikes.has(focusCellTs) ||
+            focusCellRow.putSpikes.has(focusCellTs),
+          mouseX: focusedCell.mouseX,
+          mouseY: focusedCell.mouseY,
+          rowCallSession: focusCellRow.split.call,
+          rowPutSession: focusCellRow.split.put,
+        };
+
+  // Compute client coords for a focused cell by querying the
+  // corresponding lane-cell's DOM rect. Called from EVENT HANDLERS
+  // (keyboard, touch) where reading refs is legal. Uses the actual
+  // `.svt-lane-cell` element for the row so the math doesn't depend
+  // on hardcoded grid-column widths — survives the responsive
+  // session-column collapse at narrow viewports (#331 R1 nit 3).
+  const computeFocusCoords = (
+    rowIdx: number,
+    colIdx: number,
+  ): { mouseX: number; mouseY: number } => {
+    const grid = gridRef.current;
+    if (!grid) return { mouseX: 0, mouseY: 0 };
+    const cells = grid.querySelectorAll<HTMLElement>(".svt-lane-cell");
+    const cell = cells[rowIdx];
+    if (!cell) return { mouseX: 0, mouseY: 0 };
+    const r = cell.getBoundingClientRect();
     return {
-      strike: focusCellRow.strike,
-      ts: focusCellTs,
-      callVol,
-      putVol,
-      isSpike:
-        focusCellRow.callSpikes.has(focusCellTs) ||
-        focusCellRow.putSpikes.has(focusCellTs),
-      mouseX,
-      mouseY,
-      rowCallSession: focusCellRow.split.call,
-      rowPutSession: focusCellRow.split.put,
+      mouseX: r.left + ((colIdx + 0.5) / layout.axis.length) * r.width,
+      mouseY: r.top + r.height / 2,
     };
-  })();
+  };
   // Hover wins over focus for tooltip rendering — the operator's
   // active mouse takes precedence over a stale keyboard focus.
   const tooltipCell = hoveredCell ?? focusCellPayload;
@@ -295,20 +312,37 @@ export function StrikeVelocityTape({
         const startRow = atmRowIdx >= 0
           ? atmRowIdx
           : Math.floor(layout.rows.length / 2);
-        setFocusedCell({ rowIdx: startRow, colIdx: layout.axis.length - 1 });
+        const colIdx = layout.axis.length - 1;
+        const coords = computeFocusCoords(startRow, colIdx);
+        setFocusedCell({ rowIdx: startRow, colIdx, ...coords });
         e.preventDefault();
         return;
       }
-      case "move":
-        setFocusedCell({ rowIdx: result.rowIdx, colIdx: result.colIdx });
+      case "move": {
+        const coords = computeFocusCoords(result.rowIdx, result.colIdx);
+        setFocusedCell({
+          rowIdx: result.rowIdx,
+          colIdx: result.colIdx,
+          ...coords,
+        });
         e.preventDefault();
         return;
+      }
       case "clear":
         setFocusedCell(null);
         gridRef.current?.blur();
         e.preventDefault();
         return;
       case "unchanged":
+        // Enter / Space / Tab / letter keys fall through. Tab moves
+        // focus away from the grid (browser default). Enter / Space
+        // are no-ops today (no per-cell activation) but we
+        // preventDefault on them defensively so the grid being
+        // nested in a future form doesn't accidentally submit on a
+        // cell selection. Tab and other keys still bubble.
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+        }
         return;
     }
   };
@@ -380,10 +414,12 @@ export function StrikeVelocityTape({
           }
           onKeyDown={handleGridKeyDown}
           onBlur={(e) => {
-            // Clear focus when focus moves OUTSIDE the grid. Inside-
-            // grid focus shifts (e.g., the InfoButton in PanelHead
-            // doesn't apply here) shouldn't clear; relatedTarget
-            // tells us where focus went.
+            // Clear focus when focus moves OUTSIDE the grid. The
+            // grid currently contains no inner focusable elements,
+            // but the relatedTarget check is defensive for any
+            // future additions (e.g., per-row buttons) — without
+            // it, an internal focus shift would dismiss the
+            // tooltip in addition to whatever the new focus did.
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
               setFocusedCell(null);
             }
@@ -401,11 +437,19 @@ export function StrikeVelocityTape({
                 focusedCell?.rowIdx === rowIdx ? focusedCell.colIdx : null
               }
               onCellHover={setHoveredCell}
-              onCellTouch={(touchedCol) => {
+              onCellTouch={(touchedCol, touchX, touchY) => {
                 // Touch tap pins focus, not hover — finger-up
                 // shouldn't dismiss the tooltip. The grid takes
                 // keyboard focus so subsequent arrow keys work.
-                setFocusedCell({ rowIdx, colIdx: touchedCol });
+                // Coords come from the touch event directly (real
+                // client-space pixels), not synthesized — most
+                // precise placement of any input mode.
+                setFocusedCell({
+                  rowIdx,
+                  colIdx: touchedCol,
+                  mouseX: touchX,
+                  mouseY: touchY,
+                });
                 gridRef.current?.focus();
               }}
             />
@@ -608,7 +652,7 @@ function LaneRow({
   isAtm: boolean;
   focusedColIdx: number | null;
   onCellHover: (cell: HoveredCell | null) => void;
-  onCellTouch: (colIdx: number) => void;
+  onCellTouch: (colIdx: number, touchX: number, touchY: number) => void;
 }) {
   return (
     <div
@@ -658,7 +702,7 @@ function LaneSvg({
   scale: number;
   focusedColIdx: number | null;
   onCellHover: (cell: HoveredCell | null) => void;
-  onCellTouch: (colIdx: number) => void;
+  onCellTouch: (colIdx: number, touchX: number, touchY: number) => void;
 }) {
   const W = LANE_VIEWBOX_W;
   const H = LANE_VIEWBOX_H;
@@ -735,15 +779,23 @@ function LaneSvg({
   // state, NOT hover state). A tap pins the cell; the next tap
   // outside the grid clears focus via the grid's onBlur. We
   // preventDefault to suppress the synthetic mouse events the
-  // browser would otherwise fire on tap end.
+  // browser would otherwise fire on tap end (incl. iOS Safari's
+  // 300ms double-tap-to-zoom delay — `touch-action: manipulation`
+  // in the lane SVG's CSS is the belt-and-suspenders).
   const handleTouchStart = (e: ReactTouchEvent<SVGSVGElement>) => {
     const touch = e.touches[0];
     if (!touch) return;
+    // preventDefault unconditionally — even off-cell taps in the
+    // lane SVG should not generate synthetic mouse events that
+    // would trigger the hover path on adjacent SVG elements
+    // (#331 R1 nit 2).
+    e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const colIdx = cellIndexFromX(touch.clientX, rect, axis.length);
     if (colIdx < 0) return;
-    onCellTouch(colIdx);
-    e.preventDefault();
+    // Pass the touch's real client coords through — most precise
+    // anchor for the tooltip flip logic of any input mode.
+    onCellTouch(colIdx, touch.clientX, touch.clientY);
   };
   // Focus-ring overlay (#331): when this row contains the focused
   // cell, render a bright outline at the cell's column position.

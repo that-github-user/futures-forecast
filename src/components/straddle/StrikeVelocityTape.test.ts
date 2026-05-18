@@ -545,6 +545,23 @@ describe("nextFocusedCell", () => {
     expect(nextFocusedCell("Enter", { rowIdx: 2, colIdx: 5 }, MAX_ROW, MAX_COL))
       .toEqual({ kind: "unchanged" });
   });
+
+  it("returns 'unchanged' on degenerate grid (no rows or no cols)", () => {
+    // Empty axis or empty row list → degenerate grid; nav must
+    // refuse to init / move (avoids colIdx=-1 from the init path).
+    expect(nextFocusedCell("ArrowRight", null, -1, MAX_COL))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("ArrowRight", null, MAX_ROW, -1))
+      .toEqual({ kind: "unchanged" });
+    expect(nextFocusedCell("Home", { rowIdx: 0, colIdx: 0 }, MAX_ROW, -1))
+      .toEqual({ kind: "unchanged" });
+  });
+
+  it("Escape still clears focus even on degenerate grid", () => {
+    // Escape should always work — defensive dismiss path.
+    expect(nextFocusedCell("Escape", { rowIdx: 0, colIdx: 0 }, -1, -1))
+      .toEqual({ kind: "clear" });
+  });
 });
 
 // ── Cold-start (all-null headlines) integration smoke ─────────────

@@ -237,6 +237,11 @@
   width: 100%;
   height: 100%;
   display: block;
+  /* Suppress iOS Safari's 300ms double-tap-to-zoom delay (#331 R2
+   * nit 6). `manipulation` keeps pinch-zoom + pan but disables
+   * double-tap-zoom on this element — first tap dispatches
+   * immediately so onTouchStart fires without the iOS delay. */
+  touch-action: manipulation;
 }
 
 /* Session column. Shrinks with viewport via the clamp() on grid
