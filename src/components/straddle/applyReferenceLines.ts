@@ -72,10 +72,19 @@ export function applyReferenceLines(
   let yTopRaw: number | undefined;
   let yBotRaw: number | undefined;
   try {
+    // ECharts API contract: `convertToPixel({yAxisIndex: 0}, value)`
+    // returns the SCALAR y-pixel (a single number), NOT an [x, y]
+    // pair. The pair form is only returned when the finder specifies
+    // a full coordinate system (e.g. `{seriesIndex: 0}`). Operator-
+    // confirmed empirically in production: t=41.625, b=480.375.
+    // Original `Array.isArray(t)` guard was wrong — it returned false
+    // on the scalar, left yTopRaw undefined, and silently dropped
+    // every reference-line render. Root cause of #351 returning
+    // post-#226/#227 deploys.
     const t = chart.convertToPixel({ yAxisIndex: 0 }, 0);
     const b = chart.convertToPixel({ yAxisIndex: 0 }, N - 1);
-    if (Array.isArray(t)) yTopRaw = (t as number[])[1];
-    if (Array.isArray(b)) yBotRaw = (b as number[])[1];
+    if (typeof t === "number") yTopRaw = t;
+    if (typeof b === "number") yBotRaw = b;
   } catch {
     // convertToPixel can throw if the chart's component model is in a
     // partially-initialized OR disposed state (#347 hotfix comment).
