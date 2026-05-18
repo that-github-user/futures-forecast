@@ -93,8 +93,13 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
       } catch {
         // chart disposed mid-resize — no-op
       }
-      // resize() will cause ECharts to re-layout and fire 'finished',
-      // so we don't need to call applyReferenceLines directly here.
+      // With `animation: false` in the chart option, ECharts' 'finished'
+      // event doesn't reliably fire after resize() either. Apply the
+      // reference lines explicitly so a window resize redraws them at
+      // the new plot-area width. The cache key includes xRight so this
+      // call DOES write fresh graphics when width changed (and short-
+      // circuits when nothing did).
+      applyReferenceLines(chart, dataRef.current, lastAppliedRef);
     });
     ro.observe(containerRef.current);
 
@@ -140,13 +145,20 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
     }
     dataRef.current = data;
     // notMerge wipes graphics; the cache key must be reset so the
-    // next 'finished' event re-applies them (otherwise the cache
-    // would short-circuit and the reference lines would stay missing
-    // until the next data poll).
+    // next applyReferenceLines call writes a fresh set.
     lastAppliedRef.current = "";
-    // applyReferenceLines is NOT called inline here — ECharts will
-    // fire 'finished' once layout completes and the handler above
-    // will apply the lines against the (now-current) dataRef.
+    // Explicit kick: don't rely solely on ECharts' 'finished' event
+    // — with `animation: false` in the chart option, 'finished' is
+    // not reliably emitted in ECharts 6.x (operator-confirmed
+    // production symptom: bars rendered, EM lines didn't). Matches
+    // TentChart's pattern (#347) which calls updateGraphic()
+    // explicitly after init AND registers the 'finished' listener
+    // for subsequent resizes. setOption updates layout synchronously
+    // for non-animated charts, so convertToPixel is safe to call
+    // here. If layout ISN'T ready (NaN pixels), applyReferenceLines
+    // bails without writing and the 'finished' listener provides
+    // defense in depth.
+    applyReferenceLines(chartRef.current, data, lastAppliedRef);
   }, [option, data]);
 
   const hasStrikes = !!data && data.strikes.length > 0;
