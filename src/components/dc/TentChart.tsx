@@ -346,8 +346,9 @@ export function TentChart({
         // the tier spacing from 0/14/28 to 0/18/36 so adjacent tiers
         // don't visually touch even when colors clash (operators
         // reported the 14px spacing still read as a mush — see #344
-        // discussion). Tier 0 (poles) occupies pixels 36-50; reserving
-        // 56 leaves a small headroom buffer over the data area.
+        // discussion). Tier 0 (poles) occupies pixels ~36-52 at
+        // default echarts 12px font + ~14-16px line-height; reserving
+        // 56 leaves a 4-6 px headroom buffer over the data area.
         // Same value for both compact and full modes — at compact
         // height=180 (per DCTentTab), this consumes ~31% of vertical
         // resolution but is the cost of three distinct readable rows.
