@@ -128,9 +128,10 @@ export function TentChart({
     // Padding moves the label box DOWN by N px from the line's
     // top endpoint without changing the line endpoint itself, so
     // X-collision in markLine geometry no longer implies overlap of
-    // the label text boxes. The chart grid `top: 32` already
-    // reserves the band these labels occupy (kept that way in
-    // the grid config below).
+    // the label text boxes. The chart grid `top: 48` (both compact
+    // and full modes — see grid config below) reserves the band
+    // these labels occupy with ~8px headroom over tier 2's bottom
+    // edge.
     type LabelPosition = "start" | "middle" | "end";
     type Padding = [number, number, number, number]; // [top, right, bottom, left]
     const TIER_POLE: Padding = [0, 0, 0, 0];
@@ -338,14 +339,17 @@ export function TentChart({
         // Top reserves the three-tier label band (Poles | SPX | BE@exp)
         // staggered via per-tier padding (#337). Tier offsets are
         // 0/14/28 px, plus ~12 px text height for the bottommost tier
-        // = ~40 px needed. Compact mode (small-multiples) gets a
-        // slightly tighter band — 32 px is enough since label text
-        // is the same size but operators read the small chart less
-        // closely, so a small overlap risk with the chart border is
-        // acceptable. Pre-#337 this was 16/32 with all labels stacked
-        // at the same top position; operators reported collisions
-        // when SPX sat near a pole.
-        top: compact ? 32 : 48,
+        // = ~40 px needed. Both compact (small-multiples on the Tent
+        // tab) and full mode get 48 px — at compact height=180 (per
+        // DCTentTab), this trades ~5% of vertical data resolution for
+        // labels that don't bleed into the data area. R1 flagged that
+        // the previously-tighter 32 px in compact left BE@exp ~8 px
+        // inside the plot area; harmless for tent shape but
+        // distracting for an operator scanning the small-multiples
+        // grid. Pre-#337 this was 16/32 with all labels stacked at
+        // the same top position; operators reported collisions when
+        // SPX sat near a pole.
+        top: 48,
         // Bottom needs to clear: x-axis name "SPX" (~24px) + the
         // moved-from-top legend strip (~24px) + a little padding.
         // Compact mode: legend is hidden so revert to tight bottom.
