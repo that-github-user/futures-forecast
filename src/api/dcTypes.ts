@@ -559,12 +559,36 @@ export interface DCExitAlert {
 //   "intrinsic"      — no IVs anywhere; tent is intrinsic-only
 //                      (frontend MUST surface the warning).
 //
-// `current_spx_source`:
-//   "broker_state"        — live SPX feed available; render the
-//                           "you are here" marker.
-//   "fallback_midstrike"  — broker_state.json missing; tent is
-//                           centered on strike midpoint and the
-//                           operator should NOT see a SPX marker.
+// `current_spx_source` (#338 — gathered from `api/app.py:_read_current_spx`
+// + the legacy fallback at app.py:1314):
+//   "index"               — RTH SPX cash from broker_state, authoritative.
+//   "es_proxy"             — ETH proxy: ES front-month - fresh basis
+//                            (<12h old). Render SPX marker with "(ES)" tag.
+//   "es_proxy_stale"       — ES proxy with basis >12h old (weekend gap,
+//                            extended /terminal outage). Render SPX
+//                            marker dashed + "(ES~)" tag.
+//   "broker_state"         — LEGACY fallback when sidecar predates #290
+//                            (no `spx_source` key on disk). Treated as
+//                            authoritative for rendering (solid line, no
+//                            tag) — same visual as "index". To be removed
+//                            after #290 has been live one full session;
+//                            keep in the union until then so a deploy-
+//                            window mismatch doesn't break the type.
+//   "fallback_midstrike"   — SpxProxy ran but produced nothing AND no
+//                            sidecar value; tent centered on strike
+//                            midpoint. Render SPX marker dashed +
+//                            "(est)" tag so operator sees a placeholder
+//                            without being misled into thinking it's real.
+//   "unavailable"          — daemon's SpxProxy returned no value at all;
+//                            tent centered on strike midpoint; SPX
+//                            marker suppressed (backend leaves
+//                            current_spx=null in this case).
+//
+// Pre-#338 this was typed as `"broker_state" | "fallback_midstrike"`
+// AND the SPX-rendering gate checked `=== "broker_state"`. With the
+// post-#290 daemon emitting "index" / "es_proxy" / etc., the gate never
+// matched and SPX never rendered. Fixed in #338 by both broadening the
+// union AND switching the gate to `current_spx != null`.
 //
 // `phantom: true` → render with dashed border + "would-have-entered"
 //                   pill so operators can tell phantoms from real
@@ -572,7 +596,13 @@ export interface DCExitAlert {
 //
 // `warnings`: human-readable degradation strings — banner candidates.
 export type DCTentIVSource = "entry" | "latest" | "entry_fallback" | "intrinsic";
-export type DCTentSpxSource = "broker_state" | "fallback_midstrike";
+export type DCTentSpxSource =
+  | "index"
+  | "es_proxy"
+  | "es_proxy_stale"
+  | "broker_state"  // legacy fallback — see comment block above
+  | "fallback_midstrike"
+  | "unavailable";
 
 export interface DCTentPoint {
   spx: number;
@@ -629,6 +659,11 @@ export interface DCTentResponse {
 export interface DCTentBundleResponse {
   frozen: DCTentResponse | null;
   today: DCTentResponse | null;
+  /** @deprecated #338 dropped the Halfway tent curve from the UI
+   *  (convexity / exponential theta made it visually indistinguishable
+   *  from Today). The backend still computes + ships it for
+   *  pre-#339-deploy compatibility; consumers MUST drop it on read.
+   *  Removed in follow-up #339. */
   halfway: DCTentResponse | null;
   at_expiry: DCTentResponse | null;
   cache_hit: Record<string, boolean>;
