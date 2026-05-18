@@ -144,8 +144,11 @@ export function buildXLabelMask(axis: string[]): boolean[] {
   // Determine the last minute's stride status — drives collision check.
   const lastLabel = formatMinuteLabel(axis[lastIdx]);
   const lastMatch = /:(\d{2})$/.exec(lastLabel);
-  // Parse-failure on the last index → treat as "non-stride" to be safe
-  // (won't suppress an arbitrary penultimate).
+  // Parse-failure on the last index → treat as non-stride. Worst-case
+  // collision: if we can't tell whether the live label is on a stride,
+  // conservatively suppress an adjacent stride penultimate to avoid
+  // potential overlap. The live label itself still renders via the
+  // `i === lastIdx` early-return below.
   const lastIsStride = lastMatch ? Number(lastMatch[1]) % 5 === 0 : false;
   return axis.map((ts, i) => {
     if (i === lastIdx) return true;
