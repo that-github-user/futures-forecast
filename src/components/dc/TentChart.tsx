@@ -458,30 +458,57 @@ export function TentChart({
     if (!inst) return;
 
     const updateGraphic = () => {
-      const graphics = (labels ?? [])
-        .map((lbl) => {
-          const px = inst.convertToPixel({ xAxisIndex: 0 }, lbl.xValue);
-          if (px == null || !Number.isFinite(px)) return null;
-          return {
-            type: "text" as const,
-            x: px,
-            y: TIER_Y[lbl.tier],
-            silent: true,
-            z: 100,
-            style: {
-              text: lbl.text,
-              fill: lbl.color,
-              font: `11px ${fonts.mono}`,
-              // EC5 canonical alignment names (NOT textAlign /
-              // textVerticalAlign — those are EC4 legacy aliases
-              // that work today via runtime shim but could be
-              // dropped in a future ECharts major).
-              align: "center" as const,
-              verticalAlign: "top" as const,
-            },
-          };
-        })
-        .filter((g): g is NonNullable<typeof g> => g != null);
+      // HOTFIX (#347 follow-up): ECharts' convertToPixel throws
+      // `TypeError: can't access property "queryComponents", r is
+      // undefined` when the chart's internal component model is in a
+      // partially-initialized OR disposed state. This can happen on:
+      //   (a) the initial effect run before ECharts has populated its
+      //       coordinate-system model
+      //   (b) the 'finished' callback firing during/after chart
+      //       disposal (tab switch, unmount)
+      // Without this guard, the throw propagates up to
+      // ChunkLoadErrorBoundary and shows the misleading "new version
+      // available" prompt — operators reported a stuck Tent tab.
+      //
+      // Each per-label call is wrapped because one bad lbl shouldn't
+      // null out all the others. The outer try/catch protects the
+      // setOption call too.
+      let graphics: Array<{
+        type: "text"; x: number; y: number; silent: boolean; z: number;
+        style: Record<string, unknown>;
+      }>;
+      try {
+        graphics = (labels ?? [])
+          .map((lbl) => {
+            try {
+              const px = inst.convertToPixel({ xAxisIndex: 0 }, lbl.xValue);
+              if (px == null || !Number.isFinite(px)) return null;
+              return {
+                type: "text" as const,
+                x: px,
+                y: TIER_Y[lbl.tier],
+                silent: true,
+                z: 100,
+                style: {
+                  text: lbl.text,
+                  fill: lbl.color,
+                  font: `11px ${fonts.mono}`,
+                  // EC5 canonical alignment names (NOT textAlign /
+                  // textVerticalAlign — those are EC4 legacy aliases
+                  // that work today via runtime shim but could be
+                  // dropped in a future ECharts major).
+                  align: "center" as const,
+                  verticalAlign: "top" as const,
+                },
+              };
+            } catch {
+              return null; // convertToPixel threw for this label; skip
+            }
+          })
+          .filter((g): g is NonNullable<typeof g> => g != null);
+      } catch {
+        return; // chart not ready / disposed — skip this tick
+      }
       // Cache key: serialize the load-bearing fields so a no-op render
       // (same labels at same pixels) doesn't trigger a setOption that
       // would re-fire 'finished' → infinite loop. Position rounded to
@@ -492,16 +519,28 @@ export function TentChart({
         .join("|");
       if (key === lastAppliedRef.current) return;
       lastAppliedRef.current = key;
-      inst.setOption(
-        { graphic: graphics },
-        { replaceMerge: ["graphic"] },
-      );
+      try {
+        inst.setOption(
+          { graphic: graphics },
+          { replaceMerge: ["graphic"] },
+        );
+      } catch {
+        // chart disposed mid-tick (rare); next render will re-apply
+      }
     };
 
     updateGraphic();
-    inst.on("finished", updateGraphic);
+    try {
+      inst.on("finished", updateGraphic);
+    } catch {
+      // chart already disposed at register time — no-op
+    }
     return () => {
-      inst.off("finished", updateGraphic);
+      try {
+        inst.off("finished", updateGraphic);
+      } catch {
+        // chart already disposed at cleanup time — no-op
+      }
       // QA OBS-3: explicit clear on unmount-or-empty so stale graphic
       // elements can't linger if labels become [] between renders.
       // lastAppliedRef is component-scoped so it resets on remount.
