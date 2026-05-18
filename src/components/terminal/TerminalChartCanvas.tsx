@@ -51,6 +51,10 @@ interface Props {
   timeframe: Timeframe;
   formatBarTime: (iso: string, withSeconds?: boolean) => string;
   formatBarDay: (iso: string) => string;
+  /** "DD MMM HH:MM" formatter for the chart's bottom-axis crosshair
+   *  label (#336). Separate from formatBarDay because that one returns
+   *  bare "DD" which the day-changeover tickMarkFormatter needs. */
+  formatBarCrosshair: (iso: string) => string;
   tzLabel: string;
 }
 

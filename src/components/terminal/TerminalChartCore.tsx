@@ -124,6 +124,11 @@ interface Props {
   // get "DD" instead of "HH:MM" — mirrors the desktop x-axis label
   // convention.
   formatBarDay: (iso: string) => string;
+  // "DD MMM HH:MM" formatter for the bottom-axis crosshair label
+  // (#336). Separate from `formatBarDay` because the latter is also
+  // consumed by the day-changeover tickMarkFormatter where bare
+  // "DD" is intentional.
+  formatBarCrosshair: (iso: string) => string;
   // Short label for the active timezone (e.g. "PT", "PDT").
   // Suffixed onto the tooltip header.
   tzLabel: string;
@@ -135,6 +140,7 @@ export function TerminalChartCore({
   timeframe,
   formatBarTime,
   formatBarDay,
+  formatBarCrosshair,
   tzLabel,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -297,20 +303,19 @@ export function TerminalChartCore({
       crosshair: { mode: CrosshairMode.MagnetOHLC },
       localization: {
         // Override the bottom-axis crosshair time label so it follows
-        // the user's selected TZ (mirrors the tickMarkFormatter pattern
-        // — refs picked up via formatBarTimeRef / formatBarDayRef so a
-        // TZ flip doesn't require a chart rebuild). Without this,
+        // the user's selected TZ. Uses a dedicated "DD MMM HH:MM"
+        // formatter (not formatBarDay+formatBarTime composed) because
+        // formatBarDay returns bare "DD" — the day-changeover
+        // tickMarkFormatter intentionally needs that bare form. The
+        // ref pattern (formatBarCrosshairRef.current) means a TZ flip
+        // doesn't require a chart rebuild. Without this entire block,
         // lightweight-charts falls back to its UTC default and the
         // crosshair label disagrees with the tooltip's local-TZ time.
         // #336.
         timeFormatter: (time: Time): string => {
           if (typeof time !== "number") return "";
           const iso = new Date((time as number) * 1000).toISOString();
-          return (
-            formatBarDayRef.current(iso)
-            + " "
-            + formatBarTimeRef.current(iso, false)
-          );
+          return formatBarCrosshairRef.current(iso);
         },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
@@ -508,12 +513,15 @@ export function TerminalChartCore({
 
   // Ref-backed formatter pointers so the tickMarkFormatter installed
   // on the chart at init-time always calls the LATEST prop versions
-  // (formatBarTime / formatBarDay change when the user flips the
-  // timezone selector). Avoids a chart-rebuild on every TZ change.
+  // (formatBarTime / formatBarDay / formatBarCrosshair change when the
+  // user flips the timezone selector). Avoids a chart-rebuild on every
+  // TZ change.
   const formatBarTimeRef = useRef(formatBarTime);
   const formatBarDayRef = useRef(formatBarDay);
+  const formatBarCrosshairRef = useRef(formatBarCrosshair);
   formatBarTimeRef.current = formatBarTime;
   formatBarDayRef.current = formatBarDay;
+  formatBarCrosshairRef.current = formatBarCrosshair;
 
   // First-paint anchor flag — re-trigger on timeframe change so the
   // visible window re-anchors when the user flips 1m → 1h (otherwise
