@@ -245,7 +245,7 @@ export function StrikeVelocityTape({
   // Derive a HoveredCell from focusedCell so the existing
   // MinuteTooltip component renders for keyboard users too. Pure
   // index/text lookup — the mouseX/Y already live on focusedCell,
-  // captured at dispatch time (see computeFocusCellCoords + the
+  // captured at dispatch time (see computeFocusCoords + the
   // event handlers below). The render path NEVER reads refs (#331
   // R1 BLOCKER fix).
   const focusCellRow = focusedCell ? layout.rows[focusedCell.rowIdx] : null;
@@ -626,6 +626,14 @@ function ScaleToggle({
 
 // ── Per-strike lane row ────────────────────────────────────────────
 
+// IMPORTANT (#331): this component MUST render exactly one
+// `.svt-lane-cell` at the top level. The panel's
+// `computeFocusCoords` does `querySelectorAll(".svt-lane-cell")[rowIdx]`
+// to derive client coords for the keyboard-focused tooltip, and
+// relies on (a) the class name being unique to LaneRow's lane area
+// and (b) the DOM order matching React render order. A future
+// refactor that virtualizes rows, renames the class, or wraps the
+// cell in another layer must update `computeFocusCoords` in lockstep.
 function LaneRow({
   row,
   rowIdx,
