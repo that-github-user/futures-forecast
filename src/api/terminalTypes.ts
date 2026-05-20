@@ -439,4 +439,17 @@ export interface StraddleChainResponse {
   stale: boolean;
   data_age_seconds: number | null;
   velocity_tape: VelocityTape | null;
+  /** True when the served snapshot is the next-session rollover
+   *  preview (captured during the post-close SPXW curb window) rather
+   *  than the current/most-recent today-expiry snapshot. Frontend
+   *  contract: render the "Tomorrow's preview" banner, suppress the
+   *  net-flow ▲/▼ glyphs (no valid baseline yet — baseline is
+   *  captured at tomorrow's 16:14 ET), and HIDE the pin-candidates
+   *  panel. Gate the pin-candidates panel on THIS flag, NOT on
+   *  `pin_candidates.length` (the backend returns an empty list under
+   *  preview, but that's the same shape as a legitimate-but-rare
+   *  "no candidates today" live result). Always false during RTH and
+   *  when no rollover snapshot has been captured for the day yet.
+   *  Defaults to false on pre-PR-A backend responses. */
+  preview_mode: boolean;
 }

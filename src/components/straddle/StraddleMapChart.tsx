@@ -162,6 +162,7 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
   }, [option, data]);
 
   const hasStrikes = !!data && data.strikes.length > 0;
+  const previewMode = data?.preview_mode === true;
 
   return (
     <div
@@ -176,6 +177,9 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
       }}
     >
       <StraddleMapLegend />
+      {previewMode && data?.expiry && (
+        <PreviewBanner expiry={data.expiry} />
+      )}
       <div className="smc-info-anchor">
         <InfoPopover label="How to read the strike positioning chart">
           <ul>
@@ -235,6 +239,71 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
           No 0DTE chain data yet
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** Format a yyyymmdd expiry string (e.g. "20260519") into a compact
+ *  ET label like "Tue 5/19". Returns the input unchanged on parse
+ *  failure — better than throwing in the banner. */
+function formatPreviewExpiry(yyyymmdd: string): string {
+  if (yyyymmdd.length !== 8 || !/^\d{8}$/.test(yyyymmdd)) return yyyymmdd;
+  const y = Number(yyyymmdd.slice(0, 4));
+  const m = Number(yyyymmdd.slice(4, 6));
+  const d = Number(yyyymmdd.slice(6, 8));
+  // Local-time-safe weekday lookup. UTC date avoids DST edge cases
+  // for the weekday label.
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const weekday = dt.toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+  return `${weekday} ${m}/${d}`;
+}
+
+
+/** Server-driven "Tomorrow's preview" banner — renders only when the
+ *  backend's PR-A rollover-snapshot hook fired (preview_mode=true).
+ *  Operationally distinguishes the post-close auto-pivoted chart from
+ *  the live RTH chart. Sits at the top-right of the chart, absolute-
+ *  positioned so it doesn't reflow the chart canvas. */
+function PreviewBanner({ expiry }: { expiry: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={
+        `Showing preview for next session expiry ${formatPreviewExpiry(expiry)}. ` +
+        "Net opening and closing flow tracking is suppressed until the new session opens."
+      }
+      style={{
+        position: "absolute",
+        top: 12,
+        right: 14,
+        zIndex: 3,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "4px 10px",
+        borderRadius: 3,
+        background: withAlpha(colors.accentAmber, 0.12),
+        border: `1px solid ${withAlpha(colors.accentAmber, 0.45)}`,
+        fontFamily: fonts.sans,
+        fontSize: 10,
+        letterSpacing: "0.06em",
+        color: colors.accentAmber,
+        pointerEvents: "none",
+        textTransform: "uppercase",
+      }}
+    >
+      <span style={{ fontWeight: 700 }}>Preview</span>
+      <span style={{ color: colors.textPrimary, fontWeight: 600 }}>
+        {formatPreviewExpiry(expiry)}
+      </span>
+      <span style={{ color: colors.textMuted, textTransform: "none" }}>
+        · Flow tracking resumes 9:30 ET
+      </span>
     </div>
   );
 }

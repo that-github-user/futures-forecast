@@ -111,10 +111,19 @@ export function StraddlePage() {
                   gap: 12,
                 }}
               >
-                <PinCandidatesPanel
-                  candidates={data?.pin_candidates ?? []}
-                  spot={data?.spot ?? null}
-                />
+                {!data?.preview_mode && (
+                  // PR-A backend contract: when preview_mode is true,
+                  // hide the pin-candidates panel entirely. Backend
+                  // returns pin_candidates=[] under preview but we
+                  // gate on the FLAG (not list length) to avoid a
+                  // future regression where a non-empty preview list
+                  // would silently render. See `preview_mode` field
+                  // docstring in terminalTypes.ts.
+                  <PinCandidatesPanel
+                    candidates={data?.pin_candidates ?? []}
+                    spot={data?.spot ?? null}
+                  />
+                )}
                 <UpcomingProgramFlow
                   upcoming={data?.program_flow.upcoming ?? []}
                   coldStart={isColdStart}
