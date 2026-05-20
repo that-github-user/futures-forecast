@@ -108,10 +108,19 @@ export function buildStraddleMapOption(
   // is overlaid on bars whose |net flow| exceeds the threshold; glyph
   // color reflects the SIGN of net flow (green opening / red closing),
   // independent of which hemisphere the bar lives in.
+  //
+  // Under preview_mode (PR-A backend served the next-session rollover
+  // snapshot), suppress the glyph entirely. The rollover row has no
+  // valid baseline yet — tomorrow's EOD baseline is captured at
+  // tomorrow's 16:14 ET — so the backend nulls out fresh_flow on every
+  // strike. The frontend just respects that and skips the overlay.
+  const previewMode = data.preview_mode === true;
   const netData = sortedRows.map((s) => {
     const net = netOi(s.call_oi, s.put_oi);
-    const netFlow = netFreshFlow(s.fresh_flow_call, s.fresh_flow_put);
-    const glyph = netFreshFlowGlyph(netFlow);
+    const netFlow = previewMode
+      ? 0
+      : netFreshFlow(s.fresh_flow_call, s.fresh_flow_put);
+    const glyph = previewMode ? "" : netFreshFlowGlyph(netFlow);
     return {
       value: net,
       itemStyle: {
@@ -240,24 +249,34 @@ export function buildStraddleMapOption(
         const emBadge = withinEm
           ? `<span style="margin-left:6px;padding:1px 5px;color:${colors.accentGreen};background:${withAlpha(colors.accentGreen, 0.09)};border:1px solid ${withAlpha(colors.accentGreen, 0.3)};border-radius:2px;font-size:9px;letter-spacing:0.06em">EM</span>`
           : "";
+        // Under preview_mode, the tooltip omits the NET-flow value
+        // and the per-side `flow N` field — same rationale as the
+        // bar glyphs: no valid baseline, the backend nulls fresh-
+        // flow on every strike, rendering "+0" would be misleading.
+        const netLine = previewMode
+          ? `<div style="margin-top:4px;color:${netColor}">NET OI ${net >= 0 ? "+" : ""}${net.toFixed(0)}</div>`
+          : `<div style="margin-top:4px;color:${netColor}">NET OI ${net >= 0 ? "+" : ""}${net.toFixed(0)} · <span style="color:${flowColor}">NET flow ${netFlow >= 0 ? "+" : ""}${netFlow.toFixed(0)}</span></div>`;
+        const callFlowField = previewMode
+          ? ""
+          : ` · flow ${fmt(row.fresh_flow_call)}`;
+        const putFlowField = previewMode
+          ? ""
+          : ` · flow ${fmt(row.fresh_flow_put)}`;
         return [
           `<div style="font-weight:bold;color:${colors.textBright}">Strike ${strike.toFixed(0)}${emBadge}</div>`,
           spotProximityLine,
-          `<div style="margin-top:4px;color:${netColor}">`,
-          `NET OI ${net >= 0 ? "+" : ""}${net.toFixed(0)} · `,
-          `<span style="color:${flowColor}">NET flow ${netFlow >= 0 ? "+" : ""}${netFlow.toFixed(0)}</span>`,
-          `</div>`,
+          netLine,
           `<div style="margin-top:4px;">`,
           `<span style="color:${colors.accentBlue}">CALL</span> `,
           `OI ${fmt(row.call_oi)} · Vol ${fmt(row.call_volume)} · `,
-          `IV ${fmt(row.call_iv, 3)} · Δ ${fmt(row.call_delta, 2)} · `,
-          `flow ${fmt(row.fresh_flow_call)}`,
+          `IV ${fmt(row.call_iv, 3)} · Δ ${fmt(row.call_delta, 2)}`,
+          callFlowField,
           `</div>`,
           `<div>`,
           `<span style="color:${colors.accentAmber}">PUT </span> `,
           `OI ${fmt(row.put_oi)} · Vol ${fmt(row.put_volume)} · `,
-          `IV ${fmt(row.put_iv, 3)} · Δ ${fmt(row.put_delta, 2)} · `,
-          `flow ${fmt(row.fresh_flow_put)}`,
+          `IV ${fmt(row.put_iv, 3)} · Δ ${fmt(row.put_delta, 2)}`,
+          putFlowField,
           `</div>`,
         ].join("");
       },

@@ -616,6 +616,7 @@ export function mockStraddleSnapshot(): StraddleChainResponse {
     stale: false,
     data_age_seconds: 30,
     velocity_tape: mockVelocityTape(atmStrike, spot, todayET),
+    preview_mode: false,
   };
 }
 

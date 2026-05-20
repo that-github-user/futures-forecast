@@ -97,6 +97,7 @@ function snapshot(overrides: Partial<StraddleChainResponse> = {}): StraddleChain
     stale: false,
     data_age_seconds: 30,
     velocity_tape: null,
+    preview_mode: false,
     ...overrides,
   };
 }
@@ -267,6 +268,62 @@ describe("buildStraddleMapOption", () => {
     expect(xAxis.max).toBeGreaterThanOrEqual(770);
     expect(xAxis.max).toBeLessThanOrEqual(780);
     expect(xAxis.min).toBe(-(xAxis.max as number));
+  });
+
+  // ── preview_mode (PR-B: backend rollover snapshot) ────────────────
+
+  it("suppresses fresh-flow glyphs on every bar when preview_mode is true", () => {
+    // Build a snapshot whose strikes WOULD normally render glyphs
+    // (|net flow| above the visibility threshold). Under preview_mode
+    // = true, the backend nulls fresh_flow per the contract — but a
+    // mis-wired frontend that didn't read preview_mode would still
+    // render the glyphs from any client-side fresh_flow values that
+    // sneak through. We harden against that with the in-builder
+    // suppression: glyphs OFF when preview_mode regardless of
+    // fresh_flow content.
+    const previewSnap = snapshot({
+      preview_mode: true,
+      strikes: [
+        strike({
+          strike: 5180,
+          // Force values above the glyph threshold; the suppression
+          // must override.
+          fresh_flow_call: 10_000,
+          fresh_flow_put: 0,
+        }),
+      ],
+    });
+    const option = buildStraddleMapOption(previewSnap);
+    const data = (option!.series as Array<{
+      data?: Array<{ label?: { show?: boolean; formatter?: string } }>;
+    }>)[0].data!;
+    expect(data).toHaveLength(1);
+    // Glyph hidden — `label.show === false` (the not-glyph branch).
+    expect(data[0].label?.show).toBe(false);
+    expect(data[0].label?.formatter).toBeUndefined();
+  });
+
+  it("emits fresh-flow glyphs normally when preview_mode is false (default)", () => {
+    // Same magnitudes as the preview-mode test, but preview_mode=false
+    // — pins the contract that the suppression is gated on the flag,
+    // not on a side-effect of the test fixture.
+    const liveSnap = snapshot({
+      preview_mode: false,
+      strikes: [
+        strike({
+          strike: 5180,
+          fresh_flow_call: 10_000,
+          fresh_flow_put: 0,
+        }),
+      ],
+    });
+    const option = buildStraddleMapOption(liveSnap);
+    const data = (option!.series as Array<{
+      data?: Array<{ label?: { show?: boolean; formatter?: string } }>;
+    }>)[0].data!;
+    // |netFlow| = 10000 ≥ NET_FRESH_FLOW_GLYPH_MIN → glyph fires.
+    expect(data[0].label?.show).toBe(true);
+    expect(data[0].label?.formatter).toBe(netFreshFlowGlyph(10_000));
   });
 });
 
