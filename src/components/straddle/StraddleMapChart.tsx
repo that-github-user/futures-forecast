@@ -177,7 +177,13 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
       }}
     >
       <StraddleMapLegend />
-      {previewMode && data?.expiry && (
+      {/* Banner gated on hasStrikes to avoid the visual collision
+          flagged by R2 (PR #230 round-1): a backend that returns
+          preview_mode=true with strikes=[] (shouldn't happen — the
+          rollover snapshot has a chain by definition — but defensive
+          against backend regressions) would otherwise stack the
+          banner on top of the "No 0DTE chain data yet" overlay. */}
+      {previewMode && hasStrikes && data?.expiry && (
         <PreviewBanner expiry={data.expiry} />
       )}
       <div className="smc-info-anchor">
@@ -213,10 +219,16 @@ export function StraddleMapChart({ data, height = 540 }: Props) {
         ref={containerRef}
         role="img"
         aria-label={
-          "Net open interest per strike. Bar right = calls dominant, " +
-          "left = puts dominant. EM band drawn as dashed horizontal " +
-          "lines. Triangle glyphs mark strikes with significant net " +
-          "opening (up) or closing (down) flow."
+          previewMode
+            ? "Net open interest per strike, next-session preview. " +
+              "Bar right = calls dominant, left = puts dominant. " +
+              "EM band drawn as dashed horizontal lines. Net opening " +
+              "and closing flow glyphs are suppressed under preview " +
+              "mode — there is no valid baseline for the new expiry yet."
+            : "Net open interest per strike. Bar right = calls dominant, " +
+              "left = puts dominant. EM band drawn as dashed horizontal " +
+              "lines. Triangle glyphs mark strikes with significant net " +
+              "opening (up) or closing (down) flow."
         }
         style={{ width: "100%", height: "100%" }}
       />
