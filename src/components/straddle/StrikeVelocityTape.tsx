@@ -518,9 +518,15 @@ export function StrikeVelocityTape({
 function LiveStatusBadge({ status }: { status: LiveStatus }) {
   if (status.kind === "cold-start") return null;
   if (status.kind === "live") {
+    const ariaLabel =
+      `Live velocity tape — last sidecar flush ` +
+      `${Math.round(status.ageSeconds)} seconds ago`;
     return (
       <span
         className="svt-status-pill svt-status-live"
+        role="status"
+        aria-live="polite"
+        aria-label={ariaLabel}
         title={`Live tape — last flush ${Math.round(status.ageSeconds)}s ago`}
       >
         <span className="svt-status-dot" aria-hidden />
@@ -531,9 +537,15 @@ function LiveStatusBadge({ status }: { status: LiveStatus }) {
   // Frozen — show the session date so the operator knows what's
   // on screen (yesterday vs last Friday vs older).
   const datePretty = formatSessionDate(status.sessionDate);
+  const ariaLabel = datePretty
+    ? `Frozen velocity tape from ${datePretty} — live tape unavailable`
+    : "Frozen velocity tape — live tape unavailable";
   return (
     <span
       className="svt-status-pill svt-status-frozen"
+      role="status"
+      aria-live="polite"
+      aria-label={ariaLabel}
       title={
         datePretty
           ? `Frozen replay from ${datePretty} — live tape unavailable`

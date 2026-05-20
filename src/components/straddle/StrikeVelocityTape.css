@@ -362,7 +362,13 @@
 
 /* LIVE / FROZEN status pill (#349 PR-3). Sits inline with the title
  * + info-popover ⓘ button. Color-coded so the operator scans for
- * "is the live tape actually flowing" without reading text. */
+ * "is the live tape actually flowing" without reading text.
+ *
+ * `vertical-align` is INTENTIONALLY omitted — the parent
+ * `.svt-title-row` is `display: inline-flex; align-items: baseline`,
+ * which controls cross-axis alignment for the pill (`align-items`
+ * trumps `vertical-align` on flex items per CSS spec). R2 PR #229
+ * nit caught the dead-code form. */
 .svt-status-pill {
   display: inline-flex;
   align-items: center;
@@ -374,26 +380,38 @@
   padding: 2px 6px;
   border-radius: 3px;
   text-transform: uppercase;
-  vertical-align: 2px;
   white-space: nowrap;
 }
 .svt-status-live {
-  /* Green tint — accentGreen at low-alpha bg + full-strength text. */
-  background: rgba(76, 175, 80, 0.14);
-  color: rgb(76, 175, 80);
-  border: 1px solid rgba(76, 175, 80, 0.35);
+  /* Token-based green so the badge tracks any future design-system
+   * recolor (R1 PR #229: previously hardcoded rgb(76, 175, 80)
+   * which diverged from the codebase's `--accent-green` palette).
+   * color-mix gives translucent bg + border in one expression
+   * without committing to a specific RGB. */
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+  color: var(--accent-green);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 35%, transparent);
 }
 .svt-status-live .svt-status-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgb(76, 175, 80);
+  background: var(--accent-green);
   animation: svt-status-pulse 1.8s ease-in-out infinite;
 }
 @keyframes svt-status-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+/* WCAG 2.3.3 — vestibular-sensitive users get a static dot rather
+ * than the pulsing fade. Static opacity preserves the LIVE semaphore
+ * (the color + pill text still distinguish from FROZEN). Same
+ * pattern as `dc-exit-pulse` in globals.css. */
+@media (prefers-reduced-motion: reduce) {
+  .svt-status-live .svt-status-dot {
+    animation: none;
+  }
 }
 .svt-status-frozen {
   /* Neutral grey — explicit "this is OLD data" cue without alarm. */
