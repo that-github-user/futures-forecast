@@ -19,6 +19,7 @@ import {
   buildMinuteAxis,
   buildXLabelMask,
   cellIndexFromX,
+  classifyLiveStatus,
   dominanceColor,
   nextFocusedCell,
   formatMinuteLabel,
@@ -671,5 +672,82 @@ describe("resolveSpikeSigma", () => {
     const calls = new Map([["other-ts", 5.0]]);
     const puts = new Map([["another-ts", 6.0]]);
     expect(resolveSpikeSigma(calls, puts, TS)).toBeNull();
+  });
+});
+
+
+// ── classifyLiveStatus (#349 PR-3) ────────────────────────────────
+
+describe("classifyLiveStatus", () => {
+  function tapeWith(overrides: Partial<VelocityTape>): VelocityTape {
+    return {
+      replay_session_date: "20260519",
+      window_start: "2026-05-19T09:30:00-04:00",
+      window_end: "2026-05-19T11:00:00-04:00",
+      spot_path: null,
+      strikes: [],
+      ...overrides,
+    };
+  }
+
+  it("returns cold-start when tape is null", () => {
+    const status = classifyLiveStatus(null);
+    expect(status.kind).toBe("cold-start");
+  });
+
+  it("returns LIVE when window_end is within the staleness threshold", () => {
+    // window_end at 11:00 ET; 'now' 60s later → LIVE.
+    const nowMs = Date.parse("2026-05-19T11:01:00-04:00");
+    const status = classifyLiveStatus(
+      tapeWith({ window_end: "2026-05-19T11:00:00-04:00" }),
+      nowMs,
+    );
+    expect(status.kind).toBe("live");
+    expect((status as { kind: "live"; ageSeconds: number }).ageSeconds)
+      .toBeCloseTo(60, 0);
+  });
+
+  it("returns LIVE at exactly the staleness threshold boundary", () => {
+    // 180s old — boundary inclusive per <= check.
+    const nowMs = Date.parse("2026-05-19T11:03:00-04:00");
+    const status = classifyLiveStatus(
+      tapeWith({ window_end: "2026-05-19T11:00:00-04:00" }),
+      nowMs,
+    );
+    expect(status.kind).toBe("live");
+  });
+
+  it("returns FROZEN when window_end is older than the staleness threshold", () => {
+    // 5 min old — past the 180s threshold.
+    const nowMs = Date.parse("2026-05-19T11:05:00-04:00");
+    const status = classifyLiveStatus(
+      tapeWith({ window_end: "2026-05-19T11:00:00-04:00" }),
+      nowMs,
+    );
+    expect(status.kind).toBe("frozen");
+    expect((status as { kind: "frozen"; sessionDate: string | null })
+      .sessionDate).toBe("20260519");
+  });
+
+  it("returns FROZEN with the prior session's date for an aged replay", () => {
+    // Tape from Friday's close; 'now' is Monday morning pre-RTH.
+    const nowMs = Date.parse("2026-05-18T09:00:00-04:00");
+    const status = classifyLiveStatus(
+      tapeWith({
+        replay_session_date: "20260515",
+        window_end: "2026-05-15T16:00:00-04:00",
+      }),
+      nowMs,
+    );
+    expect(status.kind).toBe("frozen");
+    expect((status as { kind: "frozen"; sessionDate: string | null })
+      .sessionDate).toBe("20260515");
+  });
+
+  it("returns FROZEN when window_end is malformed (defensive)", () => {
+    const status = classifyLiveStatus(
+      tapeWith({ window_end: "not-a-date" }),
+    );
+    expect(status.kind).toBe("frozen");
   });
 });

@@ -421,3 +421,74 @@ export function resolveSpikeSigma(
   if (p == null) return c;
   return Math.max(c, p);
 }
+
+
+// ── LIVE / FROZEN status classification (#349 PR-3) ────────────────
+
+/** Backend sidecar staleness threshold (matches
+ *  SIDECAR_STALE_THRESHOLD_S in futures_terminal/systems/
+ *  strike_velocity_stream.py). Tape with window_end older than this
+ *  is considered FROZEN by the API too — keeping the same number on
+ *  both sides means a tape that the API JUST served as live still
+ *  reads LIVE in our badge by the time the polling cycle lands. */
+export const LIVE_STALE_THRESHOLD_S = 180;
+
+export type LiveStatus =
+  | { kind: "live"; ageSeconds: number }
+  | { kind: "frozen"; sessionDate: string | null }
+  | { kind: "cold-start" };
+
+/** Classify a tape's freshness for the panel-head badge.
+ *
+ *  - No tape: cold-start (badge hidden).
+ *  - window_end within LIVE_STALE_THRESHOLD_S of now: LIVE — the
+ *    backend is actively flushing the sidecar during RTH.
+ *  - Older: FROZEN — API fell back to the persisted replay row.
+ *    Surface the replay_session_date so the operator knows WHICH
+ *    session they're looking at (Friday vs yesterday vs older).
+ *
+ *  Pure — accepts `nowMs` for deterministic tests; defaults to
+ *  Date.now().
+ */
+export function classifyLiveStatus(
+  tape: VelocityTape | null,
+  nowMs: number = Date.now(),
+): LiveStatus {
+  if (tape == null) return { kind: "cold-start" };
+  const windowEndMs = Date.parse(tape.window_end);
+  if (!Number.isFinite(windowEndMs)) {
+    // Malformed window_end — treat as frozen since we can't tell.
+    return {
+      kind: "frozen",
+      sessionDate: tape.replay_session_date ?? null,
+    };
+  }
+  const ageSeconds = (nowMs - windowEndMs) / 1000;
+  if (ageSeconds <= LIVE_STALE_THRESHOLD_S) {
+    return { kind: "live", ageSeconds };
+  }
+  return {
+    kind: "frozen",
+    sessionDate: tape.replay_session_date ?? null,
+  };
+}
+
+/** YYYYMMDD → "Mon May 19" (UTC interpretation; the persisted row's
+ *  session_date is a calendar-day key with no timezone). Returns null
+ *  on malformed input so the badge gracefully degrades. */
+export function formatSessionDate(yyyymmdd: string | null): string | null {
+  if (!yyyymmdd || yyyymmdd.length !== 8) return null;
+  const y = Number(yyyymmdd.slice(0, 4));
+  const m = Number(yyyymmdd.slice(4, 6));
+  const d = Number(yyyymmdd.slice(6, 8));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return null;
+  }
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}

@@ -51,9 +51,12 @@ import {
   buildMinuteAxis,
   buildXLabelMask,
   cellIndexFromX,
+  classifyLiveStatus,
   dominanceColor,
   formatMinuteLabel,
+  formatSessionDate,
   formatVolume,
+  type LiveStatus,
   MAX_ROWS,
   nextFocusedCell,
   panelMaxVol,
@@ -409,6 +412,7 @@ export function StrikeVelocityTape({
       }}
     >
       <PanelHead
+        tape={tape}
         spot={spot}
         emUpper={emUpper}
         emLower={emLower}
@@ -503,15 +507,68 @@ export function StrikeVelocityTape({
   );
 }
 
+// ── LIVE / FROZEN status badge (#349 PR-3) ─────────────────────────
+
+/** Small pill rendered next to the panel title. Color-coded for
+ *  scan-ability: green pulse for LIVE, neutral chip for FROZEN.
+ *  Cold-start renders nothing (the existing cold-start sub-line
+ *  already explains the state). `classifyLiveStatus` +
+ *  `formatSessionDate` live in `strikeVelocityHelpers.ts` so they
+ *  can be tested without a React harness. */
+function LiveStatusBadge({ status }: { status: LiveStatus }) {
+  if (status.kind === "cold-start") return null;
+  if (status.kind === "live") {
+    const ariaLabel =
+      `Live velocity tape — last sidecar flush ` +
+      `${Math.round(status.ageSeconds)} seconds ago`;
+    return (
+      <span
+        className="svt-status-pill svt-status-live"
+        role="status"
+        aria-live="polite"
+        aria-label={ariaLabel}
+        title={`Live tape — last flush ${Math.round(status.ageSeconds)}s ago`}
+      >
+        <span className="svt-status-dot" aria-hidden />
+        LIVE
+      </span>
+    );
+  }
+  // Frozen — show the session date so the operator knows what's
+  // on screen (yesterday vs last Friday vs older).
+  const datePretty = formatSessionDate(status.sessionDate);
+  const ariaLabel = datePretty
+    ? `Frozen velocity tape from ${datePretty} — live tape unavailable`
+    : "Frozen velocity tape — live tape unavailable";
+  return (
+    <span
+      className="svt-status-pill svt-status-frozen"
+      role="status"
+      aria-live="polite"
+      aria-label={ariaLabel}
+      title={
+        datePretty
+          ? `Frozen replay from ${datePretty} — live tape unavailable`
+          : "Frozen replay — live tape unavailable"
+      }
+    >
+      FROZEN
+      {datePretty ? ` · ${datePretty}` : ""}
+    </span>
+  );
+}
+
 // ── Panel head ─────────────────────────────────────────────────────
 
 function PanelHead({
+  tape,
   spot,
   emUpper,
   emLower,
   scaleMode,
   onScaleChange,
 }: {
+  tape: VelocityTape | null;
   spot: number | null;
   emUpper: number | null;
   emLower: number | null;
@@ -525,11 +582,21 @@ function PanelHead({
   // mistake the missing triangles + ATM highlight for a rendering
   // bug — the chips show "—" too, but the notice is the louder cue.
   const isColdStart = spot == null;
+  // LIVE vs FROZEN classification (#349 PR-3): the API serves either
+  // the live sidecar (fresh, written every 60s by StrikeVelocityStream
+  // during RTH) OR the persisted replay row (last completed session
+  // or older). We can't distinguish via a dedicated flag in the
+  // payload — the schema doesn't carry one. Instead derive from
+  // `window_end` freshness against now: ≤180s → LIVE (matches the
+  // backend's SIDECAR_STALE_THRESHOLD_S so frontend and backend
+  // agree on what "live" means).
+  const liveStatus = classifyLiveStatus(tape);
   return (
     <div className="svt-panel-head">
       <div className="svt-title-block">
         <div className="svt-title-row">
           <h3 className="svt-title">Strike Velocity Tape</h3>
+          <LiveStatusBadge status={liveStatus} />
           {/* Shared InfoPopover (#334). Renders the ⓘ button inline +
               the popover absolutely-positioned relative to the
               `.svt-panel-head` wrapper (which is position:relative).
