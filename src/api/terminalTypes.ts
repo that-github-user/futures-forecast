@@ -338,76 +338,47 @@ export interface ProgramFlowState {
   upcoming: ProgramFlowEvent[];
 }
 
-/** One 1-minute trade-velocity bucket for a single strike/side. The
- *  shape matches vega-pilot's `VelocityMinute` schema. `avg_price` is
- *  the size-weighted average trade price for the minute (null when
- *  volume==0, which never happens in practice because empty minutes
- *  are simply omitted from the array). */
-export interface VelocityMinute {
-  ts: string;        // ISO8601 ET, minute-aligned
-  volume: number;    // total contract size across all trades this minute
-  trade_count: number;
-  avg_price: number | null;
-}
-
-/** Per-strike per-side trade velocity for the replay window.
- *  `call_spike_minutes` / `put_spike_minutes` carry the ISO timestamps
- *  where the corresponding minute's volume exceeded a MAD-based robust
- *  3σ-equivalent threshold (median + 3 * 1.4826 * MAD) of the 15-min
- *  volume distribution. The frontend highlights those bars in the
- *  sparkline with an amber glyph so operators can scan for unusual
- *  flow visually.
- *
- *  `call_spike_sigmas` / `put_spike_sigmas` are parallel ts → σ-magnitude
- *  maps (introduced in PR #195 / task #330). σ = `(volume - median) / scale`,
- *  where scale is `1.4826 * MAD` in the canonical path or `1.2533 * MeanAD`
- *  in the fallback. A threshold spike has σ ≈ 3; outsized bursts come
- *  through as 5σ / 8σ / etc. so the tooltip can triage threshold-grazers
- *  from real outliers. Optional because older persisted replays
- *  (pre-#330 backend) don't carry these keys — the tooltip falls back
- *  to the generic "≥3σ MAD" label when the map is absent.
- *
- *  `call_undercount` / `put_undercount` flag (strike, side) pairs
- *  where the backend's `reqHistoricalTicksAsync` hit IBKR's 1000-tick
- *  server cap before reaching `window_start` — the EARLIEST minutes
- *  near `window_start` were silently dropped from the persisted tape.
- *  Frontend renders a "data truncated" badge on those rows so operators
- *  can distinguish a quiet minute from a censored one. Optional in the
- *  type so older payloads (pre-PR-#193 round-2) parse without error;
- *  the StrikeVelocityTape rendering treats `undefined` as `false`. */
-export interface VelocityStrike {
+/** One (strike, side) in the live ATM±2 markup band. `series` is the
+ *  rolling ~1-min quote samples [iso_ts_ET, bid, ask] for the gradient
+ *  sparkline. bid/ask/spread/baseline_spread are null during warmup. */
+export interface MarkupBandStrike {
   strike: number;
-  call_minutes: VelocityMinute[];
-  put_minutes: VelocityMinute[];
-  call_spike_minutes: string[];
-  put_spike_minutes: string[];
-  call_spike_sigmas?: Record<string, number>;
-  put_spike_sigmas?: Record<string, number>;
-  call_undercount?: boolean;
-  put_undercount?: boolean;
+  side: "call" | "put";
+  bid: number | null;
+  ask: number | null;
+  spread: number | null;
+  baseline_spread: number | null;
+  series: [string, number, number][];
 }
 
-/** One SPX spot-price datapoint within the velocity replay window.
- *  Used by the frontend to render a thin price overlay above the
- *  velocity rows so operators can correlate strike-level bursts with
- *  the underlying spot move. */
-export interface VelocitySpotPoint {
+/** One fired market-maker markup alert (the ask running away from the
+ *  bid ahead of a spot move). A call-side markup signals spot UP;
+ *  put-side signals DOWN. */
+export interface MarkupAlert {
   ts: string;
-  price: number;
+  strike: number | null;
+  side: "call" | "put";
+  direction: "up" | "down";
+  spread: number;
+  baseline_spread: number;
+  spread_z: number;
+  ask_jump: number;
 }
 
-/** Frozen replay of strike-level trade velocity for the most recent
- *  past session. Surfaces when the StrikeVelocityTape component on
- *  /straddle needs visual data on weekends/holidays before live tick
- *  streaming is wired up. Backend null = no replay run yet; frontend
- *  hides the velocity column when null. Future-proof slot for live
- *  tick streaming on Monday. */
-export interface VelocityTape {
-  replay_session_date: string;  // yyyymmdd
-  window_start: string;         // ISO8601 ET
-  window_end: string;           // ISO8601 ET
-  spot_path: VelocitySpotPoint[] | null;
-  strikes: VelocityStrike[];
+/** Live streaming markup state for the /straddle markup panel — replaces
+ *  the cumulative velocity tape. Forward-only: the backend returns null
+ *  when the sidecar is absent (pre-RTH / weekend / cold start) and the
+ *  panel hides. `stale=true` (dim, don't blank) when the sidecar's
+ *  `updated_at` is older than the staleness threshold. */
+export interface MarkupState {
+  session_date: string;
+  active_expiry: string | null;
+  center_atm: number | null;
+  updated_at: string;
+  age_seconds: number | null;
+  stale: boolean;
+  band: MarkupBandStrike[];
+  recent_alerts: MarkupAlert[];
 }
 
 /** 0DTE SPX strike-positioning snapshot for the /straddle page.
@@ -419,8 +390,7 @@ export interface VelocityTape {
  *  for the session (cold-start). Frontend renders a single freshness
  *  contract: when `stale=true`, treat null headline fields as "warming
  *  up". `program_flow` is always computed independently of the snapshot.
- *  `velocity_tape` is the optional frozen Friday-close strike-velocity
- *  replay — null when no replay row exists yet. */
+ */
 export interface StraddleChainResponse {
   snapshot_time: string | null;
   expiry: string | null;
@@ -438,7 +408,6 @@ export interface StraddleChainResponse {
   program_flow: ProgramFlowState;
   stale: boolean;
   data_age_seconds: number | null;
-  velocity_tape: VelocityTape | null;
   /** True when the served snapshot is the next-session rollover
    *  preview (captured during the post-close SPXW curb window) rather
    *  than the current/most-recent today-expiry snapshot. Frontend

@@ -19,14 +19,15 @@
  */
 
 import type { ProgramFlowEvent } from "../../api/terminalTypes";
+import { useMarkupData } from "../../hooks/useMarkupData";
 import { useStraddleData } from "../../hooks/useStraddleData";
 import { colors, fonts, withAlpha, withAlphaByte } from "../../styles/tokens";
 import { RouteNav } from "../nav/RouteNav";
+import { MarkupPanel } from "./MarkupPanel";
 import { PinCandidatesPanel } from "./PinCandidatesPanel";
 import { ProgramFlowBanner } from "./ProgramFlowBanner";
 import { RealizedImpliedHeader } from "./RealizedImpliedHeader";
 import { StraddleMapChart } from "./StraddleMapChart";
-import { StrikeVelocityTape } from "./StrikeVelocityTape";
 import { UpcomingProgramFlow } from "./UpcomingProgramFlow";
 import {
   formatNextSessionLabel,
@@ -37,6 +38,7 @@ import "./StraddlePage.css";
 
 export function StraddlePage() {
   const { data, loading, demoMode, refetch, refreshing } = useStraddleData();
+  const { markup } = useMarkupData();
 
   // Cold-start: snapshotter hasn't yet written a row today. Headline
   // metric fields are null but `program_flow` is still populated, so
@@ -131,25 +133,14 @@ export function StraddlePage() {
               </div>
             </div>
 
-            {/* Strike Velocity Tape — v4 lane redesign (#325). Replaces
-                the ECharts heatmap that shipped in #206. Per-strike row
-                with one block per minute (height = total volume, color
-                = call/put dominance). Spot + EM markers live in the
-                strike-column gutter as triangles; numeric values live
-                in the panel-head readout. Renders its own empty-state
-                when the snapshotter hasn't produced a tape yet. */}
-            {data?.velocity_tape !== undefined && (
-              <section
-                className="straddle-velocity-panel"
-                aria-label="Strike velocity tape"
-              >
-                <StrikeVelocityTape
-                  tape={data?.velocity_tape ?? null}
-                  spot={data?.spot ?? null}
-                  emUpper={data?.em_upper ?? null}
-                  emLower={data?.em_lower ?? null}
-                  atmStrike={data?.atm_strike ?? null}
-                />
+            {/* Markup tell (PR-5) — streaming MM-markup detector that
+                replaces the strike-velocity tape. The ask running away
+                from the bid leads spot: call-side markup → up, put-side
+                → down. Hidden entirely when there's no live markup
+                (off-hours / cold start / API offline); `stale` dims it. */}
+            {markup && (
+              <section className="straddle-markup-panel" aria-label="Markup tell">
+                <MarkupPanel markup={markup} />
               </section>
             )}
           </>

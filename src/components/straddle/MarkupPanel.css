@@ -1,0 +1,94 @@
+/* MarkupPanel — structure + motion. Token COLORS live inline (tokens.ts);
+   this file owns layout + the high-impact alert/markup animations. */
+
+.markup-panel {
+  border-radius: 8px;
+  /* stale state dims the whole panel without blanking it */
+  transition: opacity 220ms ease;
+}
+.markup-panel--stale {
+  opacity: 0.5;
+  filter: saturate(0.6);
+}
+
+.markup-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.62fr) 1fr;
+  gap: 14px;
+}
+@media (max-width: 760px) {
+  .markup-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.markup-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Alert feed rows. The newest fired alert gets a one-shot entry pulse +
+   a persistent soft glow so the "freak moment" reads instantly. */
+.markup-alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.markup-alert--fresh {
+  animation: markup-alert-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes markup-alert-in {
+  0% {
+    transform: translateX(-6px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.markup-glyph {
+  font-size: 16px;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+/* Live pulse dot at the leading edge of an actively-steepening ask. */
+.markup-live-dot {
+  animation: markup-pulse 1.4s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes markup-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    r: 2.2;
+  }
+  50% {
+    opacity: 1;
+    r: 3.4;
+  }
+}
+
+.markup-spark {
+  display: block;
+  width: 100%;
+}
+
+/* Respect vestibular-sensitivity preferences — drop the alert slide-in
+   and the live-dot pulse (they're decorative; the glyph/color/text still
+   convey everything). */
+@media (prefers-reduced-motion: reduce) {
+  .markup-alert--fresh {
+    animation: none;
+  }
+  .markup-live-dot {
+    animation: none;
+  }
+}
