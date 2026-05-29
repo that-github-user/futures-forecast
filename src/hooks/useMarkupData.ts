@@ -22,6 +22,12 @@ import type { MarkupState } from "../api/terminalTypes";
 
 const POLL_INTERVAL = 5_000;
 const DEMO_REFRESH_INTERVAL = 30_000;
+// After this many consecutive nulls (off-hours / API down) the panel is
+// hidden and nobody's watching — back the poll off to SLOW_INTERVAL to
+// stop hammering the API with guaranteed-null fetches. Resets to the
+// live cadence on the first non-null tick.
+const SLOW_AFTER_NULLS = 3;
+const SLOW_INTERVAL = 30_000;
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 
 export interface MarkupDataState {
@@ -52,16 +58,24 @@ export function useMarkupData(intervalMs = POLL_INTERVAL): MarkupDataState {
       };
     }
 
+    // Self-scheduling poll with adaptive cadence: live (intervalMs) while
+    // data flows, slow (SLOW_INTERVAL) after a run of nulls. setTimeout
+    // (not setInterval) so the delay can change per tick.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let nullStreak = 0;
     const tick = async () => {
       const m = await terminal.markup();
+      if (!mountedRef.current) return;
       // null → off-hours/cold-start/offline → hide the panel (NOT demo).
-      if (mountedRef.current) setMarkup(m);
+      setMarkup(m);
+      nullStreak = m == null ? nullStreak + 1 : 0;
+      const delay = nullStreak >= SLOW_AFTER_NULLS ? SLOW_INTERVAL : intervalMs;
+      timer = setTimeout(tick, delay);
     };
     tick();
-    const id = setInterval(tick, intervalMs);
     return () => {
       mountedRef.current = false;
-      clearInterval(id);
+      if (timer) clearTimeout(timer);
     };
   }, [intervalMs]);
 

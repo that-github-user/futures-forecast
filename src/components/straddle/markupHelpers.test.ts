@@ -67,6 +67,20 @@ describe("sparkGeometry", () => {
     expect(sparkGeometry(series([15, 16]), 200, 60, 2, null)!.baselineY).toBeNull();
     expect(sparkGeometry(series([15, 16]), 200, 60, 2, 0.1)!.baselineY).not.toBeNull();
   });
+
+  it("baseline stays on-canvas even when it exceeds the bid/ask span", () => {
+    // tight flat series (span 0.1) + a large baseline_spread that the old
+    // code mapped to y=-24 (off the 60px viewBox). Now folded into the
+    // y-domain → must land in [0, h].
+    const h = 60;
+    const geo = sparkGeometry(
+      [[ts(0), 14.9, 15.0], [ts(1), 14.9, 15.0]],
+      200, h, 2, 0.15,
+    )!;
+    expect(geo.baselineY).not.toBeNull();
+    expect(geo.baselineY!).toBeGreaterThanOrEqual(0);
+    expect(geo.baselineY!).toBeLessThanOrEqual(h);
+  });
 });
 
 describe("spreadHeat", () => {

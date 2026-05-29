@@ -80,3 +80,15 @@
   display: block;
   width: 100%;
 }
+
+/* Respect vestibular-sensitivity preferences — drop the alert slide-in
+   and the live-dot pulse (they're decorative; the glyph/color/text still
+   convey everything). */
+@media (prefers-reduced-motion: reduce) {
+  .markup-alert--fresh {
+    animation: none;
+  }
+  .markup-live-dot {
+    animation: none;
+  }
+}

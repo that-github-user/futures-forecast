@@ -80,12 +80,19 @@ export function sparkGeometry(
   baselineSpread: number | null = null,
 ): SparkGeometry | null {
   if (series.length < 2) return null;
+  const n = series.length;
   const bids = series.map((s) => s[1]);
   const asks = series.map((s) => s[2]);
-  const yMin = Math.min(...bids);
-  const yMax = Math.max(...asks);
+  // The baseline reference (latest bid + the strike's "normal" spread)
+  // must stay ON-canvas so the operator can see how far the ask has run
+  // past it — include it in the y-domain rather than letting the line
+  // clip off-screen (which read as a broken artifact). Anchored at the
+  // latest bid so it sits at the ask level a calm market would show.
+  const baselineLevel = baselineSpread != null ? bids[n - 1] + baselineSpread : null;
+  const domainExtra = baselineLevel != null ? [baselineLevel] : [];
+  const yMin = Math.min(...bids, ...domainExtra);
+  const yMax = Math.max(...asks, ...domainExtra);
   const span = yMax - yMin || 1; // guard flat series
-  const n = series.length;
   const xAt = (i: number) => pad + (i / (n - 1)) * (w - 2 * pad);
   const yAt = (price: number) => h - pad - ((price - yMin) / span) * (h - 2 * pad);
 
@@ -108,11 +115,9 @@ export function sparkGeometry(
     `M ${ask.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ")} ` +
     `L ${[...bid].reverse().map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ")} Z`;
 
-  // Baseline reference: a "normal spread" band anchored at the latest
-  // bid (so the operator sees how far the current ask has run past the
-  // baseline ask). Null when no baseline known.
-  const baselineY =
-    baselineSpread != null ? yAt(series[n - 1][1] + baselineSpread) : null;
+  // Baseline reference y — always within [pad, h-pad] because
+  // baselineLevel is folded into the y-domain above. Null when unknown.
+  const baselineY = baselineLevel != null ? yAt(baselineLevel) : null;
 
   return { bid, ask, fillPath, segments, baselineY, yMin, yMax };
 }
