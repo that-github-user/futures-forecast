@@ -145,7 +145,7 @@ function AlertFeed({ alerts }: { alerts: MarkupAlert[] }) {
         const sideLetter = a.side === "call" ? "C" : "P";
         return (
           <div
-            key={`${a.ts}-${a.strike}-${i}`}
+            key={`${a.ts}-${a.strike}-${a.side}`}
             className={`markup-alert${fresh ? " markup-alert--fresh" : ""}`}
             style={{
               borderColor: fresh ? withAlpha(dir.color, 0.5) : "transparent",

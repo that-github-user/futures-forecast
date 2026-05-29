@@ -15,7 +15,7 @@
  * and the acceptable outcome on a transient API blip.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { mockMarkupState } from "../api/mock";
 import { terminal } from "../api/terminalClient";
 import type { MarkupState } from "../api/terminalTypes";
@@ -42,18 +42,22 @@ export function useMarkupData(intervalMs = POLL_INTERVAL): MarkupDataState {
   const [markup, setMarkup] = useState<MarkupState | null>(() =>
     IS_DEMO ? mockMarkupState() : null,
   );
-  const mountedRef = useRef(true);
 
   useEffect(() => {
-    mountedRef.current = true;
+    // Per-RUN cancellation flag captured by this effect run's closures.
+    // A shared ref would be re-set true by StrictMode's second mount and
+    // let the first run's self-scheduling timer chain survive — a dev-only
+    // double-poll/leak. A local `cancelled` is killed by THIS run's
+    // cleanup and can never be revived by a later run.
+    let cancelled = false;
 
     if (IS_DEMO) {
       // Refresh the fixture periodically so the demo sparkline animates.
       const id = setInterval(() => {
-        if (mountedRef.current) setMarkup(mockMarkupState());
+        if (!cancelled) setMarkup(mockMarkupState());
       }, DEMO_REFRESH_INTERVAL);
       return () => {
-        mountedRef.current = false;
+        cancelled = true;
         clearInterval(id);
       };
     }
@@ -65,7 +69,7 @@ export function useMarkupData(intervalMs = POLL_INTERVAL): MarkupDataState {
     let nullStreak = 0;
     const tick = async () => {
       const m = await terminal.markup();
-      if (!mountedRef.current) return;
+      if (cancelled) return; // also stops this chain from rescheduling
       // null → off-hours/cold-start/offline → hide the panel (NOT demo).
       setMarkup(m);
       nullStreak = m == null ? nullStreak + 1 : 0;
@@ -74,7 +78,7 @@ export function useMarkupData(intervalMs = POLL_INTERVAL): MarkupDataState {
     };
     tick();
     return () => {
-      mountedRef.current = false;
+      cancelled = true;
       if (timer) clearTimeout(timer);
     };
   }, [intervalMs]);
