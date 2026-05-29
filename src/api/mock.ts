@@ -6,6 +6,9 @@
 
 import type { DailySummary, HindcastResponse, HistoryResponse, PredictionResponse } from "./types";
 import type {
+  MarkupAlert,
+  MarkupBandStrike,
+  MarkupState,
   ProgramFlowEvent,
   StraddleChainResponse,
   StraddleStrikeRow,
@@ -615,103 +618,61 @@ export function mockStraddleSnapshot(): StraddleChainResponse {
     },
     stale: false,
     data_age_seconds: 30,
-    velocity_tape: mockVelocityTape(atmStrike, spot, todayET),
     preview_mode: false,
   };
 }
 
-/** Synthetic frozen velocity-tape payload for demo mode. Builds an
- *  ATM-cluster of 11 strikes (ATM ±5 on a 5pt grid), with 15 1-min
- *  buckets per (strike, side). Volumes peak near ATM (where 0DTE
- *  flow lives) and on the call side (matching the Friday-close
- *  pattern the real replay captured). A few minutes near the close
- *  carry synthetic 3σ spike flags so the operator can see the spike
- *  glyph rendering on the call-side ATM cluster. */
-function mockVelocityTape(
-  atmStrike: number,
-  spot: number,
-  todayET: string,
-) {
-  const rand = seededRandom(27182);
-  // 11 strikes: ATM ±5 on the same 5pt grid the real replay uses.
-  const cluster: number[] = [];
-  for (let i = -5; i <= 5; i++) cluster.push(atmStrike + i * 5);
-  // 15 1-min buckets spanning 15:30-15:44 ET (a 15-min slice of the
-  // Friday last-30 window — the demo doesn't need the full 30 to
-  // demonstrate the visual). The replay-page time strings use the
-  // same `${todayET}` prefix so the demo's "session date" lines up
-  // with the page's current ET clock.
-  const minutes: string[] = [];
-  for (let m = 0; m < 15; m++) {
-    const mm = (30 + m).toString().padStart(2, "0");
-    minutes.push(`${todayET}T15:${mm}:00-04:00`);
-  }
-
-  // Distance from ATM drives both base volume + spike likelihood:
-  // closer-to-ATM strikes carry more volume and host the only
-  // spikes. Calls dominate puts ~3:1 (mirrors the real Friday data
-  // captured during the smoke run — 5,583 vs 54 contracts at ATM).
-  const strikes = cluster.map((strike) => {
-    const dist = Math.abs(strike - atmStrike);
-    const callBase = Math.max(5, 60 * Math.exp(-Math.pow(dist / 15, 2)));
-    const putBase = Math.max(1, 20 * Math.exp(-Math.pow(dist / 12, 2)));
-    const callMinutes = minutes.map((ts, i) => {
-      const noise = (rand() - 0.5) * callBase * 0.6;
-      const vol = Math.max(1, Math.floor(callBase + noise));
-      const tradeCount = Math.max(1, Math.floor(vol / 4));
-      return { ts, volume: vol, trade_count: tradeCount, avg_price: 2.5 - i * 0.04 };
+/** Synthetic live markup state for demo mode. The ATM call shows a
+ *  market-maker markup blowout (a ~60s bid/ask series that's tight for
+ *  ~48s then the ask runs away from the bid) plus a matching UP alert;
+ *  the other band strikes stay calm. Exercises the alert feed + the
+ *  gradient sparkline fanning open. Time-anchored to now so the panel
+ *  reads fresh (stale=false). */
+export function mockMarkupState(): MarkupState {
+  const rand = seededRandom(31415);
+  const now = Date.now();
+  const isoAt = (secsAgo: number) =>
+    new Date(now - secsAgo * 1000).toISOString().replace("Z", "-04:00");
+  const atm = 7515;
+  const calm = (base: number): [string, number, number][] =>
+    Array.from({ length: 60 }, (_, i) => {
+      const b = base + (rand() - 0.5) * 0.1;
+      return [isoAt(60 - i), +b.toFixed(2), +(b + (i % 2 ? 0.2 : 0.1)).toFixed(2)];
     });
-    const putMinutes = minutes.map((ts, i) => {
-      // Only 60% of minutes have put prints — puts are sparser than
-      // calls on a call-skewed close (matches real Friday tape).
-      if (rand() > 0.6) {
-        const noise = (rand() - 0.5) * putBase * 0.6;
-        const vol = Math.max(1, Math.floor(putBase + noise));
-        return { ts, volume: vol, trade_count: Math.max(1, Math.floor(vol / 3)), avg_price: 4.2 + i * 0.05 };
-      }
-      return null;
-    }).filter((m): m is { ts: string; volume: number; trade_count: number; avg_price: number } => m !== null);
-
-    // Inject a single spike near the end of the window on the
-    // call side for strikes within ±10pts of ATM (so the spike
-    // glyph renders on the ATM cluster). The spike multiplies the
-    // baseline volume by ~6x so the >3σ threshold trips reliably.
-    const callSpikeMinutes: string[] = [];
-    if (dist <= 10) {
-      const spikeIdx = 11 + Math.floor(rand() * 3); // minutes[11..13]
-      callMinutes[spikeIdx] = {
-        ...callMinutes[spikeIdx],
-        volume: Math.floor(callMinutes[spikeIdx].volume * 6 + 80),
-        trade_count: callMinutes[spikeIdx].trade_count + 20,
-      };
-      callSpikeMinutes.push(callMinutes[spikeIdx].ts);
+  // ATM call: ~48s calm, then a 12s ask-runaway (the validated 7515C shape).
+  const callSeries: [string, number, number][] = [];
+  for (let i = 0; i < 60; i++) {
+    let bid = 14.7 + (rand() - 0.5) * 0.1;
+    let ask = bid + (i % 2 ? 0.2 : 0.1);
+    if (i >= 48) {
+      const k = i - 48;
+      bid = 15.0 + k * 0.45;
+      ask = bid + Math.min(0.4 + k * 0.6, 6.8);
     }
-
-    return {
-      strike,
-      call_minutes: callMinutes,
-      put_minutes: putMinutes,
-      call_spike_minutes: callSpikeMinutes,
-      put_spike_minutes: [],
-      // Undercount flags — the mock represents a clean replay where
-      // no contract hit IBKR's 1000-tick cap, so both sides are False.
-      call_undercount: false,
-      put_undercount: false,
-    };
+    callSeries.push([isoAt(60 - i), +bid.toFixed(2), +ask.toFixed(2)]);
+  }
+  const last = (s: [string, number, number][]) => s[s.length - 1];
+  const entry = (
+    strike: number, side: "call" | "put", s: [string, number, number][],
+  ): MarkupBandStrike => ({
+    strike, side, bid: last(s)[1], ask: last(s)[2],
+    spread: +(last(s)[2] - last(s)[1]).toFixed(2), baseline_spread: 0.15, series: s,
   });
-
-  // SPX spot path: a 15-bar slow drift downward, mirroring the real
-  // Friday-close 7424 → 7409 pattern.
-  const spotPath = minutes.map((ts, i) => ({
-    ts,
-    price: +(spot - i * 0.4 - rand() * 0.3).toFixed(2),
-  }));
-
+  const band: MarkupBandStrike[] = [];
+  for (let off = -2; off <= 2; off++) {
+    const strike = atm + off * 5;
+    band.push(entry(strike, "call", off === 0 ? callSeries : calm(14 - off)));
+    band.push(entry(strike, "put", calm(16 + off)));
+  }
+  const recent_alerts: MarkupAlert[] = [
+    {
+      ts: isoAt(6), strike: atm, side: "call", direction: "up",
+      spread: 2.2, baseline_spread: 0.15, spread_z: 27.6, ask_jump: 2.5,
+    },
+  ];
+  const todayET = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
   return {
-    replay_session_date: todayET.replace(/-/g, ""),
-    window_start: `${todayET}T15:30:00-04:00`,
-    window_end: `${todayET}T15:45:00-04:00`,
-    spot_path: spotPath,
-    strikes,
+    session_date: todayET, active_expiry: todayET, center_atm: atm,
+    updated_at: isoAt(2), age_seconds: 2, stale: false, band, recent_alerts,
   };
 }

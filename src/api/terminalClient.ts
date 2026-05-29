@@ -13,6 +13,7 @@ import type {
   BreadthData,
   GexData,
   LevelsData,
+  MarkupState,
   RegimeData,
   StraddleChainResponse,
   SynthesizerData,
@@ -54,6 +55,10 @@ export const terminal = {
   intradayBars: () =>
     get<TerminalIntradayBarsResponse>("/terminal/v1/bars/es-intraday"),
   straddle0dte: () => get<StraddleChainResponse>("/terminal/v1/straddle/0dte"),
+  /** Live markup state. Backend returns `null` (HTTP 200) when the
+   *  sidecar is absent — `get` already collapses that + network errors
+   *  to null, so callers treat null as "no live markup; hide panel". */
+  markup: () => get<MarkupState>("/terminal/v1/markup"),
 };
 
 /** Convenience wrapper for the chart canvas — returns the bars array
