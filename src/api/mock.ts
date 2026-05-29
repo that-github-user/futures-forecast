@@ -671,8 +671,18 @@ export function mockMarkupState(): MarkupState {
     },
   ];
   const todayET = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
+  // SPX spot: ~24 samples over 120s (5s cadence). Flat near 7519, then
+  // ticks UP over the last ~15s — i.e. just AFTER the 6s-ago call markup,
+  // so the demo shows spot moving in the alert's direction.
+  const spot_series: [string, number][] = [];
+  for (let k = 0; k < 24; k++) {
+    const secsAgo = 120 - k * 5;
+    const rise = secsAgo <= 15 ? (15 - secsAgo) * 1.4 : 0; // last 3 pts climb
+    spot_series.push([isoAt(secsAgo), +(7519 + (rand() - 0.5) * 0.4 + rise).toFixed(2)]);
+  }
   return {
     session_date: todayET, active_expiry: todayET, center_atm: atm,
     updated_at: isoAt(2), age_seconds: 2, stale: false, band, recent_alerts,
+    spot_series,
   };
 }

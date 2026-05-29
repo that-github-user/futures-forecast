@@ -11,21 +11,12 @@
   filter: saturate(0.6);
 }
 
+/* One column of full-width panels: alert strip, then Call / Put / SPX
+   graphs stacked at full browser width. */
 .markup-body {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.62fr) 1fr;
-  gap: 14px;
-}
-@media (max-width: 760px) {
-  .markup-body {
-    grid-template-columns: 1fr;
-  }
-}
-
-.markup-charts {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* Alert feed rows. The newest fired alert gets a one-shot entry pulse +

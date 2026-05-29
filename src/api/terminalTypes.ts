@@ -379,6 +379,10 @@ export interface MarkupState {
   stale: boolean;
   band: MarkupBandStrike[];
   recent_alerts: MarkupAlert[];
+  /** Rolling ~2-min (120s) SPX spot samples `[iso_ts_ET, price]` for the
+   *  overlay panel. Optional so payloads from a pre-spot-series backend
+   *  still parse (the panel hides the SPX overlay when absent/empty). */
+  spot_series?: [string, number][];
 }
 
 /** 0DTE SPX strike-positioning snapshot for the /straddle page.

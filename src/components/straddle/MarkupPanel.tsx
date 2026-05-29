@@ -2,15 +2,18 @@
  * MarkupPanel — live market-maker MARKUP tell for /straddle. Replaces
  * the StrikeVelocityTape.
  *
- * Two halves:
- *   - Alert feed: the directional calls (call-side markup → spot UP ▲,
- *     put-side → DOWN ▼) with the evidence (spread vs baseline, σ, ask
- *     jump). Newest pulses in + keeps a soft glow.
- *   - Gradient sparklines: the near-ATM strike's CALL + PUT, each a
- *     rolling ~1-min bid/ask envelope where the ASK line is colored
- *     per-segment by steepness (dim → amber → hot-red). A calm market
- *     is a dim flat line; a markup ramps hot exactly where the ask runs
- *     away — the "gradient of intensity" the signal is about.
+ * Layout — one column of full-width panels:
+ *   - Alert feed (strip): the directional calls (call-side markup → spot
+ *     UP ▲, put-side → DOWN ▼) with the evidence (spread vs baseline, σ,
+ *     ask jump). Newest pulses in + keeps a soft glow.
+ *   - Three stacked graphs, full browser width:
+ *       1. CALL gradient sparkline, 2. PUT gradient sparkline — each a
+ *          rolling ~2-min (120s) bid/ask envelope where the ASK line is
+ *          colored per-segment by steepness (dim → amber → hot-red): a
+ *          calm market is a dim flat line; a markup ramps hot exactly
+ *          where the ask runs away — the "gradient of intensity."
+ *       3. SPX spot line with vertical alert markers, so the operator
+ *          sees spot move right AFTER each σ blowout.
  *
  * Degrades: the page hides the panel when markup is null (off-hours /
  * cold start / offline); `stale` dims the whole panel without blanking.
@@ -19,18 +22,23 @@
 import type { MarkupAlert, MarkupBandStrike, MarkupState } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import {
+  alertMarkerX,
   directionMeta,
   formatAlertEvidence,
   intensityColor,
   pickFeatured,
   relativeAge,
   sparkGeometry,
+  spotLineGeometry,
   spreadHeat,
 } from "./markupHelpers";
 import "./MarkupPanel.css";
 
-const SPARK_W = 240;
-const SPARK_H = 64;
+// Full-width sparkline coordinate space (stretched to the container via
+// preserveAspectRatio="none" + CSS width:100%). Taller now that the
+// graphs are full-width and stacked rather than side-by-side.
+const SPARK_W = 720;
+const SPARK_H = 96;
 
 export function MarkupPanel({ markup }: { markup: MarkupState }) {
   const featured = pickFeatured(markup.band, markup.center_atm);
@@ -81,10 +89,12 @@ export function MarkupPanel({ markup }: { markup: MarkupState }) {
 
       <div className="markup-body">
         <AlertFeed alerts={markup.recent_alerts} />
-        <div className="markup-charts">
-          <GradientSpark entry={featured.call} strike={featured.strike} side="call" />
-          <GradientSpark entry={featured.put} strike={featured.strike} side="put" />
-        </div>
+        <GradientSpark entry={featured.call} strike={featured.strike} side="call" />
+        <GradientSpark entry={featured.put} strike={featured.strike} side="put" />
+        <SpotPanel
+          series={markup.spot_series ?? []}
+          alerts={markup.recent_alerts}
+        />
       </div>
     </div>
   );
@@ -309,5 +319,99 @@ function Spark({
         fill={intensityColor(lastIntensity)}
       />
     </svg>
+  );
+}
+
+function SpotPanel({
+  series,
+  alerts,
+}: {
+  series: [string, number][];
+  alerts: MarkupAlert[];
+}) {
+  const geo = spotLineGeometry(series, SPARK_W, SPARK_H, 3);
+  const last = series.length > 0 ? series[series.length - 1][1] : null;
+  return (
+    <div
+      style={{
+        background: colors.bgInset,
+        border: `1px solid ${colors.borderDim}`,
+        borderRadius: 6,
+        padding: "8px 10px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 4,
+          fontFamily: fonts.mono,
+          fontSize: 11,
+        }}
+      >
+        <span style={{ color: colors.textSecondary }}>
+          SPX spot <span style={{ color: colors.textDim }}>· 2-min · markers = markups</span>
+        </span>
+        <span style={{ color: colors.textMuted }}>{last != null ? last.toFixed(2) : "—"}</span>
+      </div>
+      {geo == null ? (
+        <div
+          style={{
+            height: SPARK_H,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: colors.textDim,
+            fontSize: 11,
+          }}
+        >
+          spot warming up…
+        </div>
+      ) : (
+        <svg
+          className="markup-spark"
+          viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+          height={SPARK_H}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="SPX spot with markup alert markers"
+        >
+          {/* alert markers — a dir-colored dashed vertical at each in-window
+              markup, so spot's move reads right after the σ blowout */}
+          {alerts.map((a) => {
+            const x = alertMarkerX(a.ts, geo.tMin, geo.tMax, SPARK_W, 3);
+            if (x == null) return null;
+            const dir = directionMeta(a.direction);
+            return (
+              <line
+                key={`${a.ts}-${a.strike}-${a.side}`}
+                x1={x}
+                x2={x}
+                y1={0}
+                y2={SPARK_H}
+                stroke={dir.color}
+                strokeWidth={1}
+                strokeDasharray="2 2"
+                opacity={0.55}
+              />
+            );
+          })}
+          <polyline
+            points={geo.points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}
+            fill="none"
+            stroke={colors.textSecondary}
+            strokeWidth={1.6}
+            strokeLinejoin="round"
+          />
+          <circle
+            cx={geo.points[geo.points.length - 1].x}
+            cy={geo.points[geo.points.length - 1].y}
+            r={2.4}
+            fill={colors.textBright}
+          />
+        </svg>
+      )}
+    </div>
   );
 }
