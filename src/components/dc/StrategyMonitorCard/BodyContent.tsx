@@ -190,16 +190,25 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
 }
 
 /** Subline override for broker-no-fill (blocked_order). Renders an
- *  amber "NO FILL" pill inline with the daemon-authoritative reason
- *  text so the operator drilling into a still-highlighted card can
- *  immediately tell a real fill apart from a ladder-exhausted attempt.
+ *  amber "NO FILL" pill + a NEUTRAL pointer so the operator drilling
+ *  into a still-highlighted card can tell a real fill apart from a
+ *  no-fill attempt — WITHOUT the raw broker-plumbing reason string
+ *  cluttering this high-level anticipation surface. The verbose
+ *  categorized detail (LADDER / PARKED, the full outcome_reason) lives
+ *  in its purpose-built homes: the Events tab and the Tent tab's
+ *  alpha-plays panel. The reason is still discoverable here on hover
+ *  via the title tooltip.
+ *
  *  Amber accent is reserved for the pill — the surrounding card stays
  *  green so the card itself remains visually "fired" per the operator
  *  feedback that automation-side failures should not gray out viewing.
  */
 function NoFillLine({ reason }: { reason: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+    <span
+      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+      title={reason}
+    >
       <span style={{
         fontSize: 9,
         fontFamily: fonts.mono,
@@ -213,7 +222,7 @@ function NoFillLine({ reason }: { reason: string }) {
       }}>
         NO FILL
       </span>
-      <span>{reason}</span>
+      <span>broker did not fill — see Events</span>
     </span>
   );
 }
