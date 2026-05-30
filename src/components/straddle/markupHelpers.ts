@@ -238,6 +238,12 @@ export function spotLineGeometry(
  * x-pixel for an alert's timestamp on the spot line's time axis, or null
  * when the alert falls outside the visible [tMin, tMax] window (so a
  * marker is only drawn where it can be read against the spot move).
+ *
+ * Note: an alert fired AFTER the last spot flush (`t > tMax`) is
+ * intentionally omitted until the next ~5s sample extends the domain —
+ * we never draw a marker past the end of the drawn spot line (it would
+ * float in empty space). Alerts emit on tick, spot samples every ~5s, so
+ * the worst-case lag is one flush (≤5s) and the marker self-heals.
  */
 export function alertMarkerX(
   tsIso: string,

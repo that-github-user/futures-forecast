@@ -634,22 +634,28 @@ export function mockMarkupState(): MarkupState {
   const isoAt = (secsAgo: number) =>
     new Date(now - secsAgo * 1000).toISOString().replace("Z", "-04:00");
   const atm = 7515;
+  // The demo markup fires ~35s ago — consistent across the call gradient,
+  // the alert marker, and the spot rise so the panels tell one story.
+  const MARKUP_AGO = 35;
+  // 120 gradient samples (~1s cadence) to match the live 2-min window.
   const calm = (base: number): [string, number, number][] =>
-    Array.from({ length: 60 }, (_, i) => {
+    Array.from({ length: 120 }, (_, i) => {
       const b = base + (rand() - 0.5) * 0.1;
-      return [isoAt(60 - i), +b.toFixed(2), +(b + (i % 2 ? 0.2 : 0.1)).toFixed(2)];
+      return [isoAt(120 - i), +b.toFixed(2), +(b + (i % 2 ? 0.2 : 0.1)).toFixed(2)];
     });
-  // ATM call: ~48s calm, then a 12s ask-runaway (the validated 7515C shape).
+  // ATM call: calm, then the ask-runaway starting ~35s ago (the validated
+  // 7515C shape) — ramps up over ~12s then holds elevated.
   const callSeries: [string, number, number][] = [];
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 120; i++) {
+    const secsAgo = 120 - i;
     let bid = 14.7 + (rand() - 0.5) * 0.1;
     let ask = bid + (i % 2 ? 0.2 : 0.1);
-    if (i >= 48) {
-      const k = i - 48;
-      bid = 15.0 + k * 0.45;
+    if (secsAgo <= MARKUP_AGO) {
+      const k = MARKUP_AGO - secsAgo; // 0 at the blowout start
+      bid = 15.0 + Math.min(k, 12) * 0.4;
       ask = bid + Math.min(0.4 + k * 0.6, 6.8);
     }
-    callSeries.push([isoAt(60 - i), +bid.toFixed(2), +ask.toFixed(2)]);
+    callSeries.push([isoAt(secsAgo), +bid.toFixed(2), +ask.toFixed(2)]);
   }
   const last = (s: [string, number, number][]) => s[s.length - 1];
   const entry = (
@@ -666,19 +672,21 @@ export function mockMarkupState(): MarkupState {
   }
   const recent_alerts: MarkupAlert[] = [
     {
-      ts: isoAt(6), strike: atm, side: "call", direction: "up",
+      // fires ~2s into the blowout (≈33s ago) → the marker lands at the
+      // FOOT of the spot rise below.
+      ts: isoAt(MARKUP_AGO - 2), strike: atm, side: "call", direction: "up",
       spread: 2.2, baseline_spread: 0.15, spread_z: 27.6, ask_jump: 2.5,
     },
   ];
   const todayET = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
-  // SPX spot: ~24 samples over 120s (5s cadence). Flat near 7519, then
-  // ticks UP over the last ~15s — i.e. just AFTER the 6s-ago call markup,
-  // so the demo shows spot moving in the alert's direction.
+  // SPX spot: 25 samples over 120s (5s cadence), newest at now. Flat near
+  // 7519 until the markup, then climbs — so the alert marker sits at the
+  // foot of the rise and spot visibly moves to its RIGHT (after the σ shift).
   const spot_series: [string, number][] = [];
-  for (let k = 0; k < 24; k++) {
-    const secsAgo = 120 - k * 5;
-    const rise = secsAgo <= 15 ? (15 - secsAgo) * 1.4 : 0; // last 3 pts climb
-    spot_series.push([isoAt(secsAgo), +(7519 + (rand() - 0.5) * 0.4 + rise).toFixed(2)]);
+  for (let k = 0; k <= 24; k++) {
+    const secsAgo = 120 - k * 5; // 120 → 0
+    const rise = secsAgo < MARKUP_AGO ? (MARKUP_AGO - secsAgo) * 0.42 : 0;
+    spot_series.push([isoAt(secsAgo), +(7519 + (rand() - 0.5) * 0.3 + rise).toFixed(2)]);
   }
   return {
     session_date: todayET, active_expiry: todayET, center_atm: atm,
