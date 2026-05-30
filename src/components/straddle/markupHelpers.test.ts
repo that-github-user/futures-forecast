@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MarkupAlert, MarkupBandStrike } from "../../api/terminalTypes";
+import type { MarkupAlert, MarkupBandStrike, MarkupState } from "../../api/terminalTypes";
 import {
   clamp01,
   directionMeta,
@@ -9,9 +9,14 @@ import {
   pickFeatured,
   relativeAge,
   alertMarkerX,
+  quoteAtTime,
+  sharedTimeDomain,
   sparkGeometry,
+  spotAtTime,
   spotLineGeometry,
   spreadHeat,
+  timeToX,
+  xToTime,
   SLOPE_REF,
 } from "./markupHelpers";
 import { colors } from "../../styles/tokens";
@@ -174,5 +179,67 @@ describe("spotLineGeometry / alertMarkerX", () => {
     expect(xMid!).toBeLessThan(198);
     expect(alertMarkerX(ts(20), tMin, tMax, 200, 2)).toBeNull(); // after window
     expect(alertMarkerX("not-a-date", tMin, tMax, 200, 2)).toBeNull();
+  });
+});
+
+describe("timeToX / xToTime (shared crosshair axis)", () => {
+  const dom = { tMin: 1000, tMax: 2000 };
+  it("timeToX maps endpoints into [pad, w-pad] and clamps", () => {
+    expect(timeToX(1000, dom, 200, 2)).toBeCloseTo(2);
+    expect(timeToX(2000, dom, 200, 2)).toBeCloseTo(198);
+    expect(timeToX(1500, dom, 200, 2)).toBeCloseTo(100);
+    expect(timeToX(0, dom, 200, 2)).toBeCloseTo(2); // clamp below
+    expect(timeToX(9999, dom, 200, 2)).toBeCloseTo(198); // clamp above
+  });
+  it("xToTime inverts timeToX mid-range", () => {
+    const x = timeToX(1500, dom, 200, 2);
+    expect(xToTime(x, dom, 200, 2)).toBeCloseTo(1500);
+  });
+});
+
+describe("sharedTimeDomain", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  it("tMax = freshest ts across band/spot/updated_at; window is 120s", () => {
+    const base = 1_700_000_000_000;
+    const markup = {
+      session_date: "x", active_expiry: null, center_atm: null,
+      updated_at: iso(base), age_seconds: 0, stale: false,
+      band: [{
+        strike: 7515, side: "call" as const, bid: 1, ask: 2, spread: 1,
+        baseline_spread: 0.1,
+        series: [[iso(base - 5000), 1, 2], [iso(base - 1000), 1, 2]] as [string, number, number][],
+      }],
+      spot_series: [[iso(base - 3000), 7519]] as [string, number][],
+      recent_alerts: [],
+    } satisfies MarkupState;
+    const d = sharedTimeDomain(markup);
+    expect(d.tMax).toBe(base); // updated_at is the freshest
+    expect(d.tMax - d.tMin).toBe(120_000);
+  });
+});
+
+describe("quoteAtTime / spotAtTime (crosshair readouts)", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  it("nearest sample by time; null on empty", () => {
+    const base = 1000;
+    const q = quoteAtTime(
+      [[iso(base), 14.7, 14.8], [iso(base + 10000), 15.2, 17.4]], base + 9000,
+    );
+    expect(q).toEqual({ bid: 15.2, ask: 17.4, spread: 2.2 });
+    expect(quoteAtTime([], 0)).toBeNull();
+    expect(spotAtTime([[iso(base), 7519], [iso(base + 10000), 7533]], base + 9000)).toBe(7533);
+    expect(spotAtTime([], 0)).toBeNull();
+  });
+});
+
+describe("sparkGeometry with shared domain → time-based x", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  it("places points by time, not index", () => {
+    const geo = sparkGeometry(
+      [[iso(0), 14.7, 14.8], [iso(50000), 15.0, 15.2]],
+      200, 60, 2, null, { tMin: 0, tMax: 100000 },
+    )!;
+    expect(geo.ask[0].x).toBeCloseTo(2); // t=0 → pad
+    expect(geo.ask[1].x).toBeCloseTo(100); // t=50000 = 50% → mid (NOT w-pad)
   });
 });
