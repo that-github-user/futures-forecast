@@ -11,7 +11,7 @@
  * about — see ~/.claude/plans/spread-tell-design.md.
  */
 
-import type { MarkupAlert, MarkupBandStrike } from "../../api/terminalTypes";
+import type { MarkupAlert, MarkupBandStrike, MarkupState } from "../../api/terminalTypes";
 import { colors } from "../../styles/tokens";
 
 export interface SparkPoint {
@@ -66,11 +66,40 @@ export function intensityColor(intensity: number): string {
     : lerpHex(colors.accentAmber, colors.accentRed, (t - 0.5) / 0.5);
 }
 
+/** A shared wall-clock time window (epoch ms) so the three stacked panels
+ *  map a given x to the SAME instant — the basis for the synced crosshair
+ *  and for time-aligned alert markers. */
+export interface TimeDomain {
+  tMin: number;
+  tMax: number;
+}
+
+/** Epoch-ms time → x-pixel for a shared domain. NOT clamped: a sample
+ *  outside the window maps off-canvas (x < pad or > w-pad) and is clipped
+ *  by the viewBox — consistent with the spot line, rather than piling
+ *  out-of-window points onto the edge. (The mouse→time inverse `xToTime`
+ *  IS clamped, since the cursor can't leave the panel.) */
+export function timeToX(t: number, domain: TimeDomain, w: number, pad: number): number {
+  const span = domain.tMax - domain.tMin || 1;
+  return pad + ((t - domain.tMin) / span) * (w - 2 * pad);
+}
+
+/** Inverse of timeToX: x-pixel → epoch-ms (clamped to the domain). */
+export function xToTime(x: number, domain: TimeDomain, w: number, pad: number): number {
+  const span = domain.tMax - domain.tMin || 1;
+  const frac = clamp01((x - pad) / (w - 2 * pad || 1));
+  return domain.tMin + frac * span;
+}
+
 /**
  * Build sparkline geometry for one strike/side's rolling quote series.
  * `series` is [iso_ts, bid, ask][] (oldest→newest). Returns pixel-space
  * points scaled to [w,h] with `pad` inset. Empty/degenerate series →
  * null (caller renders the warmup placeholder).
+ *
+ * When `domain` is given, x is TIME-based against the shared window (so
+ * this panel aligns with the others + the crosshair); otherwise x is
+ * index-based (even spacing — the original single-panel behavior).
  */
 export function sparkGeometry(
   series: [string, number, number][],
@@ -78,11 +107,13 @@ export function sparkGeometry(
   h: number,
   pad = 2,
   baselineSpread: number | null = null,
+  domain: TimeDomain | null = null,
 ): SparkGeometry | null {
   if (series.length < 2) return null;
   const n = series.length;
   const bids = series.map((s) => s[1]);
   const asks = series.map((s) => s[2]);
+  const times = domain ? series.map((s) => new Date(s[0]).getTime()) : null;
   // The baseline reference (latest bid + the strike's "normal" spread)
   // must stay ON-canvas so the operator can see how far the ask has run
   // past it — include it in the y-domain rather than letting the line
@@ -93,7 +124,10 @@ export function sparkGeometry(
   const yMin = Math.min(...bids, ...domainExtra);
   const yMax = Math.max(...asks, ...domainExtra);
   const span = yMax - yMin || 1; // guard flat series
-  const xAt = (i: number) => pad + (i / (n - 1)) * (w - 2 * pad);
+  const xAt =
+    times && domain
+      ? (i: number) => timeToX(times[i], domain, w, pad)
+      : (i: number) => pad + (i / (n - 1)) * (w - 2 * pad);
   const yAt = (price: number) => h - pad - ((price - yMin) / span) * (h - 2 * pad);
 
   const bid: SparkPoint[] = series.map((s, i) => ({ x: xAt(i), y: yAt(s[1]) }));
@@ -217,12 +251,15 @@ export function spotLineGeometry(
   w: number,
   h: number,
   pad = 3,
+  domain: TimeDomain | null = null,
 ): SpotGeometry | null {
   if (series.length < 2) return null;
   const ts = series.map((s) => new Date(s[0]).getTime());
   const prices = series.map((s) => s[1]);
-  const tMin = ts[0];
-  const tMax = ts[ts.length - 1];
+  // Use the shared window when given (so the SPX line aligns with the
+  // gradient panels + crosshair); else fall back to the series' own range.
+  const tMin = domain ? domain.tMin : ts[0];
+  const tMax = domain ? domain.tMax : ts[ts.length - 1];
   const tSpan = tMax - tMin || 1;
   const yMin = Math.min(...prices);
   const yMax = Math.max(...prices);
@@ -256,4 +293,72 @@ export function alertMarkerX(
   if (Number.isNaN(t) || t < tMin || t > tMax) return null;
   const tSpan = tMax - tMin || 1;
   return pad + ((t - tMin) / tSpan) * (w - 2 * pad);
+}
+
+/**
+ * The shared 120s window for the three stacked panels — `[tMax-120s, tMax]`
+ * where tMax is the freshest timestamp across the band series, the spot
+ * series, and `updated_at`. Mapping every panel to this one domain is
+ * what makes "same x = same instant" hold for the synced crosshair and
+ * the time-aligned alert markers.
+ */
+const SHARED_WINDOW_MS = 120_000;
+
+function lastSampleTs(series: ReadonlyArray<readonly unknown[]>): number {
+  return series.length ? new Date(series[series.length - 1][0] as string).getTime() : 0;
+}
+
+export function sharedTimeDomain(markup: MarkupState): TimeDomain {
+  const candidates: number[] = [new Date(markup.updated_at).getTime()];
+  for (const b of markup.band) {
+    if (b.series.length) candidates.push(lastSampleTs(b.series));
+  }
+  if (markup.spot_series && markup.spot_series.length) {
+    candidates.push(lastSampleTs(markup.spot_series));
+  }
+  // Guard against an unparseable ISO (NaN) poisoning the whole domain
+  // (matches alertMarkerX's Number.isNaN precedent); fall back to now.
+  const finite = candidates.filter(Number.isFinite);
+  const tMax = finite.length ? Math.max(...finite) : Date.now();
+  return { tMin: tMax - SHARED_WINDOW_MS, tMax };
+}
+
+export interface QuoteSample {
+  bid: number;
+  ask: number;
+  spread: number;
+}
+
+/** Nearest (bid, ask, spread) in a quote series to time `t` (epoch ms),
+ *  or null when empty — for the crosshair readout. */
+export function quoteAtTime(
+  series: [string, number, number][],
+  t: number,
+): QuoteSample | null {
+  if (series.length === 0) return null;
+  let best = series[0];
+  let bestD = Infinity;
+  for (const s of series) {
+    const d = Math.abs(new Date(s[0]).getTime() - t);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return { bid: best[1], ask: best[2], spread: +(best[2] - best[1]).toFixed(2) };
+}
+
+/** Nearest spot price in a spot series to time `t` (epoch ms), or null. */
+export function spotAtTime(series: [string, number][], t: number): number | null {
+  if (series.length === 0) return null;
+  let best = series[0];
+  let bestD = Infinity;
+  for (const s of series) {
+    const d = Math.abs(new Date(s[0]).getTime() - t);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best[1];
 }

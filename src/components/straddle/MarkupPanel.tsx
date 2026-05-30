@@ -19,18 +19,24 @@
  * cold start / offline); `stale` dims the whole panel without blanking.
  */
 
+import { useCallback, useMemo, useState, type MouseEvent } from "react";
 import type { MarkupAlert, MarkupBandStrike, MarkupState } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
+import type { TimeDomain } from "./markupHelpers";
 import {
   alertMarkerX,
   directionMeta,
   formatAlertEvidence,
   intensityColor,
   pickFeatured,
+  quoteAtTime,
   relativeAge,
+  sharedTimeDomain,
   sparkGeometry,
+  spotAtTime,
   spotLineGeometry,
   spreadHeat,
+  xToTime,
 } from "./markupHelpers";
 import "./MarkupPanel.css";
 
@@ -39,9 +45,34 @@ import "./MarkupPanel.css";
 // graphs are full-width and stacked rather than side-by-side.
 const SPARK_W = 720;
 const SPARK_H = 96;
+const SPARK_PAD = 3;
+
+/** Synced-crosshair context shared by all three graphs: the hovered
+ *  viewBox-x (null when not hovering), the shared time domain, and the
+ *  hover handlers. A move on any graph updates `x` for all three. */
+interface Cursor {
+  x: number | null;
+  domain: TimeDomain;
+  onMove: (e: MouseEvent<SVGSVGElement>) => void;
+  onLeave: () => void;
+}
 
 export function MarkupPanel({ markup }: { markup: MarkupState }) {
   const featured = pickFeatured(markup.band, markup.center_atm);
+  // Memoized so it's a STABLE reference across cursor moves (changes only
+  // when `markup` does, every ~5s) — lets the child geometry useMemo skip
+  // recompute on every mousemove.
+  const domain = useMemo(() => sharedTimeDomain(markup), [markup]);
+  // Synced crosshair: a hover on ANY graph sets the shared viewBox-x; all
+  // three render a vertical bar there + read out their value at that
+  // instant (the three panels share one time axis via `domain`).
+  const [cursorX, setCursorX] = useState<number | null>(null);
+  const onMove = useCallback((e: MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setCursorX(((e.clientX - r.left) / r.width) * SPARK_W);
+  }, []);
+  const onLeave = useCallback(() => setCursorX(null), []);
+  const cursor: Cursor = { x: cursorX, domain, onMove, onLeave };
 
   return (
     <div
@@ -89,12 +120,9 @@ export function MarkupPanel({ markup }: { markup: MarkupState }) {
 
       <div className="markup-body">
         <AlertFeed alerts={markup.recent_alerts} />
-        <GradientSpark entry={featured.call} strike={featured.strike} side="call" />
-        <GradientSpark entry={featured.put} strike={featured.strike} side="put" />
-        <SpotPanel
-          series={markup.spot_series ?? []}
-          alerts={markup.recent_alerts}
-        />
+        <GradientSpark entry={featured.call} strike={featured.strike} side="call" cursor={cursor} />
+        <GradientSpark entry={featured.put} strike={featured.strike} side="put" cursor={cursor} />
+        <SpotPanel series={markup.spot_series ?? []} alerts={markup.recent_alerts} cursor={cursor} />
       </div>
     </div>
   );
@@ -196,16 +224,27 @@ function GradientSpark({
   entry,
   strike,
   side,
+  cursor,
 }: {
   entry: MarkupBandStrike | null;
   strike: number | null;
   side: "call" | "put";
+  cursor: Cursor;
 }) {
   const sideLetter = side === "call" ? "C" : "P";
   const accent = side === "call" ? colors.accentGreen : colors.accentRed;
-  const geo = entry
-    ? sparkGeometry(entry.series, SPARK_W, SPARK_H, 3, entry.baseline_spread)
-    : null;
+  // Keyed on series + domain (NOT cursor.x) → not rebuilt on mousemove.
+  const geo = useMemo(
+    () =>
+      entry
+        ? sparkGeometry(entry.series, SPARK_W, SPARK_H, SPARK_PAD, entry.baseline_spread, cursor.domain)
+        : null,
+    [entry, cursor.domain],
+  );
+  // Crosshair readout: bid/ask/spread at the hovered instant.
+  const cursorTime =
+    cursor.x != null ? xToTime(cursor.x, cursor.domain, SPARK_W, SPARK_PAD) : null;
+  const q = cursorTime != null && entry ? quoteAtTime(entry.series, cursorTime) : null;
 
   return (
     <div
@@ -230,8 +269,12 @@ function GradientSpark({
           {strike != null ? strike.toFixed(0) : "—"}
           <span style={{ color: accent, fontWeight: 700 }}> {sideLetter}</span>
         </span>
-        <span style={{ color: colors.textMuted }}>
-          {entry?.spread != null ? `spread $${entry.spread.toFixed(2)}` : "—"}
+        <span style={{ color: q ? colors.textBright : colors.textMuted }}>
+          {q
+            ? `bid $${q.bid.toFixed(2)} · ask $${q.ask.toFixed(2)} · sp $${q.spread.toFixed(2)}`
+            : entry?.spread != null
+              ? `spread $${entry.spread.toFixed(2)}`
+              : "—"}
         </span>
       </div>
       {geo == null ? (
@@ -248,7 +291,7 @@ function GradientSpark({
           warming up…
         </div>
       ) : (
-        <Spark geo={geo} entry={entry!} />
+        <Spark geo={geo} entry={entry!} cursor={cursor} />
       )}
     </div>
   );
@@ -257,9 +300,11 @@ function GradientSpark({
 function Spark({
   geo,
   entry,
+  cursor,
 }: {
   geo: NonNullable<ReturnType<typeof sparkGeometry>>;
   entry: MarkupBandStrike;
+  cursor: Cursor;
 }) {
   const heat = spreadHeat(entry.spread, entry.baseline_spread);
   const lastAsk = geo.ask[geo.ask.length - 1];
@@ -273,6 +318,9 @@ function Spark({
       preserveAspectRatio="none"
       role="img"
       aria-label={`${entry.strike} ${entry.side} bid/ask gradient`}
+      style={{ cursor: "crosshair" }}
+      onMouseMove={cursor.onMove}
+      onMouseLeave={cursor.onLeave}
     >
       {/* spread fill — fans open + heats up as the ask runs away */}
       <path d={geo.fillPath} fill={intensityColor(heat)} fillOpacity={0.1 + heat * 0.22} />
@@ -318,19 +366,47 @@ function Spark({
         r={2.6}
         fill={intensityColor(lastIntensity)}
       />
+      <Crosshair x={cursor.x} />
     </svg>
+  );
+}
+
+/** The synced vertical cursor bar. Shared by all three graphs — drawn at
+ *  the same viewBox-x (= same instant) wherever the mouse is. */
+function Crosshair({ x }: { x: number | null }) {
+  if (x == null) return null;
+  return (
+    <line
+      x1={x}
+      x2={x}
+      y1={0}
+      y2={SPARK_H}
+      stroke={colors.textMuted}
+      strokeWidth={1}
+      strokeDasharray="2 3"
+      opacity={0.8}
+      pointerEvents="none"
+    />
   );
 }
 
 function SpotPanel({
   series,
   alerts,
+  cursor,
 }: {
   series: [string, number][];
   alerts: MarkupAlert[];
+  cursor: Cursor;
 }) {
-  const geo = spotLineGeometry(series, SPARK_W, SPARK_H, 3);
+  const geo = useMemo(
+    () => spotLineGeometry(series, SPARK_W, SPARK_H, SPARK_PAD, cursor.domain),
+    [series, cursor.domain],
+  );
   const last = series.length > 0 ? series[series.length - 1][1] : null;
+  const cursorTime =
+    cursor.x != null ? xToTime(cursor.x, cursor.domain, SPARK_W, SPARK_PAD) : null;
+  const cursorSpot = cursorTime != null ? spotAtTime(series, cursorTime) : null;
   return (
     <div
       style={{
@@ -353,7 +429,13 @@ function SpotPanel({
         <span style={{ color: colors.textSecondary }}>
           SPX spot <span style={{ color: colors.textDim }}>· 2-min · markers = markups</span>
         </span>
-        <span style={{ color: colors.textMuted }}>{last != null ? last.toFixed(2) : "—"}</span>
+        <span style={{ color: cursorSpot != null ? colors.textBright : colors.textMuted }}>
+          {cursorSpot != null
+            ? cursorSpot.toFixed(2)
+            : last != null
+              ? last.toFixed(2)
+              : "—"}
+        </span>
       </div>
       {geo == null ? (
         <div
@@ -376,6 +458,9 @@ function SpotPanel({
           preserveAspectRatio="none"
           role="img"
           aria-label="SPX spot with markup alert markers"
+          style={{ cursor: "crosshair" }}
+          onMouseMove={cursor.onMove}
+          onMouseLeave={cursor.onLeave}
         >
           {/* alert markers — a dir-colored dashed vertical at each in-window
               markup, so spot's move reads right after the σ blowout */}
@@ -410,6 +495,7 @@ function SpotPanel({
             r={2.4}
             fill={colors.textBright}
           />
+          <Crosshair x={cursor.x} />
         </svg>
       )}
     </div>
