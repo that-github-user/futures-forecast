@@ -197,3 +197,63 @@ export function pickFeatured(
     put: band.find((b) => b.strike === target && b.side === "put") ?? null,
   };
 }
+
+/**
+ * Geometry for the SPX spot overlay line. `series` is `[iso_ts, price][]`
+ * (oldest→newest). Returns pixel points scaled to [w,h] plus the time
+ * domain (epoch ms) so alert markers can be placed on the same x-axis.
+ * Null for <2 points (panel shows a placeholder).
+ */
+export interface SpotGeometry {
+  points: SparkPoint[];
+  tMin: number;
+  tMax: number;
+  yMin: number;
+  yMax: number;
+}
+
+export function spotLineGeometry(
+  series: [string, number][],
+  w: number,
+  h: number,
+  pad = 3,
+): SpotGeometry | null {
+  if (series.length < 2) return null;
+  const ts = series.map((s) => new Date(s[0]).getTime());
+  const prices = series.map((s) => s[1]);
+  const tMin = ts[0];
+  const tMax = ts[ts.length - 1];
+  const tSpan = tMax - tMin || 1;
+  const yMin = Math.min(...prices);
+  const yMax = Math.max(...prices);
+  const span = yMax - yMin || 1;
+  const points = series.map((_, i) => ({
+    x: pad + ((ts[i] - tMin) / tSpan) * (w - 2 * pad),
+    y: h - pad - ((prices[i] - yMin) / span) * (h - 2 * pad),
+  }));
+  return { points, tMin, tMax, yMin, yMax };
+}
+
+/**
+ * x-pixel for an alert's timestamp on the spot line's time axis, or null
+ * when the alert falls outside the visible [tMin, tMax] window (so a
+ * marker is only drawn where it can be read against the spot move).
+ *
+ * Note: an alert fired AFTER the last spot flush (`t > tMax`) is
+ * intentionally omitted until the next ~5s sample extends the domain —
+ * we never draw a marker past the end of the drawn spot line (it would
+ * float in empty space). Alerts emit on tick, spot samples every ~5s, so
+ * the worst-case lag is one flush (≤5s) and the marker self-heals.
+ */
+export function alertMarkerX(
+  tsIso: string,
+  tMin: number,
+  tMax: number,
+  w: number,
+  pad = 3,
+): number | null {
+  const t = new Date(tsIso).getTime();
+  if (Number.isNaN(t) || t < tMin || t > tMax) return null;
+  const tSpan = tMax - tMin || 1;
+  return pad + ((t - tMin) / tSpan) * (w - 2 * pad);
+}

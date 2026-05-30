@@ -8,7 +8,9 @@ import {
   lerpHex,
   pickFeatured,
   relativeAge,
+  alertMarkerX,
   sparkGeometry,
+  spotLineGeometry,
   spreadHeat,
   SLOPE_REF,
 } from "./markupHelpers";
@@ -137,5 +139,40 @@ describe("pickFeatured", () => {
   });
   it("empty band → nulls", () => {
     expect(pickFeatured([], 7515)).toEqual({ strike: null, call: null, put: null });
+  });
+});
+
+describe("spotLineGeometry / alertMarkerX", () => {
+  const spot = (prices: number[]): [string, number][] =>
+    prices.map((p, i) => [ts(i), p]);
+
+  it("returns null for <2 points", () => {
+    expect(spotLineGeometry([], 200, 60)).toBeNull();
+    expect(spotLineGeometry(spot([7515]), 200, 60)).toBeNull();
+  });
+
+  it("points span width; time domain from first/last ts", () => {
+    const geo = spotLineGeometry(spot([7515, 7518, 7520]), 200, 60, 2)!;
+    expect(geo.points).toHaveLength(3);
+    expect(geo.points[0].x).toBeCloseTo(2);
+    expect(geo.points[2].x).toBeCloseTo(198);
+    expect(geo.tMin).toBe(new Date(ts(0)).getTime());
+    expect(geo.tMax).toBe(new Date(ts(2)).getTime());
+  });
+
+  it("flat prices don't divide-by-zero", () => {
+    const geo = spotLineGeometry(spot([7515, 7515, 7515]), 200, 60)!;
+    expect(geo.points.every((p) => Number.isFinite(p.y))).toBe(true);
+  });
+
+  it("alertMarkerX: in-window → x in range, out-of-window → null", () => {
+    const tMin = new Date(ts(0)).getTime();
+    const tMax = new Date(ts(10)).getTime();
+    const xMid = alertMarkerX(ts(5), tMin, tMax, 200, 2);
+    expect(xMid).not.toBeNull();
+    expect(xMid!).toBeGreaterThan(2);
+    expect(xMid!).toBeLessThan(198);
+    expect(alertMarkerX(ts(20), tMin, tMax, 200, 2)).toBeNull(); // after window
+    expect(alertMarkerX("not-a-date", tMin, tMax, 200, 2)).toBeNull();
   });
 });
