@@ -33,7 +33,13 @@ import type {
 } from "../../api/dcTypes";
 import { TentChart } from "./TentChart";
 import { TentChartModal, type TentTarget } from "./TentChartModal";
-import { filterTradesByDays, isTentRenderable } from "./dcTentTab.helpers";
+import {
+  daysSinceExpiry,
+  filterTradesByDays,
+  isTentRenderable,
+  tentLifecycle,
+  type TentLifecycle,
+} from "./dcTentTab.helpers";
 
 
 interface Props {
@@ -115,12 +121,40 @@ function OpenPositionsGrid({
 
   const tents = useTentSmallMultiples(renderable);
 
+  // Count rows whose back leg has already settled — these are
+  // `status='open'` positions the daemon never closed (offline on
+  // expiry day, unconfirmed broker exit, orphan). Surfaced in the
+  // header so the operator sees "something needs reconciling" without
+  // scanning every card.
+  const staleCount = useMemo(
+    () => renderable.filter((p) => tentLifecycle(p) === "settled").length,
+    [renderable],
+  );
+
   return (
     <div className="panel" style={{ padding: 12 }}>
       <div className="panel-header" style={{ marginBottom: 8 }}>
         <span className="panel-title">
           Through-expiry payoff — open positions ({renderable.length})
         </span>
+        {staleCount > 0 && (
+          <span
+            style={{
+              marginLeft: 8,
+              fontSize: 10,
+              fontFamily: fonts.mono,
+              color: colors.accentRed,
+              background: withAlpha(colors.accentRed, 0.12),
+              border: `1px solid ${withAlpha(colors.accentRed, 0.4)}`,
+              borderRadius: 2,
+              padding: "1px 6px",
+              letterSpacing: 0.5,
+            }}
+            title="Open positions whose back leg has already expired — likely need manual reconciliation (daemon offline on expiry day or unconfirmed broker exit)."
+          >
+            {staleCount} STALE
+          </span>
+        )}
       </div>
       <div style={{
         fontSize: 11,
@@ -172,6 +206,20 @@ function PositionTentCard({
   onClick: () => void;
 }) {
   const isPhantom = tent?.phantom === true;
+  // Lifecycle from the position's own leg expiries (independent of the
+  // tent payload, which may still be loading). A "settled" row is a
+  // zombie — back leg expired but still status='open'; its days_in_trade
+  // clock keeps climbing ("14d in" on a 6/7-DTE) and its tent collapses
+  // to a flat degenerate shape. Badge it instead of presenting it as a
+  // healthy live position. Never dropped — a lingering open row may
+  // carry real broker risk the operator must reconcile.
+  const lifecycle = tentLifecycle(p);
+  const isSettled = lifecycle === "settled";
+  const restingBorder = isSettled
+    ? `1px solid ${withAlpha(colors.accentRed, 0.5)}`
+    : isPhantom
+      ? `2px dashed ${colors.accentAmber}`
+      : `1px solid ${colors.borderDim}`;
   return (
     <button
       onClick={onClick}
@@ -179,14 +227,16 @@ function PositionTentCard({
       style={{
         textAlign: "left",
         background: colors.bgPanel,
-        border: isPhantom
-          ? `2px dashed ${colors.accentAmber}`
-          : `1px solid ${colors.borderDim}`,
+        border: restingBorder,
         borderRadius: 6,
         padding: "10px 12px",
         cursor: "pointer",
         fontFamily: fonts.sans,
         color: colors.textPrimary,
+        // Settled (zombie) rows read at lower opacity so the live grid
+        // doesn't present them as healthy positions, while staying
+        // visible/clickable for reconciliation.
+        opacity: isSettled ? 0.78 : 1,
         // Subtle hover: the cards are click-to-expand, so a small
         // surface cue helps without dominating the chart inside.
         transition: "background 80ms, border-color 80ms",
@@ -195,9 +245,7 @@ function PositionTentCard({
         e.currentTarget.style.borderColor = colors.borderBright;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = isPhantom
-          ? colors.accentAmber
-          : colors.borderDim;
+        e.currentTarget.style.border = restingBorder;
       }}
     >
       {/* Header strip */}
@@ -212,9 +260,7 @@ function PositionTentCard({
         <div style={{ fontSize: 13, fontWeight: 600, color: colors.textBright }}>
           {p.strategy_name}
         </div>
-        <div style={{ fontSize: 11, color: colors.textMuted, fontFamily: fonts.mono }}>
-          {tent ? `${tent.days_in_trade.toFixed(1)}d in` : "loading…"}
-        </div>
+        <LifecycleTag lifecycle={lifecycle} backExp={p.back_exp} tent={tent} />
       </div>
       {/* Compact tent */}
       <TentChart frozenCurve={tent} height={180} compact />
@@ -239,6 +285,77 @@ function PositionTentCard({
         </span>
       </div>
     </button>
+  );
+}
+
+
+/**
+ * Header-strip status tag for an open-position tent card.
+ *   - active        → the live "Xd in" clock (original behavior).
+ *   - front_expired → "SETTLING" (front leg gone, back still alive) +
+ *                     the clock (still meaningful while back is live).
+ *   - settled       → a red "STALE" badge + "expired Nd ago" instead of
+ *                     a days-in-trade clock that keeps climbing past
+ *                     expiry. This is the "14d in on a 6/7-DTE" fix.
+ */
+function LifecycleTag({
+  lifecycle,
+  backExp,
+  tent,
+}: {
+  lifecycle: TentLifecycle;
+  backExp: string;
+  tent: DCTentResponse | null;
+}) {
+  const clock = tent ? `${tent.days_in_trade.toFixed(1)}d in` : "loading…";
+  const mutedClock = { fontSize: 11, color: colors.textMuted, fontFamily: fonts.mono } as const;
+
+  if (lifecycle === "settled") {
+    const ago = daysSinceExpiry(backExp);
+    return (
+      <span
+        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        title="Back leg has already expired — this position should be closed. Likely needs manual reconciliation (daemon offline on expiry day or unconfirmed broker exit)."
+      >
+        <StatusPill label="STALE" color={colors.accentRed} />
+        <span style={mutedClock}>
+          {ago != null && ago > 0 ? `expired ${ago}d ago` : "expired"}
+        </span>
+      </span>
+    );
+  }
+  if (lifecycle === "front_expired") {
+    return (
+      <span
+        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        title="Front leg has expired; back leg still alive — the tent has collapsed to a single calendar."
+      >
+        <StatusPill label="SETTLING" color={colors.accentAmber} />
+        {tent && <span style={mutedClock}>{clock}</span>}
+      </span>
+    );
+  }
+  return <span style={mutedClock}>{clock}</span>;
+}
+
+
+/** Small mono status pill (STALE / SETTLING) sharing the dashboard's
+ *  tinted-chip vocabulary. */
+function StatusPill({ label, color }: { label: string; color: string }) {
+  return (
+    <span style={{
+      fontSize: 9,
+      fontFamily: fonts.mono,
+      color,
+      background: withAlpha(color, 0.12),
+      border: `1px solid ${withAlpha(color, 0.4)}`,
+      borderRadius: 2,
+      padding: "1px 5px",
+      letterSpacing: 0.5,
+      fontWeight: 600,
+    }}>
+      {label}
+    </span>
   );
 }
 
