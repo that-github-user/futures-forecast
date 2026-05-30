@@ -184,12 +184,13 @@ describe("spotLineGeometry / alertMarkerX", () => {
 
 describe("timeToX / xToTime (shared crosshair axis)", () => {
   const dom = { tMin: 1000, tMax: 2000 };
-  it("timeToX maps endpoints into [pad, w-pad] and clamps", () => {
+  it("timeToX maps the window into [pad, w-pad]; out-of-window extrapolates", () => {
     expect(timeToX(1000, dom, 200, 2)).toBeCloseTo(2);
     expect(timeToX(2000, dom, 200, 2)).toBeCloseTo(198);
     expect(timeToX(1500, dom, 200, 2)).toBeCloseTo(100);
-    expect(timeToX(0, dom, 200, 2)).toBeCloseTo(2); // clamp below
-    expect(timeToX(9999, dom, 200, 2)).toBeCloseTo(198); // clamp above
+    // NOT clamped — out-of-window samples map off-canvas (viewBox clips).
+    expect(timeToX(500, dom, 200, 2)).toBeLessThan(2);
+    expect(timeToX(2500, dom, 200, 2)).toBeGreaterThan(198);
   });
   it("xToTime inverts timeToX mid-range", () => {
     const x = timeToX(1500, dom, 200, 2);

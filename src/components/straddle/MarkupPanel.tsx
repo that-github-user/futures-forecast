@@ -19,7 +19,7 @@
  * cold start / offline); `stale` dims the whole panel without blanking.
  */
 
-import { useState, type MouseEvent } from "react";
+import { useCallback, useMemo, useState, type MouseEvent } from "react";
 import type { MarkupAlert, MarkupBandStrike, MarkupState } from "../../api/terminalTypes";
 import { colors, fonts, withAlpha } from "../../styles/tokens";
 import type { TimeDomain } from "./markupHelpers";
@@ -59,20 +59,20 @@ interface Cursor {
 
 export function MarkupPanel({ markup }: { markup: MarkupState }) {
   const featured = pickFeatured(markup.band, markup.center_atm);
-  const domain = sharedTimeDomain(markup);
+  // Memoized so it's a STABLE reference across cursor moves (changes only
+  // when `markup` does, every ~5s) — lets the child geometry useMemo skip
+  // recompute on every mousemove.
+  const domain = useMemo(() => sharedTimeDomain(markup), [markup]);
   // Synced crosshair: a hover on ANY graph sets the shared viewBox-x; all
   // three render a vertical bar there + read out their value at that
   // instant (the three panels share one time axis via `domain`).
   const [cursorX, setCursorX] = useState<number | null>(null);
-  const cursor: Cursor = {
-    x: cursorX,
-    domain,
-    onMove: (e) => {
-      const r = e.currentTarget.getBoundingClientRect();
-      setCursorX(((e.clientX - r.left) / r.width) * SPARK_W);
-    },
-    onLeave: () => setCursorX(null),
-  };
+  const onMove = useCallback((e: MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setCursorX(((e.clientX - r.left) / r.width) * SPARK_W);
+  }, []);
+  const onLeave = useCallback(() => setCursorX(null), []);
+  const cursor: Cursor = { x: cursorX, domain, onMove, onLeave };
 
   return (
     <div
@@ -233,9 +233,14 @@ function GradientSpark({
 }) {
   const sideLetter = side === "call" ? "C" : "P";
   const accent = side === "call" ? colors.accentGreen : colors.accentRed;
-  const geo = entry
-    ? sparkGeometry(entry.series, SPARK_W, SPARK_H, SPARK_PAD, entry.baseline_spread, cursor.domain)
-    : null;
+  // Keyed on series + domain (NOT cursor.x) → not rebuilt on mousemove.
+  const geo = useMemo(
+    () =>
+      entry
+        ? sparkGeometry(entry.series, SPARK_W, SPARK_H, SPARK_PAD, entry.baseline_spread, cursor.domain)
+        : null,
+    [entry, cursor.domain],
+  );
   // Crosshair readout: bid/ask/spread at the hovered instant.
   const cursorTime =
     cursor.x != null ? xToTime(cursor.x, cursor.domain, SPARK_W, SPARK_PAD) : null;
@@ -376,9 +381,10 @@ function Crosshair({ x }: { x: number | null }) {
       x2={x}
       y1={0}
       y2={SPARK_H}
-      stroke={colors.textSecondary}
+      stroke={colors.textMuted}
       strokeWidth={1}
-      opacity={0.7}
+      strokeDasharray="2 3"
+      opacity={0.8}
       pointerEvents="none"
     />
   );
@@ -393,7 +399,10 @@ function SpotPanel({
   alerts: MarkupAlert[];
   cursor: Cursor;
 }) {
-  const geo = spotLineGeometry(series, SPARK_W, SPARK_H, SPARK_PAD, cursor.domain);
+  const geo = useMemo(
+    () => spotLineGeometry(series, SPARK_W, SPARK_H, SPARK_PAD, cursor.domain),
+    [series, cursor.domain],
+  );
   const last = series.length > 0 ? series[series.length - 1][1] : null;
   const cursorTime =
     cursor.x != null ? xToTime(cursor.x, cursor.domain, SPARK_W, SPARK_PAD) : null;

@@ -74,10 +74,14 @@ export interface TimeDomain {
   tMax: number;
 }
 
-/** Epoch-ms time → x-pixel within [pad, w-pad] for a shared domain (clamped). */
+/** Epoch-ms time → x-pixel for a shared domain. NOT clamped: a sample
+ *  outside the window maps off-canvas (x < pad or > w-pad) and is clipped
+ *  by the viewBox — consistent with the spot line, rather than piling
+ *  out-of-window points onto the edge. (The mouse→time inverse `xToTime`
+ *  IS clamped, since the cursor can't leave the panel.) */
 export function timeToX(t: number, domain: TimeDomain, w: number, pad: number): number {
   const span = domain.tMax - domain.tMin || 1;
-  return pad + clamp01((t - domain.tMin) / span) * (w - 2 * pad);
+  return pad + ((t - domain.tMin) / span) * (w - 2 * pad);
 }
 
 /** Inverse of timeToX: x-pixel → epoch-ms (clamped to the domain). */
@@ -312,7 +316,10 @@ export function sharedTimeDomain(markup: MarkupState): TimeDomain {
   if (markup.spot_series && markup.spot_series.length) {
     candidates.push(lastSampleTs(markup.spot_series));
   }
-  const tMax = Math.max(...candidates);
+  // Guard against an unparseable ISO (NaN) poisoning the whole domain
+  // (matches alertMarkerX's Number.isNaN precedent); fall back to now.
+  const finite = candidates.filter(Number.isFinite);
+  const tMax = finite.length ? Math.max(...finite) : Date.now();
   return { tMin: tMax - SHARED_WINDOW_MS, tMax };
 }
 
