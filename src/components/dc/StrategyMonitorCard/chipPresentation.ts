@@ -22,11 +22,18 @@
  *      style, honoring the standing operator preference that
  *      automation-side failures should not gray out the card.
  *
- * Precedence: slGateFailing wins when both are set. That path is the more
- * conservative neutralization and is the pre-existing behavior; the
- * common no-fill case (broker miss with a passing gate) is unaffected,
- * so the honest relabel lands where it matters without touching the
- * tested gate-skip path.
+ * Precedence: slGateFailing wins when both are set — preserving the
+ * pre-existing behavior and leaving the tested gate-skip path untouched.
+ * Note this is NOT strictly "more conservative": it lets the LIVE
+ * gate-failing state win over a RECORDED blocked_order. In practice the
+ * two barely overlap — the daemon records a failed S/L gate as
+ * `blocked_sl_gate` (→ passed_skipped, a non-fired state this resolver
+ * never relabels), never as `blocked_order`. They co-occur only if the
+ * live S/L ratio drifts below min AFTER a blocked_order was recorded
+ * earlier the same day, within the post-fire window. Both stories still
+ * avoid falsely claiming a fill, so the operator complaint is satisfied
+ * either way; flip this precedence later only if that rare race is seen
+ * in the wild.
  */
 
 import type { LifecycleState } from "../../../lib/dcLifecycle";

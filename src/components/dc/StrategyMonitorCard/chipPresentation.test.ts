@@ -88,7 +88,7 @@ describe("resolveChipPresentation — S/L gate failing (unchanged)", () => {
     });
   });
 
-  it("S/L gate failing takes precedence over broker no-fill (conservative neutralize)", () => {
+  it("S/L gate failing takes precedence over broker no-fill (live gate-state wins; rare overlap)", () => {
     expect(
       resolve("recently_fired", { slGateFailing: true, brokerNoFill: true }),
     ).toEqual({ label: "SKIPPED", styleKey: "not_fired_yet" });
