@@ -38,6 +38,14 @@ export function useTerminalSnapshot(intervalMs = 10_000): SnapshotState {
         setData(snap);
         setLoading(false);
         setOnline(snap !== null);
+      } catch {
+        // terminal.snapshot() returns null on error rather than throwing,
+        // so this is defensive — but a listener-triggered tick must never
+        // leave an unhandled rejection that wedges loading at true.
+        if (!cancelled) {
+          setLoading(false);
+          setOnline(false);
+        }
       } finally {
         inFlight = false;
       }
