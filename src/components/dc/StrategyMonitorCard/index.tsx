@@ -37,7 +37,8 @@ import { BodyContent } from "./BodyContent";
 import { isActiveLifecycleState, LegDetailBlock } from "./LegDetailBlock";
 import { ReentryContext } from "./ReentryContext";
 import { shouldShowSuggested, SuggestedRow } from "./SuggestedRow";
-import { STATE_LABELS, STATE_STYLES } from "./styles";
+import { STATE_STYLES } from "./styles";
+import { resolveChipPresentation } from "./chipPresentation";
 import type { LegData } from "./types";
 
 // Re-export LegData so external consumers can keep importing it via
@@ -111,11 +112,14 @@ function StrategyMonitorCardImpl({
     (info.state === "imminent" || info.state === "firing" ||
      info.state === "recently_fired" || info.state === "passed_will_fire");
 
-  const effectiveStyle = slGateFailing ? STATE_STYLES["not_fired_yet"] : STATE_STYLES[info.state];
-  const effectiveLabel = slGateFailing
-    ? (info.state === "recently_fired" || info.state === "passed_will_fire") ? "SKIPPED" : "GATE FAIL"
-    : STATE_LABELS[info.state];
-  const style = effectiveStyle;
+  // Broker no-fill: today's recorded outcome is blocked_order — the
+  // daemon submitted but the broker never crossed. The classifier keeps
+  // this in a fired state so the card stays highlighted, but the chip
+  // must not read "JUST FIRED" (nothing filled). See chipPresentation.
+  const brokerNoFill = info.todayOutcome === "blocked_order";
+  const chip = resolveChipPresentation({ state: info.state, slGateFailing, brokerNoFill });
+  const effectiveLabel = chip.label;
+  const style = STATE_STYLES[chip.styleKey];
 
   return (
     <div
