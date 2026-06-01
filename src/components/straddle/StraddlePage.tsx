@@ -91,7 +91,10 @@ export function StraddlePage() {
             />
 
             {data && data.program_flow.active_windowed.length > 0 && (
-              <ProgramFlowBanner events={data.program_flow.active_windowed} />
+              <ProgramFlowBanner
+                events={data.program_flow.active_windowed}
+                previewMode={data.preview_mode}
+              />
             )}
 
             {isColdStart && (
