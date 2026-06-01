@@ -24,6 +24,10 @@ import { formatWindowTime } from "./programFlowFormatters";
 
 interface Props {
   events: ProgramFlowEvent[];
+  /** When true the backend re-based program_flow to the imminent NEXT
+   *  session (post-close rollover preview), so these windowed rolls are
+   *  tomorrow's, not active now. Relabel "ACTIVE" → "NEXT SESSION". */
+  previewMode?: boolean;
 }
 
 const PROGRAM_COLOR: Record<ProgramFlowName, string> = {
@@ -47,7 +51,7 @@ const PROGRAM_LABEL: Record<ProgramFlowName, string> = {
   jepq_continuous: "JEPQ continuous",
 };
 
-export function ProgramFlowBanner({ events }: Props) {
+export function ProgramFlowBanner({ events, previewMode = false }: Props) {
   if (events.length === 0) return null;
   return (
     <div
@@ -82,7 +86,9 @@ export function ProgramFlowBanner({ events }: Props) {
               border: `1px solid ${withAlpha(color, 0.4)}`,
             }}
           >
-            <span style={{ fontSize: 9, opacity: 0.8 }}>ACTIVE</span>
+            <span style={{ fontSize: 9, opacity: 0.8 }}>
+              {previewMode ? "NEXT SESSION" : "ACTIVE"}
+            </span>
             <span>{label}</span>
             <span style={{ color: colors.textSecondary, fontFamily: fonts.mono, fontSize: 10 }}>
               {/* JHEQX is a daily-NAV mutual fund — its quarterly roll

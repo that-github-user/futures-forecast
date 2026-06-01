@@ -198,15 +198,30 @@ export function RealizedImpliedHeader({ data, onRefresh, refreshing }: Props) {
       </div>
 
       {activeContinuous.length > 0 && (
-        <ActiveContinuousChips events={activeContinuous} />
+        <ActiveContinuousChips
+          events={activeContinuous}
+          previewMode={data?.preview_mode ?? false}
+        />
       )}
     </div>
   );
 }
 
 /** Ambient chip row: continuous-flow programs currently active.
- *  Muted, single-line, ignored unless populated. */
-function ActiveContinuousChips({ events }: { events: ProgramFlowEvent[] }) {
+ *  Muted, single-line, ignored unless populated.
+ *
+ *  Under `previewMode` the backend has re-based program_flow to the
+ *  imminent NEXT session (post-close rollover preview), so these programs
+ *  are NOT active right now — they're tomorrow's. Relabel "ACTIVE" →
+ *  "NEXT SESSION" and tint amber to match the chart's preview banner,
+ *  rather than asserting a literally-false "ACTIVE" after hours. */
+function ActiveContinuousChips({
+  events,
+  previewMode,
+}: {
+  events: ProgramFlowEvent[];
+  previewMode: boolean;
+}) {
   return (
     <div
       style={{
@@ -225,9 +240,10 @@ function ActiveContinuousChips({ events }: { events: ProgramFlowEvent[] }) {
           fontWeight: 700,
           textTransform: "uppercase",
           letterSpacing: "0.08em",
+          color: previewMode ? colors.accentAmber : undefined,
         }}
       >
-        ACTIVE
+        {previewMode ? "NEXT SESSION" : "ACTIVE"}
       </span>
       {events.map((event) => (
         <span
