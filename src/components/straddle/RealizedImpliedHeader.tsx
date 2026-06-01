@@ -224,6 +224,10 @@ function ActiveContinuousChips({
 }) {
   return (
     <div
+      role={previewMode ? "status" : undefined}
+      aria-label={
+        previewMode ? "Next session preview — continuous programs" : undefined
+      }
       style={{
         display: "flex",
         flexWrap: "wrap",

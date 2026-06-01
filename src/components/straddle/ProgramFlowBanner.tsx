@@ -55,6 +55,10 @@ export function ProgramFlowBanner({ events, previewMode = false }: Props) {
   if (events.length === 0) return null;
   return (
     <div
+      role={previewMode ? "status" : undefined}
+      aria-label={
+        previewMode ? "Next session preview — windowed program rolls" : undefined
+      }
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -86,7 +90,16 @@ export function ProgramFlowBanner({ events, previewMode = false }: Props) {
               border: `1px solid ${withAlpha(color, 0.4)}`,
             }}
           >
-            <span style={{ fontSize: 9, opacity: 0.8 }}>
+            <span
+              style={{
+                fontSize: 9,
+                opacity: 0.8,
+                // Amber "NEXT SESSION" unifies the preview signal with the
+                // continuous chips + the chart's preview banner ("amber =
+                // tomorrow"). Non-preview keeps the chip's program color.
+                color: previewMode ? colors.accentAmber : undefined,
+              }}
+            >
               {previewMode ? "NEXT SESSION" : "ACTIVE"}
             </span>
             <span>{label}</span>
