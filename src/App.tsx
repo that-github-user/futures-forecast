@@ -1,10 +1,14 @@
 /**
- * App router — hash-based, five routes:
+ * App router — hash-based routes:
  *   #/         → LumenLander (auth gate)
- *   #/forecast → Dashboard (ES prediction; pulls FanChart + EquityCurve + echarts)
- *   #/dc       → DCDashboard (DC trading)
  *   #/app      → TerminalDashboard (six-system trading terminal)
  *   #/straddle → StraddlePage (0DTE SPX strike-positioning map)
+ *   #/markup   → MarkupReviewPane (post-close markup alert review)
+ *   #/dc       → DCDashboard (DC trading)
+ *
+ * (The ES-prediction Dashboard at #/forecast was retired — broken and
+ * unused for months; its component files remain in the repo but are no
+ * longer routed/bundled.)
  *
  * Every route component is lazy-loaded so the bundle a user fetches
  * is scoped to the routes they actually visit. Pre-PR (eager
@@ -29,9 +33,6 @@ import { useHash } from "./hooks/useHash";
 import { RequireAuth } from "./components/lander/RequireAuth";
 import { colors, fonts } from "./styles/tokens";
 
-const Dashboard = lazy(() =>
-  import("./components/layout/Dashboard").then((m) => ({ default: m.Dashboard })),
-);
 const DCDashboard = lazy(() =>
   import("./components/dc/DCDashboard").then((m) => ({ default: m.DCDashboard })),
 );
@@ -59,7 +60,6 @@ const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 function App() {
   const [hash] = useHash();
   const isDC = hash === "#/dc" || hash.startsWith("#/dc/");
-  const isForecast = hash === "#/forecast" || hash.startsWith("#/forecast/");
   const isTerminal = hash === "#/app" || hash.startsWith("#/app/");
   const isStraddle = hash === "#/straddle" || hash.startsWith("#/straddle/");
   const isMarkup = hash === "#/markup" || hash.startsWith("#/markup/");
@@ -71,12 +71,6 @@ function App() {
     ) : (
       <RequireAuth>
         <DCDashboard />
-      </RequireAuth>
-    );
-  } else if (isForecast) {
-    content = (
-      <RequireAuth>
-        <Dashboard />
       </RequireAuth>
     );
   } else if (isStraddle) {
@@ -100,8 +94,8 @@ function App() {
   } else {
     // Default route `#/` — the lander / auth gate.
     // After unlock, send the operator to the terminal (the new
-    // load-bearing surface). Forecast + DC are reachable via RouteNav
-    // links from any gated page.
+    // load-bearing surface). The other gated surfaces are reachable via
+    // RouteNav links from any gated page.
     content = <LumenLander redirectTo="#/app" />;
   }
 
