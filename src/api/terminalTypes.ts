@@ -385,6 +385,46 @@ export interface MarkupState {
   spot_series?: [string, number][];
 }
 
+/** One markup alert + its forward outcome, for the Markup Review pane
+ *  (`/terminal/v1/markup/review`). Outputs only — no detector thresholds.
+ *  `bar_time` is `alert_ts` floored to the timeframe (UTC) for marker
+ *  placement; `alert_ts` keeps the true second-resolution ET instant.
+ *  Outcome fields (mfe/mae/realized_move/…) are null for `pending` alerts
+ *  (still inside the excursion window) and `lost` alerts (a recorder restart
+ *  dropped their tracking). */
+export interface MarkupReviewAlert {
+  alert_ts: string;
+  bar_time: string;
+  side: "call" | "put";
+  direction: "up" | "down";
+  status: "finalized" | "pending" | "lost";
+  strike: number | null;
+  dist_from_atm: number | null;
+  spread_z: number | null;
+  ask_jump: number | null;
+  spot_at_alert: number | null;
+  realized_move: number | null;
+  mfe: number | null;
+  t_mfe_s: number | null;
+  mae: number | null;
+  t_mae_s: number | null;
+}
+
+/** SPX 1-min candles + the session's markup alerts for the Markup Review
+ *  pane. `alerts` come from the durable recorder DB (empty when no DB / no
+ *  alerts for the date). Tolerant by design — optional fields parse older
+ *  backends. */
+export interface MarkupReviewResponse {
+  session_date: string;
+  timeframe: string;
+  bars: TerminalIntradayBar[];
+  alerts: MarkupReviewAlert[];
+  pending_count: number;
+  bars_stale: boolean;
+  bars_age_seconds: number | null;
+  asof: string;
+}
+
 /** 0DTE SPX strike-positioning snapshot for the /straddle page.
  *  `stale=true` when no snapshot has been written in the past 5 minutes
  *  (snapshotter cadence is 60s; 5min gives 4 cycles of headroom).
