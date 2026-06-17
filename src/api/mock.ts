@@ -742,9 +742,13 @@ export function mockMarkupReview(date: string): MarkupReviewResponse {
     const strike = center + Math.round((rand() - 0.5) * 6) * 5;
     const mfe = Math.round(rand() * rand() * 14 * 10) / 10; // skew small
     const mae = -Math.round(rand() * 5 * 10) / 10;
-    const isoEt = new Date(Date.parse(bar.time) + Math.floor(rand() * 50) * 1000)
+    // Mirror the backend's ET-offset alert_ts (June = EDT, −04:00) for the same
+    // instant as the bar, so the demo exercises the real offset format.
+    const alertMs = Date.parse(bar.time) + Math.floor(rand() * 50) * 1000;
+    const isoEt = new Date(alertMs - 4 * 3600 * 1000)
       .toISOString()
-      .replace("Z", "+00:00");
+      .replace(".000Z", "-04:00")
+      .replace("Z", "-04:00");
     alerts.push({
       alert_ts: isoEt,
       bar_time: bar.time,

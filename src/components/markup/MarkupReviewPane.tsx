@@ -10,6 +10,7 @@
  */
 
 import { Suspense, lazy, useMemo, useState } from "react";
+import { RouteNav } from "../nav/RouteNav";
 import { useMarkupReview } from "../../hooks/useMarkupReview";
 import {
   DEFAULT_FILTERS,
@@ -51,17 +52,24 @@ export function MarkupReviewPane() {
   );
   const stats = useMemo(() => subsetStats(filtered), [filtered]);
 
+  // σ-slider span follows the session's actual σ range (the detector's σ is
+  // unbounded above), so a high-σ blowout is always reachable by the filter
+  // — a fixed max would silently cap the range below real values.
+  const sliderMaxZ = useMemo(() => {
+    const zs = (data?.alerts ?? []).map((a) => a.spread_z ?? 0);
+    return Math.max(20, Math.ceil(zs.length ? Math.max(...zs) : 0));
+  }, [data]);
+
   const hasSession = !!data && (data.bars.length > 0 || data.alerts.length > 0);
+  const emptyAlerts = !!data && data.alerts.length === 0;
   const setF = (patch: Partial<AlertFilters>) =>
     setFilters((f) => ({ ...f, ...patch }));
 
   return (
     <div className="markup-review">
+      <RouteNav current="markup" />
       <header className="markup-review__head">
         <div className="markup-review__title">
-          <a href="#/app" className="markup-review__back">
-            ← terminal
-          </a>
           <h1>Markup Review</h1>
           <span className="markup-review__sub">
             SPX candles + alert markers · post-close
@@ -111,9 +119,9 @@ export function MarkupReviewPane() {
           <input
             type="range"
             min={0}
-            max={40}
+            max={sliderMaxZ}
             step={1}
-            value={filters.minZ}
+            value={Math.min(filters.minZ, sliderMaxZ)}
             onChange={(e) => setF({ minZ: Number(e.target.value) })}
           />
         </label>
@@ -170,6 +178,11 @@ export function MarkupReviewPane() {
         <span>
           dirHit <b>{pct(stats.dirHit)}</b>
         </span>
+        {emptyAlerts && (
+          <span className="markup-review__note">
+            no markup alerts recorded this session
+          </span>
+        )}
         {data && data.pending_count > 0 && (
           <span className="markup-review__pending">
             {data.pending_count} still accruing

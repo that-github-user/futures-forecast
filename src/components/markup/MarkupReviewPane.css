@@ -129,6 +129,9 @@
   color: #c9d1d9;
   font-weight: 600;
 }
+.markup-review__note {
+  color: #6e7681;
+}
 .markup-review__pending {
   color: #e3b341;
 }

@@ -117,9 +117,12 @@ export function MarkupReviewChart({ bars, alerts }: Props) {
     const onMove = (param: MouseEventParams<Time>) => {
       const tip = tooltipRef.current;
       if (!tip) return;
+      // param.time is a UTCTimestamp (number) for this intraday time-scale
+      // chart; guard the cast so a non-numeric Time (BusinessDay) can't NaN the
+      // Map lookup and silently drop tooltips.
       const hits =
-        param.time != null
-          ? indexRef.current.get(param.time as number)
+        typeof param.time === "number"
+          ? indexRef.current.get(param.time)
           : undefined;
       if (!hits || !hits.length || !param.point) {
         tip.style.display = "none";
