@@ -13,6 +13,7 @@ import type {
   BreadthData,
   GexData,
   LevelsData,
+  MarkupReviewResponse,
   MarkupState,
   RegimeData,
   StraddleChainResponse,
@@ -59,6 +60,13 @@ export const terminal = {
    *  sidecar is absent — `get` already collapses that + network errors
    *  to null, so callers treat null as "no live markup; hide panel". */
   markup: () => get<MarkupState>("/terminal/v1/markup"),
+  /** Markup Review: SPX 1-min candles + a session's alerts (with MFE/MAE)
+   *  for the post-close review pane. `date`=yyyymmdd ET, `tf`∈{1m,5m}.
+   *  Returns null on error/offline (the pane shows its empty state). */
+  markupReview: (date: string, tf: "1m" | "5m" = "1m") =>
+    get<MarkupReviewResponse>(
+      `/terminal/v1/markup/review?date=${encodeURIComponent(date)}&tf=${tf}`,
+    ),
 };
 
 /** Convenience wrapper for the chart canvas — returns the bars array

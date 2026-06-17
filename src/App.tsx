@@ -48,6 +48,11 @@ const StraddlePage = lazy(() =>
     default: m.StraddlePage,
   })),
 );
+const MarkupReviewPane = lazy(() =>
+  import("./components/markup/MarkupReviewPane").then((m) => ({
+    default: m.MarkupReviewPane,
+  })),
+);
 
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 
@@ -57,6 +62,7 @@ function App() {
   const isForecast = hash === "#/forecast" || hash.startsWith("#/forecast/");
   const isTerminal = hash === "#/app" || hash.startsWith("#/app/");
   const isStraddle = hash === "#/straddle" || hash.startsWith("#/straddle/");
+  const isMarkup = hash === "#/markup" || hash.startsWith("#/markup/");
 
   let content: React.ReactNode;
   if (isDC) {
@@ -77,6 +83,12 @@ function App() {
     content = (
       <RequireAuth>
         <StraddlePage />
+      </RequireAuth>
+    );
+  } else if (isMarkup) {
+    content = (
+      <RequireAuth>
+        <MarkupReviewPane />
       </RequireAuth>
     );
   } else if (isTerminal) {

@@ -8,10 +8,13 @@ import type { DailySummary, HindcastResponse, HistoryResponse, PredictionRespons
 import type {
   MarkupAlert,
   MarkupBandStrike,
+  MarkupReviewAlert,
+  MarkupReviewResponse,
   MarkupState,
   ProgramFlowEvent,
   StraddleChainResponse,
   StraddleStrikeRow,
+  TerminalIntradayBar,
 } from "./terminalTypes";
 
 const BASE_PRICE = 5850;
@@ -693,4 +696,90 @@ export function mockMarkupState(): MarkupState {
     updated_at: isoAt(2), age_seconds: 2, stale: false, band, recent_alerts,
     spot_series,
   };
+}
+
+/** Demo fixture for the Markup Review pane: one synthetic RTH session of SPX
+ *  1-min candles + a handful of alerts with MFE/MAE outcomes. Deterministic
+ *  per date so the demo is stable. */
+export function mockMarkupReview(date: string): MarkupReviewResponse {
+  const rand = seededRandom(
+    Number(date.replace(/[^0-9]/g, "").slice(-6)) || 424242,
+  );
+  // 390 1-min RTH bars (09:30–16:00 ET) as a UTC day; random walk around 7530.
+  const startUtcMs = Date.UTC(
+    Number(date.slice(0, 4)),
+    Number(date.slice(4, 6)) - 1,
+    Number(date.slice(6, 8)),
+    13,
+    30,
+  ); // 09:30 ET ≈ 13:30Z
+  const bars: TerminalIntradayBar[] = [];
+  let px = 7530;
+  for (let i = 0; i < 390; i++) {
+    const drift = (rand() - 0.5) * 1.6;
+    const o = px;
+    const c = o + drift;
+    const h = Math.max(o, c) + rand() * 0.6;
+    const l = Math.min(o, c) - rand() * 0.6;
+    px = c;
+    const t = new Date(startUtcMs + i * 60_000).toISOString().replace(".000Z", "Z");
+    bars.push({
+      time: t,
+      open: round2(o),
+      high: round2(h),
+      low: round2(l),
+      close: round2(c),
+      volume: 0,
+    });
+  }
+  const center = 7530;
+  const alerts: MarkupReviewAlert[] = [];
+  const nAlerts = 9;
+  for (let k = 0; k < nAlerts; k++) {
+    const barIdx = Math.floor(20 + rand() * 360);
+    const bar = bars[barIdx];
+    const up = rand() > 0.5;
+    const strike = center + Math.round((rand() - 0.5) * 6) * 5;
+    const mfe = Math.round(rand() * rand() * 14 * 10) / 10; // skew small
+    const mae = -Math.round(rand() * 5 * 10) / 10;
+    // Mirror the backend's ET-offset alert_ts (June = EDT, −04:00) for the same
+    // instant as the bar, so the demo exercises the real offset format.
+    const alertMs = Date.parse(bar.time) + Math.floor(rand() * 50) * 1000;
+    const isoEt = new Date(alertMs - 4 * 3600 * 1000)
+      .toISOString()
+      .replace(".000Z", "-04:00")
+      .replace("Z", "-04:00");
+    alerts.push({
+      alert_ts: isoEt,
+      bar_time: bar.time,
+      side: up ? "call" : "put",
+      direction: up ? "up" : "down",
+      status: "finalized",
+      strike,
+      dist_from_atm: strike - center,
+      spread_z: round2(5 + rand() * 35),
+      ask_jump: round2(1.2 + rand() * 2),
+      spot_at_alert: bar.close,
+      realized_move: round2((up ? 1 : 1) * (mfe - 2 - rand() * 4)),
+      mfe,
+      t_mfe_s: Math.floor(30 + rand() * 270),
+      mae,
+      t_mae_s: Math.floor(rand() * 60),
+    });
+  }
+  alerts.sort((a, b) => Date.parse(a.alert_ts) - Date.parse(b.alert_ts));
+  return {
+    session_date: date,
+    timeframe: "1m",
+    bars,
+    alerts,
+    pending_count: 0,
+    bars_stale: false,
+    bars_age_seconds: 12,
+    asof: new Date().toISOString().replace(".000Z", "Z"),
+  };
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
 }
