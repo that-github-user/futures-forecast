@@ -2,6 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* Scroll within the pane: the chart (primary) sits up top and the Markup
+     Tell panel follows below it; if both don't fit the viewport, scroll
+     (the desktop app-shell is overflow:hidden, so the pane scrolls itself). */
+  overflow-y: auto;
   background: #0b0e14;
   color: #c9d1d9;
   font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -141,7 +145,10 @@
 
 .markup-review__body {
   flex: 1;
-  min-height: 0;
+  /* The chart is the primary view now: it fills the space above the Tell
+     panel, with a floor so it stays prominent (and the pane scrolls rather
+     than crush it when the viewport is short). */
+  min-height: 360px;
   position: relative;
 }
 .markup-review__msg {
@@ -206,9 +213,9 @@
   color: #58a6ff;
 }
 
-/* ── Live markup section (SSE) — sits above the post-close review ── */
+/* ── Live Markup Tell (SSE) — ancillary, BELOW the live candle chart ── */
 .markup-live {
-  margin: 0 18px 18px 18px;
+  margin: 18px;
   padding: 14px 16px 6px 16px;
   background: #11151c;
   border: 1px solid #20262e;
