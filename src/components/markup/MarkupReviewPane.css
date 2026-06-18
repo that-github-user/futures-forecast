@@ -205,3 +205,48 @@
 .mr-tip__out {
   color: #58a6ff;
 }
+
+/* ── Live markup section (SSE) — sits above the post-close review ── */
+.markup-live {
+  margin: 0 18px 18px 18px;
+  padding: 14px 16px 6px 16px;
+  background: #11151c;
+  border: 1px solid #20262e;
+  border-radius: 8px;
+}
+.markup-live__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.markup-live__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6e7681; /* dim = connecting/offline */
+  flex: none;
+}
+.markup-live__dot.is-on {
+  background: #3fb950; /* green = stream open */
+  box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.5);
+  animation: markup-live-pulse 2.2s ease-out infinite;
+}
+@keyframes markup-live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markup-live__dot.is-on { animation: none; }
+}
+.markup-live__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #c9d1d9;
+}
+.markup-live__meta {
+  font-size: 12px;
+  color: #8b949e;
+}

@@ -11,6 +11,8 @@
 
 import { Suspense, lazy, useMemo, useState } from "react";
 import { RouteNav } from "../nav/RouteNav";
+import { MarkupPanel } from "../straddle/MarkupPanel";
+import { useLiveMarkup } from "../../hooks/useLiveMarkup";
 import { useMarkupReview } from "../../hooks/useMarkupReview";
 import {
   DEFAULT_FILTERS,
@@ -45,6 +47,9 @@ export function MarkupReviewPane() {
   const [filters, setFilters] = useState<AlertFilters>(DEFAULT_FILTERS);
 
   const { data, loading, offline, refresh } = useMarkupReview(date, tf);
+  // Live SSE markup (push). Null off-hours/cold/offline → the live section
+  // hides and only the post-close review below shows.
+  const { markup: live, connected } = useLiveMarkup();
 
   const filtered = useMemo(
     () => (data ? filterAlerts(data.alerts, filters) : []),
@@ -68,6 +73,23 @@ export function MarkupReviewPane() {
   return (
     <div className="markup-review">
       <RouteNav current="markup" />
+
+      {live && (
+        <section className="markup-live" aria-label="Live markup">
+          <header className="markup-live__head">
+            <span
+              className={`markup-live__dot${connected ? " is-on" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="markup-live__label">LIVE</span>
+            {live.center_atm != null && (
+              <span className="markup-live__meta">center {live.center_atm}</span>
+            )}
+          </header>
+          <MarkupPanel markup={live} />
+        </section>
+      )}
+
       <header className="markup-review__head">
         <div className="markup-review__title">
           <h1>Markup Review</h1>

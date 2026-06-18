@@ -14,6 +14,7 @@ import type {
   BreadthData,
   GexData,
   LevelsData,
+  MarkupAlert,
   MarkupReviewResponse,
   MarkupState,
   RegimeData,
@@ -80,6 +81,51 @@ export const terminal = {
       `/terminal/v1/markup/review?date=${encodeURIComponent(date)}&tf=${tf}`,
     ),
 };
+
+export interface MarkupStreamHandlers {
+  /** Full MarkupState — one on connect, then ~5s. */
+  onState?: (state: MarkupState) => void;
+  /** A single markup alert, the instant the detector fires (sub-second). */
+  onAlert?: (alert: MarkupAlert) => void;
+  /** Latest SPX spot, ~0.5s throttled. */
+  onSpot?: (ts: string, price: number) => void;
+  onOpen?: () => void;
+  onError?: () => void;
+}
+
+/** Subscribe to the live markup SSE stream (`/terminal/v1/markup/stream`).
+ *  Returns an unsubscribe function. The HttpOnly session cookie rides via
+ *  `withCredentials` (same as the REST clients' `credentials: include`);
+ *  the browser's EventSource auto-reconnects on a dropped connection.
+ *  No-op (returns a no-op cleanup) when no terminal URL is configured. */
+export function subscribeMarkup(handlers: MarkupStreamHandlers): () => void {
+  if (!TERMINAL_API_URL) return () => {};
+  const es = new EventSource(`${TERMINAL_API_URL}/terminal/v1/markup/stream`, {
+    withCredentials: true,
+  });
+  const parse = <T>(e: Event): T | null => {
+    try {
+      return JSON.parse((e as MessageEvent).data) as T;
+    } catch {
+      return null;
+    }
+  };
+  es.addEventListener("state", (e) => {
+    const s = parse<MarkupState>(e);
+    if (s) handlers.onState?.(s);
+  });
+  es.addEventListener("alert", (e) => {
+    const a = parse<MarkupAlert>(e);
+    if (a) handlers.onAlert?.(a);
+  });
+  es.addEventListener("spot", (e) => {
+    const d = parse<{ ts: string; price: number }>(e);
+    if (d) handlers.onSpot?.(d.ts, d.price);
+  });
+  es.onopen = () => handlers.onOpen?.();
+  es.onerror = () => handlers.onError?.();
+  return () => es.close();
+}
 
 /** Convenience wrapper for the chart canvas — returns the bars array
  * (empty when API is offline / unauthorized / no bars yet) so the
