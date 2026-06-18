@@ -2,7 +2,8 @@
  * URL + auth-header tests for terminal.straddle0dte().
  *
  * Mirrors `dcClient.tent.test.ts`: stubs global fetch, asserts the
- * URL path and that the X-Terminal-Key auth header is attached. The
+ * URL path and the cookie-only auth posture (credentials:include, no
+ * API-key header). The
  * frontend has no integration test for the page (DOM-heavy without
  * @testing-library/react setup), so pinning the wire contract here
  * catches client-side regressions before they hit operators.
@@ -62,9 +63,8 @@ describe("terminal.straddle0dte URL + auth", () => {
       data_age_seconds: null,
     });
     // Set env vars BEFORE the module is imported so the
-    // module-scoped TERMINAL_API_URL/KEY constants pick them up.
+    // module-scoped TERMINAL_API_URL constant picks them up.
     vi.stubEnv("VITE_TERMINAL_API_URL", "https://terminal.example.com");
-    vi.stubEnv("VITE_TERMINAL_API_KEY", "test-key-abc");
     vi.resetModules();
   });
 
@@ -82,13 +82,13 @@ describe("terminal.straddle0dte URL + auth", () => {
     expect(url).toBe("https://terminal.example.com/terminal/v1/straddle/0dte");
   });
 
-  it("attaches X-Terminal-Key header when the key is configured", async () => {
+  it("sends the session cookie (credentials:include) and NO API-key header", async () => {
     const { terminal } = await importClient();
     await terminal.straddle0dte();
     const init = calls[0][1];
-    const headers = init?.headers as Record<string, string> | undefined;
-    expect(headers).toBeDefined();
-    expect(headers!["X-Terminal-Key"]).toBe("test-key-abc");
+    expect(init?.credentials).toBe("include");
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers).not.toHaveProperty("X-Terminal-Key");
   });
 
   it("returns the parsed body verbatim on 200", async () => {
@@ -122,7 +122,6 @@ describe("terminal.straddle0dte URL + auth", () => {
 describe("terminal.straddle0dte (no base URL configured)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_TERMINAL_API_URL", "");
-    vi.stubEnv("VITE_TERMINAL_API_KEY", "");
     vi.resetModules();
   });
 

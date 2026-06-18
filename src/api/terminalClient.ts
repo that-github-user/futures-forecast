@@ -1,9 +1,10 @@
 /**
  * Typed fetch wrapper for the terminal API at terminal.denoisedalpha.com.
  *
- * Auth: X-Terminal-Key header (plain key matches a SHA-256 hash in the
- * server's TERMINAL_API_KEYS env var). Same UX-obfuscation posture as
- * dcClient — the real boundary is server-side header validation.
+ * Auth: the HttpOnly session cookie set by POST /terminal/v1/auth/login
+ * (credentials:include sends it). No API key is in the bundle — the data
+ * is not readable without a server-side login. A 401 on a gated call
+ * re-locks the UI (notifyUnauthorized) so the operator re-authenticates.
  *
  * Returns null on errors (graceful degradation — frontend renders the
  * placeholder/loading state for that endpoint instead of crashing).
@@ -29,20 +30,15 @@ import { notifyUnauthorized } from "../hooks/useAuth";
 export type { TerminalIntradayBar } from "./terminalTypes";
 
 const TERMINAL_API_URL = import.meta.env.VITE_TERMINAL_API_URL || "";
-const TERMINAL_API_KEY = import.meta.env.VITE_TERMINAL_API_KEY || "";
 
 async function get<T>(path: string, requireAuth = true): Promise<T | null> {
   if (!TERMINAL_API_URL) return null;
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
-    // Legacy key header — kept through the dual-accept window (PR-2); the
-    // server also accepts the session cookie. Removed in PR-3 once the
-    // cookie flow is confirmed live, along with the baked-in key.
-    if (requireAuth && TERMINAL_API_KEY) {
-      headers["X-Terminal-Key"] = TERMINAL_API_KEY;
-    }
-    // Send the HttpOnly session cookie (set by /auth/login). Same-site
-    // to the frontend (denoisedalpha.com → terminal.denoisedalpha.com).
+    // Auth is the HttpOnly session cookie only (set by /auth/login).
+    // credentials:include sends it; same-site to the frontend
+    // (denoisedalpha.com → terminal.denoisedalpha.com). No API key is
+    // bundled anymore (PR-3) — the data is not readable without a login.
     const r = await fetch(`${TERMINAL_API_URL}${path}`, {
       headers,
       credentials: "include",
@@ -50,7 +46,7 @@ async function get<T>(path: string, requireAuth = true): Promise<T | null> {
     if (!r.ok) {
       // A 401 on a gated call means the session cookie is gone/expired —
       // re-lock so the operator is sent to the lander rather than left
-      // with silently-empty panels. (Dormant until PR-3 removes the key.)
+      // with silently-empty panels.
       if (r.status === 401 && requireAuth) notifyUnauthorized();
       return null;
     }

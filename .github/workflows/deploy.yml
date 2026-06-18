@@ -32,13 +32,13 @@ jobs:
           VITE_API_KEY: ${{ secrets.API_KEY }}
           VITE_DEMO_MODE: ${{ vars.DEMO_MODE || 'true' }}
           VITE_DC_API_URL: ${{ vars.DC_API_URL }}
-          VITE_DC_API_KEY: ${{ secrets.DC_API_KEY }}
-          # VITE_DC_PASSWORD_HASH removed (PR-2): the password is now
-          # verified server-side via the session cookie, not a bcrypt hash
-          # baked into the public bundle. The DC_PASSWORD_HASH repo var can
-          # be deleted. (The *_API_KEY secrets stay until PR-3.)
+          # VITE_DC_API_KEY + VITE_TERMINAL_API_KEY removed (PR-3): the
+          # dashboards authenticate via the HttpOnly session cookie only,
+          # so no API key is baked into the public bundle. The DC_API_KEY
+          # and TERMINAL_API_KEY GitHub secrets can be deleted AFTER the
+          # burned keys are rotated server-side (see the private repo's
+          # rotation steps). VITE_DC_PASSWORD_HASH was removed in PR-2.
           VITE_TERMINAL_API_URL: ${{ vars.TERMINAL_API_URL }}
-          VITE_TERMINAL_API_KEY: ${{ secrets.TERMINAL_API_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

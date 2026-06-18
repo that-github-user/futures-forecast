@@ -24,24 +24,20 @@ import type {
 import { notifyUnauthorized } from "../hooks/useAuth";
 
 const DC_BASE = import.meta.env.VITE_DC_API_URL || "";
-const DC_KEY = import.meta.env.VITE_DC_API_KEY || "";
 
 async function dcGet<T>(path: string): Promise<T | null> {
   try {
     const headers: Record<string, string> = {};
-    // Legacy key header — kept through the dual-accept window (PR-2);
-    // the server also accepts the shared session cookie. Removed in PR-3.
-    if (DC_KEY) headers["X-DC-Key"] = DC_KEY;
-
-    // Send the HttpOnly session cookie (set by terminal-api /auth/login,
-    // scoped to .denoisedalpha.com so it rides to dc-api too).
+    // Auth is the HttpOnly session cookie only (set by terminal-api
+    // /auth/login, scoped to .denoisedalpha.com so it rides to dc-api).
+    // credentials:include sends it; no API key is bundled anymore (PR-3).
     const res = await fetch(`${DC_BASE}${path}`, {
       headers,
       credentials: "include",
     });
     if (!res.ok) {
       // 401 → session cookie gone/expired; re-lock so the operator is
-      // sent to the lander. (Dormant until PR-3 removes the key backstop.)
+      // sent to the lander.
       if (res.status === 401) notifyUnauthorized();
       return null;
     }
