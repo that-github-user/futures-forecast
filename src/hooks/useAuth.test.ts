@@ -184,4 +184,17 @@ describe("useAuth — no gate (dev/demo)", () => {
     const mod = await import("./useAuth");
     expect(mod.HAS_GATE).toBe(false);
   });
+
+  it("logout() is a no-op in dev/demo — never locks an always-open build", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_TERMINAL_API_URL", "");
+    vi.stubEnv("VITE_DEMO_MODE", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("./useAuth");
+    expect(mod.__statusForTests()).toBe("authed"); // open by default
+    await mod.logout();
+    expect(mod.__statusForTests()).toBe("authed"); // stays open
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

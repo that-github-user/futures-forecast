@@ -130,15 +130,16 @@ export function notifyUnauthorized(): void {
 
 /** Clear the server session cookie and re-lock the UI. */
 export async function logout(): Promise<void> {
-  if (HAS_GATE) {
-    try {
-      await fetch(`${TERMINAL_API_URL}/terminal/v1/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      // best-effort; we re-lock the UI regardless
-    }
+  // Dev/demo has no gate and no session — logging "out" would wrongly
+  // lock an always-open build, so it's a no-op there.
+  if (!HAS_GATE) return;
+  try {
+    await fetch(`${TERMINAL_API_URL}/terminal/v1/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // best-effort; we re-lock the UI regardless
   }
   setStatus("unauthed");
 }
@@ -150,8 +151,10 @@ export function useAuth() {
     const fn = () => setS(status);
     listeners.add(fn);
     ensureChecked();
-    // Sync immediately in case the status changed between the initial
-    // render and this subscription (e.g. a fast session check resolved).
+    // Defensive resync: if another component's session check already
+    // moved the module status between this component's render (where
+    // useState read it) and this effect, adopt the latest now. A no-op
+    // re-render when unchanged (React bails on equal state).
     fn();
     return () => {
       listeners.delete(fn);

@@ -43,8 +43,11 @@ export function LumenLander({ redirectTo = "#/app" }: Props) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // A returning operator whose session cookie is still valid shouldn't be
-  // re-prompted — once the session check resolves authed, go straight in.
+  // When a gate exists, this effect OWNS navigation: it fires both for a
+  // returning operator whose cookie is still valid (the one-shot check
+  // resolves authed) and for a fresh login (login() flips authed). It is
+  // deliberately scoped to hasGate so a no-gate build still shows the
+  // lander on mount instead of auto-bouncing to the app.
   useEffect(() => {
     if (hasGate && authed) {
       window.location.hash = redirectTo;
@@ -52,9 +55,7 @@ export function LumenLander({ redirectTo = "#/app" }: Props) {
   }, [hasGate, authed, redirectTo]);
 
   // The lander IS the auth surface. Submit verifies the password
-  // SERVER-SIDE (sets the HttpOnly session cookie on success). In
-  // dev/demo (no gate) login() resolves ok immediately, so an empty
-  // submit still "opens the door".
+  // SERVER-SIDE (sets the HttpOnly session cookie on success).
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -62,7 +63,10 @@ export function LumenLander({ redirectTo = "#/app" }: Props) {
     const res = await login(value);
     setSubmitting(false);
     if (res.ok) {
-      window.location.hash = redirectTo;
+      // With a gate, the effect above handles the redirect (login flipped
+      // authed). Without a gate (dev/demo) there's no authed effect, so
+      // an empty/any submit "opens the door" here.
+      if (!hasGate) window.location.hash = redirectTo;
     } else {
       setError(true);
       setRateLimited(res.rateLimited ?? false);
