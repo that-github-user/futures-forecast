@@ -22,8 +22,10 @@ import {
   type MouseEventParams,
   type SeriesMarker,
   type Time,
+  type UTCTimestamp,
 } from "lightweight-charts";
 import { resolveLumenPalette } from "../terminal/chartHelpers";
+import type { LiveCandle } from "../../hooks/liveMarkupHelpers";
 import type {
   MarkupReviewAlert,
   TerminalIntradayBar,
@@ -38,6 +40,10 @@ interface Props {
   bars: TerminalIntradayBar[];
   /** Already-filtered alerts; markers + tooltip derive from these. */
   alerts: MarkupReviewAlert[];
+  /** Current forming 1-min candle from the live SSE spot stream (today only).
+   *  Applied via series.update() for a smooth live bar without a rebuild;
+   *  null for past sessions / when no live data. */
+  liveBar?: LiveCandle | null;
 }
 
 const fmt = (v: number | null, d = 1): string =>
@@ -78,13 +84,16 @@ function tooltipHtml(hits: MarkupReviewAlert[]): string {
   return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""}</div>${rows}`;
 }
 
-export function MarkupReviewChart({ bars, alerts }: Props) {
+export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const indexRef = useRef<Map<number, MarkupReviewAlert[]>>(new Map());
+  // Newest bar time on the series (seed or live) — series.update() must never
+  // be called with an older time, so live ticks below this are dropped.
+  const lastBarTimeRef = useRef<number>(-Infinity);
 
   // Create the chart once.
   useEffect(() => {
@@ -158,8 +167,28 @@ export function MarkupReviewChart({ bars, alerts }: Props) {
       close: b.close,
     }));
     series.setData(data);
+    lastBarTimeRef.current =
+      data.length > 0 ? (data[data.length - 1].time as number) : -Infinity;
     chart.timeScale().fitContent();
   }, [bars]);
+
+  // Live forming candle → incremental series.update() (no rebuild, no fit, so
+  // the operator's pan/zoom is preserved). Monotonic guard: never update a bar
+  // older than the newest on the series. As the minute rolls, liveBar's later
+  // time appends a fresh bar; the prior one persists.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !liveBar) return;
+    if (liveBar.time < lastBarTimeRef.current) return;
+    series.update({
+      time: liveBar.time as UTCTimestamp,
+      open: liveBar.open,
+      high: liveBar.high,
+      low: liveBar.low,
+      close: liveBar.close,
+    });
+    lastBarTimeRef.current = liveBar.time;
+  }, [liveBar]);
 
   // Alerts → markers + crosshair index.
   useEffect(() => {

@@ -19,10 +19,15 @@ import {
   etDateString,
   filterAlerts,
   fromInputDate,
+  passesFilters,
   subsetStats,
   toInputDate,
   type AlertFilters,
 } from "./markupReviewHelpers";
+import {
+  buildFormingCandle,
+  liveAlertToReview,
+} from "../../hooks/liveMarkupHelpers";
 import "./MarkupReviewPane.css";
 
 const MarkupReviewChart = lazy(() =>
@@ -56,6 +61,23 @@ export function MarkupReviewPane() {
     [data, filters],
   );
   const stats = useMemo(() => subsetStats(filtered), [filtered]);
+
+  // Live overlay (today only): the forming candle from the SSE spot stream,
+  // and live alerts (mapped to the review shape, filtered + deduped against the
+  // fetched alerts) merged into the chart's markers.
+  const isToday = date === etDateString();
+  const liveBar = useMemo(
+    () => (isToday && live?.spot_series ? buildFormingCandle(live.spot_series) : null),
+    [isToday, live],
+  );
+  const chartAlerts = useMemo(() => {
+    if (!isToday || !live) return filtered;
+    const seen = new Set(filtered.map((a) => a.alert_ts));
+    const liveAlerts = live.recent_alerts
+      .map((a) => liveAlertToReview(a, live.center_atm))
+      .filter((a) => passesFilters(a, filters) && !seen.has(a.alert_ts));
+    return [...filtered, ...liveAlerts];
+  }, [isToday, live, filtered, filters]);
 
   // σ-slider span follows the session's actual σ range (the detector's σ is
   // unbounded above), so a high-σ blowout is always reachable by the filter
@@ -231,7 +253,11 @@ export function MarkupReviewPane() {
           <Suspense
             fallback={<div className="markup-review__msg">Loading chart…</div>}
           >
-            <MarkupReviewChart bars={data!.bars} alerts={filtered} />
+            <MarkupReviewChart
+              bars={data!.bars}
+              alerts={chartAlerts}
+              liveBar={liveBar}
+            />
           </Suspense>
         )}
       </div>
