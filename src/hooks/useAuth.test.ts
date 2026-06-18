@@ -198,3 +198,27 @@ describe("useAuth — no gate (dev/demo)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("API clients — cookie-only (PR-3, no key in the bundle)", () => {
+  it("terminal + dc requests send credentials but NO API-key header", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_TERMINAL_API_URL", TERMINAL_URL);
+    vi.stubEnv("VITE_DC_API_URL", "https://dc.test");
+    vi.stubEnv("VITE_DEMO_MODE", "");
+    const fetchMock = vi.fn().mockResolvedValue(okJson({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { terminal } = await import("../api/terminalClient");
+    const { dcApi } = await import("../api/dcClient");
+    await terminal.snapshot();
+    await dcApi.summary();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, opts] of fetchMock.mock.calls) {
+      expect(opts.credentials).toBe("include");
+      const headers = (opts.headers ?? {}) as Record<string, string>;
+      expect(headers).not.toHaveProperty("X-Terminal-Key");
+      expect(headers).not.toHaveProperty("X-DC-Key");
+    }
+  });
+});

@@ -10,9 +10,9 @@
  * stream failures + the daily / intraday_rth slots that the chart
  * badge doesn't surface.
  *
- * Endpoint is unauthenticated server-side, so the typed fetch wrapper
- * in `terminalClient.ts` skips the X-Terminal-Key header — works
- * before the operator's key has been validated.
+ * Endpoint is unauthenticated server-side; the typed fetch wrapper in
+ * `terminalClient.ts` passes requireAuth=false for it, so a 401 here
+ * never triggers a session re-lock. Works before the operator logs in.
  *
  * 30s cadence matches the bars-fetch polling. Health doesn't need to
  * be more responsive than the underlying data sources; faster polling

@@ -6,7 +6,6 @@
  *   - URL paths (including encodeURIComponent on the position UID)
  *   - Query-string serialization for iv_source + as_of
  *   - Default-omission (no params set → no `?` suffix)
- *   - The X-DC-Key header when VITE_DC_API_KEY is set
  *
  * Frontend has no integration test for the modals (DOM-heavy without
  * @testing-library/react setup), so pinning the wire protocol here

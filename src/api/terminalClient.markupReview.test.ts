@@ -1,7 +1,8 @@
 /**
  * URL + auth tests for terminal.markupReview() — mirrors the straddle0dte
- * test. Pins the query-param wire contract (date + tf) and the X-Terminal-Key
- * header so a client-side regression is caught before it reaches operators.
+ * test. Pins the query-param wire contract (date + tf) and the cookie-only
+ * auth posture (credentials:include, NO API-key header) so a client-side
+ * regression is caught before it reaches operators.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +37,6 @@ describe("terminal.markupReview URL + auth", () => {
       asof: "2026-06-16T20:00:00Z",
     });
     vi.stubEnv("VITE_TERMINAL_API_URL", "https://terminal.example.com");
-    vi.stubEnv("VITE_TERMINAL_API_KEY", "test-key-abc");
     vi.resetModules();
   });
 
@@ -61,11 +61,12 @@ describe("terminal.markupReview URL + auth", () => {
     expect(String(calls[0][0])).toContain("tf=1m");
   });
 
-  it("attaches X-Terminal-Key", async () => {
+  it("sends the session cookie (credentials:include) and NO API-key header", async () => {
     const { terminal } = await importClient();
     await terminal.markupReview("20260616");
+    expect(calls[0][1]?.credentials).toBe("include");
     const headers = calls[0][1]?.headers as Record<string, string> | undefined;
-    expect(headers?.["X-Terminal-Key"]).toBe("test-key-abc");
+    expect(headers ?? {}).not.toHaveProperty("X-Terminal-Key");
   });
 
   it("returns the parsed body on 200 and null on error", async () => {
