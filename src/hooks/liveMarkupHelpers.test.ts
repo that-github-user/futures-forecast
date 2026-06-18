@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { MarkupAlert, MarkupState } from "../api/terminalTypes";
-import { boundSpotWindow, deriveLiveMarkup } from "./liveMarkupHelpers";
+import {
+  boundSpotWindow,
+  buildFormingCandle,
+  deriveLiveMarkup,
+  liveAlertToReview,
+} from "./liveMarkupHelpers";
 
 const baseState = (over: Partial<MarkupState> = {}): MarkupState => ({
   session_date: "20260618",
@@ -100,5 +105,66 @@ describe("deriveLiveMarkup", () => {
     const out = deriveLiveMarkup(base, [], [a2, a1]);
     // a2 prepended once; a1 not duplicated
     expect(out?.recent_alerts.map((a) => a.ts)).toEqual([a2.ts, a1.ts]);
+  });
+});
+
+describe("buildFormingCandle", () => {
+  it("returns null with no spots", () => {
+    expect(buildFormingCandle([])).toBeNull();
+  });
+
+  it("builds the current-minute OHLC from samples in that minute only", () => {
+    const spots: [string, number][] = [
+      ["2026-06-18T10:30:58-04:00", 7500], // previous minute → excluded
+      ["2026-06-18T10:31:00-04:00", 7510], // open
+      ["2026-06-18T10:31:20-04:00", 7515], // high
+      ["2026-06-18T10:31:40-04:00", 7508], // low
+      ["2026-06-18T10:31:55-04:00", 7512], // close (latest)
+    ];
+    const c = buildFormingCandle(spots);
+    // 10:31:00 EDT = 14:31:00 UTC → epoch seconds
+    expect(c).toEqual({
+      time: Date.parse("2026-06-18T14:31:00Z") / 1000,
+      open: 7510,
+      high: 7515,
+      low: 7508,
+      close: 7512,
+    });
+  });
+
+  it("a single sample yields a flat candle", () => {
+    const c = buildFormingCandle([["2026-06-18T10:31:10-04:00", 7510]]);
+    expect(c).toMatchObject({ open: 7510, high: 7510, low: 7510, close: 7510 });
+  });
+});
+
+describe("liveAlertToReview", () => {
+  const live = (over: Partial<MarkupAlert> = {}): MarkupAlert => ({
+    ts: "2026-06-18T10:31:07-04:00",
+    strike: 7520,
+    side: "call",
+    direction: "up",
+    spread: 0.4,
+    baseline_spread: 0.1,
+    spread_z: 5.5,
+    ask_jump: 1.4,
+    ...over,
+  });
+
+  it("maps to a pending review alert with bar_time floored to the minute (UTC)", () => {
+    const r = liveAlertToReview(live(), 7515);
+    expect(r.status).toBe("pending");
+    expect(r.alert_ts).toBe("2026-06-18T10:31:07-04:00");
+    expect(r.bar_time).toBe(new Date(Date.parse("2026-06-18T14:31:00Z")).toISOString());
+    expect(r.direction).toBe("up");
+    expect(r.dist_from_atm).toBe(5); // 7520 - 7515
+    expect(r.spread_z).toBe(5.5);
+    expect(r.mfe).toBeNull();
+    expect(r.mae).toBeNull();
+  });
+
+  it("dist_from_atm is null when center or strike is unknown", () => {
+    expect(liveAlertToReview(live(), null).dist_from_atm).toBeNull();
+    expect(liveAlertToReview(live({ strike: null }), 7515).dist_from_atm).toBeNull();
   });
 });

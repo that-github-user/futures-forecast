@@ -1,6 +1,6 @@
 /**
- * Live markup hook — Server-Sent Events, the push replacement for the 5s
- * polling in `useMarkupData`. Opens `/terminal/v1/markup/stream` and keeps a
+ * Live markup hook — Server-Sent Events, the push replacement for the old 5s
+ * polling. Opens `/terminal/v1/markup/stream` and keeps a
  * continuously-updated MarkupState for the live panel:
  *   - `alert` events prepend instantly (sub-second) — the operator sees a
  *     markup fire the moment it happens, no refresh.
