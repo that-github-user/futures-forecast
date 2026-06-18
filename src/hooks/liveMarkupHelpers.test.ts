@@ -5,6 +5,7 @@ import {
   buildFormingCandle,
   deriveLiveMarkup,
   liveAlertToReview,
+  liveSessionCandle,
 } from "./liveMarkupHelpers";
 
 const baseState = (over: Partial<MarkupState> = {}): MarkupState => ({
@@ -135,6 +136,29 @@ describe("buildFormingCandle", () => {
   it("a single sample yields a flat candle", () => {
     const c = buildFormingCandle([["2026-06-18T10:31:10-04:00", 7510]]);
     expect(c).toMatchObject({ open: 7510, high: 7510, low: 7510, close: 7510 });
+  });
+});
+
+describe("liveSessionCandle (contiguity gate)", () => {
+  const spots: [string, number][] = [["2026-06-18T15:59:10-04:00", 7509]];
+  const candleSec = Date.parse("2026-06-18T19:59:00Z") / 1000; // 15:59 ET minute
+
+  it("shows the candle when contiguous with the last bar (RTH lag)", () => {
+    const lastBar = Date.parse("2026-06-18T19:58:00Z") / 1000; // 1 min behind
+    expect(liveSessionCandle(spots, lastBar, 300)?.time).toBe(candleSec);
+  });
+
+  it("suppresses the candle when it floats far past the last bar (post-close)", () => {
+    const lastBar = Date.parse("2026-06-18T19:30:00Z") / 1000; // 29 min behind
+    expect(liveSessionCandle(spots, lastBar, 300)).toBeNull();
+  });
+
+  it("shows the candle when there are no historical bars yet", () => {
+    expect(liveSessionCandle(spots, null, 300)?.time).toBe(candleSec);
+  });
+
+  it("returns null when there are no spots", () => {
+    expect(liveSessionCandle([], 123, 300)).toBeNull();
   });
 });
 

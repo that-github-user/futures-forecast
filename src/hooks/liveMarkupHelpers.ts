@@ -93,6 +93,26 @@ export function buildFormingCandle(
   return { time: minuteStartMs / 1000, open, high, low, close };
 }
 
+/** The forming candle to overlay on the session chart — but ONLY when it
+ *  actually extends the session. Returns null when the candle would float
+ *  more than `maxGapS` past the last historical bar, which happens once SPX
+ *  RTH has closed (the 1-min bars freeze at 16:00 ET while the spot keeps
+ *  updating ES-derived) — otherwise a lone candle is drawn across a huge
+ *  time gap. `lastBarTimeSec` is the last historical bar's time in epoch
+ *  seconds (null when there are no bars yet → no gap to check). */
+export function liveSessionCandle(
+  spots: [string, number][],
+  lastBarTimeSec: number | null,
+  maxGapS: number,
+): LiveCandle | null {
+  const candle = buildFormingCandle(spots);
+  if (!candle) return null;
+  if (lastBarTimeSec != null && candle.time - lastBarTimeSec > maxGapS) {
+    return null;
+  }
+  return candle;
+}
+
 /** Map a live MarkupAlert (the SSE/recent-alerts shape) to the review-alert
  *  shape the chart's marker builder consumes, as a PENDING alert (no forward
  *  outcome yet). `bar_time` is the alert floored to the minute (UTC ISO) for
