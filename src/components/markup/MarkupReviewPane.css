@@ -273,8 +273,21 @@
     height: 70vh;
     min-height: 360px;
   }
-  /* keep a wide live panel from forcing horizontal page overflow */
+  /* keep a wide live panel from forcing horizontal page overflow (the
+     panel's SVGs already scale via viewBox + width:100%, so this is just
+     a safety net) */
   .markup-live {
     overflow-x: auto;
+  }
+}
+
+/* Very narrow phones: tighten the filter row so the σ slider + selects
+   don't crowd / clip below ~400px. */
+@media (max-width: 480px) {
+  .markup-review__filters {
+    gap: 12px;
+  }
+  .markup-review__filters input[type="range"] {
+    width: 88px;
   }
 }
