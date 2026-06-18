@@ -1,71 +1,152 @@
 /**
  * Shared session-auth hook for the gated routes.
  *
- * Generalizes the prior DCAuthGate's sessionStorage-based unlock so a
- * single passphrase entered at `#/` lets the operator into any
- * behind-the-gate route (`#/forecast`, `#/dc`) without re-prompting.
+ * REAL server-side auth (PR-2 of the auth-hardening rollout). The
+ * operator's password is verified SERVER-SIDE by the terminal API
+ * (`POST /terminal/v1/auth/login`), which sets an HttpOnly session
+ * cookie scoped to `.denoisedalpha.com`. Because the cookie is HttpOnly
+ * it is invisible to JS — so "am I logged in?" is answered by asking the
+ * server (`GET /terminal/v1/auth/session`), not by reading a flag we set
+ * ourselves. The cookie also rides every API request (the clients send
+ * `credentials: "include"`), so it is the actual access credential, not
+ * UX theater. This replaces the prior client-side bcrypt gate.
  *
- * SECURITY POSTURE: this is UX obfuscation, NOT a security boundary.
- * The bcrypt hash is in the bundle; sessionStorage can be set via
- * devtools. The real boundary is the server-side X-API-Key /
- * X-DC-Key header validation in the FastAPI services. Keep
- * VITE_DC_PASSWORD_HASH set in production builds.
- *
- * Env var name `VITE_DC_PASSWORD_HASH` is preserved from the prior
- * DC-only gate to avoid requiring an env update on existing
- * deployments. The same hash now unlocks every gated route.
+ * Auth lives on the terminal API host (VITE_TERMINAL_API_URL); the same
+ * cookie authorizes dc-api (same registrable domain). When no terminal
+ * URL is configured (local dev) or in demo mode there is no backend to
+ * authenticate against, so the gate is disabled (open) — matching the
+ * prior dev-open behavior.
  */
 
 import { useEffect, useState } from "react";
-import bcrypt from "bcryptjs";
 
-const STORAGE_KEY = "denoisedalpha-unlocked";
-const PASSWORD_HASH = import.meta.env.VITE_DC_PASSWORD_HASH || "";
+type AuthStatus = "checking" | "authed" | "unauthed";
 
+const TERMINAL_API_URL = import.meta.env.VITE_TERMINAL_API_URL || "";
+const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
+
+/** True when a real server-side gate exists (prod with a backend). In
+ *  demo/dev (no terminal URL) there's nothing to authenticate against. */
+export const HAS_GATE = Boolean(TERMINAL_API_URL) && !IS_DEMO;
+
+// ── module-level shared store (so every RequireAuth + the lander agree
+//    on one auth state, and a login anywhere updates all of them) ──────
+let status: AuthStatus = HAS_GATE ? "checking" : "authed";
+let checkStarted = false;
 const listeners = new Set<() => void>();
 
 function notify() {
   for (const fn of listeners) fn();
 }
 
-function readUnlocked(): boolean {
-  if (!PASSWORD_HASH) return true;
-  return sessionStorage.getItem(STORAGE_KEY) === "true";
+function setStatus(next: AuthStatus) {
+  if (next !== status) {
+    status = next;
+    notify();
+  }
+}
+
+async function checkSession(): Promise<void> {
+  if (!HAS_GATE) {
+    setStatus("authed");
+    return;
+  }
+  try {
+    const r = await fetch(`${TERMINAL_API_URL}/terminal/v1/auth/session`, {
+      credentials: "include",
+    });
+    const data = r.ok ? ((await r.json()) as { authenticated?: boolean }) : null;
+    setStatus(data?.authenticated ? "authed" : "unauthed");
+  } catch {
+    // Can't reach the server to confirm — treat as locked (the gated UI
+    // stays closed; the lander is shown). The API clients degrade to
+    // empty states independently.
+    setStatus("unauthed");
+  }
+}
+
+/** Kick off the one-time session check (idempotent). */
+function ensureChecked(): void {
+  if (!checkStarted) {
+    checkStarted = true;
+    void checkSession();
+  }
+}
+
+export interface LoginResult {
+  ok: boolean;
+  /** true when the server throttled the attempt (HTTP 429). */
+  rateLimited?: boolean;
+}
+
+/** Submit the operator password to the server; on success the server
+ *  sets the session cookie and we flip to authed. */
+export async function login(passphrase: string): Promise<LoginResult> {
+  if (!HAS_GATE) {
+    setStatus("authed");
+    return { ok: true };
+  }
+  try {
+    const r = await fetch(`${TERMINAL_API_URL}/terminal/v1/auth/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: passphrase }),
+    });
+    if (r.ok) {
+      setStatus("authed");
+      return { ok: true };
+    }
+    if (r.status === 429) return { ok: false, rateLimited: true };
+    return { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Clear the server session cookie and re-lock the UI. */
+export async function logout(): Promise<void> {
+  if (HAS_GATE) {
+    try {
+      await fetch(`${TERMINAL_API_URL}/terminal/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // best-effort; we re-lock the UI regardless
+    }
+  }
+  setStatus("unauthed");
 }
 
 export function useAuth() {
-  const [unlocked, setUnlockedState] = useState<boolean>(readUnlocked);
+  const [s, setS] = useState<AuthStatus>(status);
 
   useEffect(() => {
-    const fn = () => setUnlockedState(readUnlocked());
+    const fn = () => setS(status);
     listeners.add(fn);
+    ensureChecked();
+    // Sync immediately in case the status changed between the initial
+    // render and this subscription (e.g. a fast session check resolved).
+    fn();
     return () => {
       listeners.delete(fn);
     };
   }, []);
 
-  /** Try a passphrase; returns true on success and persists unlock. */
-  function tryUnlock(passphrase: string): boolean {
-    if (!PASSWORD_HASH) {
-      sessionStorage.setItem(STORAGE_KEY, "true");
-      setUnlockedState(true);
-      notify();
-      return true;
-    }
-    const ok = bcrypt.compareSync(passphrase, PASSWORD_HASH);
-    if (ok) {
-      sessionStorage.setItem(STORAGE_KEY, "true");
-      setUnlockedState(true);
-      notify();
-    }
-    return ok;
-  }
+  return {
+    status: s,
+    authed: s === "authed",
+    checking: s === "checking",
+    hasGate: HAS_GATE,
+    login,
+    logout,
+  };
+}
 
-  function lock() {
-    sessionStorage.removeItem(STORAGE_KEY);
-    setUnlockedState(false);
-    notify();
-  }
-
-  return { unlocked, tryUnlock, lock, hasGate: Boolean(PASSWORD_HASH) };
+/** Test-only: reset the module store between tests. */
+export function __resetAuthForTests() {
+  status = HAS_GATE ? "checking" : "authed";
+  checkStarted = false;
+  listeners.clear();
 }

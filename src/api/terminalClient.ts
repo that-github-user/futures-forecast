@@ -33,10 +33,18 @@ async function get<T>(path: string, requireAuth = true): Promise<T | null> {
   if (!TERMINAL_API_URL) return null;
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
+    // Legacy key header — kept through the dual-accept window (PR-2); the
+    // server also accepts the session cookie. Removed in PR-3 once the
+    // cookie flow is confirmed live, along with the baked-in key.
     if (requireAuth && TERMINAL_API_KEY) {
       headers["X-Terminal-Key"] = TERMINAL_API_KEY;
     }
-    const r = await fetch(`${TERMINAL_API_URL}${path}`, { headers });
+    // Send the HttpOnly session cookie (set by /auth/login). Same-site
+    // to the frontend (denoisedalpha.com → terminal.denoisedalpha.com).
+    const r = await fetch(`${TERMINAL_API_URL}${path}`, {
+      headers,
+      credentials: "include",
+    });
     if (!r.ok) return null;
     return (await r.json()) as T;
   } catch {

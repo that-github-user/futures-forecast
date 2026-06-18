@@ -12,7 +12,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
     "lightweight-charts": "^5.2.0",
@@ -22,7 +21,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@resvg/resvg-js": "^2.6.2",
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
