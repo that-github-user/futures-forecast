@@ -107,22 +107,6 @@ export function MarkupReviewPane() {
     <div className="markup-review">
       <RouteNav current="markup" />
 
-      {live && (
-        <section className="markup-live" aria-label="Live markup">
-          <header className="markup-live__head">
-            <span
-              className={`markup-live__dot${connected ? " is-on" : ""}`}
-              aria-hidden="true"
-            />
-            <span className="markup-live__label">LIVE</span>
-            {live.center_atm != null && (
-              <span className="markup-live__meta">center {live.center_atm}</span>
-            )}
-          </header>
-          <MarkupPanel markup={live} />
-        </section>
-      )}
-
       <header className="markup-review__head">
         <div className="markup-review__title">
           <h1>Markup Review</h1>
@@ -272,6 +256,23 @@ export function MarkupReviewPane() {
           </Suspense>
         )}
       </div>
+
+      {/* Live Markup Tell — ancillary, below the (now-live) candle chart. */}
+      {live && (
+        <section className="markup-live" aria-label="Live markup tell">
+          <header className="markup-live__head">
+            <span
+              className={`markup-live__dot${connected ? " is-on" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="markup-live__label">LIVE · MARKUP TELL</span>
+            {live.center_atm != null && (
+              <span className="markup-live__meta">center {live.center_atm}</span>
+            )}
+          </header>
+          <MarkupPanel markup={live} />
+        </section>
+      )}
     </div>
   );
 }
