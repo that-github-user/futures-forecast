@@ -111,6 +111,55 @@ describe("useAuth — gated (terminal URL set, not demo)", () => {
 
     expect(mod.__statusForTests()).toBe("authed"); // login survived
   });
+
+  it("two concurrent logins both succeed and status ends authed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson()));
+    const mod = await import("./useAuth");
+    const [a, b] = await Promise.all([mod.login("p"), mod.login("p")]);
+    expect(a).toEqual({ ok: true });
+    expect(b).toEqual({ ok: true });
+    expect(mod.__statusForTests()).toBe("authed");
+  });
+
+  it("notifyUnauthorized re-locks an authed session (cookie-expiry path)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson()));
+    const mod = await import("./useAuth");
+    await mod.login("hunter2");
+    expect(mod.__statusForTests()).toBe("authed");
+    mod.notifyUnauthorized();
+    expect(mod.__statusForTests()).toBe("unauthed");
+  });
+
+  it("notifyUnauthorized is a no-op when not already authed", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const mod = await import("./useAuth");
+    // fresh module → status 'checking'; a stray 401 must not flip it
+    expect(mod.__statusForTests()).toBe("checking");
+    mod.notifyUnauthorized();
+    expect(mod.__statusForTests()).toBe("checking");
+  });
+
+  it("a 401 from the terminal client re-locks the session (integration)", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_TERMINAL_API_URL", TERMINAL_URL);
+    vi.stubEnv("VITE_DEMO_MODE", "");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        url.endsWith("/auth/login")
+          ? Promise.resolve(okJson())
+          : Promise.resolve({ ok: false, status: 401 }),
+      ),
+    );
+    const auth = await import("./useAuth");
+    const { terminal } = await import("../api/terminalClient");
+
+    await auth.login("p");
+    expect(auth.__statusForTests()).toBe("authed");
+
+    await terminal.snapshot(); // gated call → 401 → re-lock
+    expect(auth.__statusForTests()).toBe("unauthed");
+  });
 });
 
 describe("useAuth — no gate (dev/demo)", () => {

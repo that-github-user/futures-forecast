@@ -24,6 +24,8 @@ import type {
   VwapData,
 } from "./terminalTypes";
 
+import { notifyUnauthorized } from "../hooks/useAuth";
+
 export type { TerminalIntradayBar } from "./terminalTypes";
 
 const TERMINAL_API_URL = import.meta.env.VITE_TERMINAL_API_URL || "";
@@ -45,7 +47,13 @@ async function get<T>(path: string, requireAuth = true): Promise<T | null> {
       headers,
       credentials: "include",
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      // A 401 on a gated call means the session cookie is gone/expired —
+      // re-lock so the operator is sent to the lander rather than left
+      // with silently-empty panels. (Dormant until PR-3 removes the key.)
+      if (r.status === 401 && requireAuth) notifyUnauthorized();
+      return null;
+    }
     return (await r.json()) as T;
   } catch {
     return null;

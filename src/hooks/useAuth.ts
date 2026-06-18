@@ -64,8 +64,11 @@ async function checkSession(): Promise<void> {
     }
   } catch {
     // Can't reach the server to confirm — treat as locked (the gated UI
-    // stays closed; the lander is shown). The API clients degrade to
-    // empty states independently.
+    // stays closed; the lander is shown). Trade-off: a flaky connection at
+    // load can show the lander to a user who actually holds a valid
+    // cookie; they re-enter the password. We prefer that (fail closed)
+    // over flashing gated chrome on an unverifiable session. The API
+    // clients degrade to empty states independently.
     if (status === "checking") setStatus("unauthed");
   }
 }
@@ -106,6 +109,22 @@ export async function login(passphrase: string): Promise<LoginResult> {
     return { ok: false };
   } catch {
     return { ok: false };
+  }
+}
+
+/** Called by the API clients when a GATED request returns 401 — i.e. the
+ *  session cookie is missing or has expired (the 12h server TTL elapsed
+ *  mid-use). Re-locks so the gate sends the operator back to the lander
+ *  to re-authenticate, instead of leaving them staring at silently-empty
+ *  panels. No-op without a gate (dev/demo) or when already locked.
+ *
+ *  Dormant during the PR-2 dual-accept window — the legacy key still
+ *  authorizes requests, so gated calls don't 401. It becomes load-bearing
+ *  in PR-3 once the baked-in keys are removed and the cookie is the only
+ *  credential. */
+export function notifyUnauthorized(): void {
+  if (HAS_GATE && status === "authed") {
+    setStatus("unauthed");
   }
 }
 

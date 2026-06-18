@@ -21,6 +21,7 @@ import type {
   DCTentResponse,
   DCTrade,
 } from "./dcTypes";
+import { notifyUnauthorized } from "../hooks/useAuth";
 
 const DC_BASE = import.meta.env.VITE_DC_API_URL || "";
 const DC_KEY = import.meta.env.VITE_DC_API_KEY || "";
@@ -38,7 +39,12 @@ async function dcGet<T>(path: string): Promise<T | null> {
       headers,
       credentials: "include",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 401 → session cookie gone/expired; re-lock so the operator is
+      // sent to the lander. (Dormant until PR-3 removes the key backstop.)
+      if (res.status === 401) notifyUnauthorized();
+      return null;
+    }
     return (await res.json()) as T;
   } catch {
     return null;
