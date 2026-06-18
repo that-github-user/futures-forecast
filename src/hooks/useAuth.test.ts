@@ -87,6 +87,30 @@ describe("useAuth — gated (terminal URL set, not demo)", () => {
     const mod = await import("./useAuth");
     await expect(mod.logout()).resolves.toBeUndefined();
   });
+
+  it("a late session check does NOT clobber an explicit login (race guard)", async () => {
+    // /auth/session resolves LATE and unauthenticated; the operator logs
+    // in (authed) before it lands. The stale check must not re-lock them.
+    let resolveSession!: (v: unknown) => void;
+    const sessionPending = new Promise((res) => {
+      resolveSession = res;
+    });
+    const fetchMock = vi.fn((url: string) =>
+      url.endsWith("/auth/session") ? sessionPending : Promise.resolve(okJson()),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("./useAuth");
+
+    const checkDone = mod.__checkSessionForTests(); // in flight (pending)
+    expect(await mod.login("hunter2")).toEqual({ ok: true });
+    expect(mod.__statusForTests()).toBe("authed");
+
+    // now the stale check resolves unauthenticated…
+    resolveSession({ ok: true, status: 200, json: async () => ({ authenticated: false }) });
+    await checkDone;
+
+    expect(mod.__statusForTests()).toBe("authed"); // login survived
+  });
 });
 
 describe("useAuth — no gate (dev/demo)", () => {

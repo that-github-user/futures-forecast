@@ -56,12 +56,17 @@ async function checkSession(): Promise<void> {
       credentials: "include",
     });
     const data = r.ok ? ((await r.json()) as { authenticated?: boolean }) : null;
-    setStatus(data?.authenticated ? "authed" : "unauthed");
+    // Only apply if still "checking" — a login()/logout() may have
+    // resolved the status definitively while this one-shot check was in
+    // flight; the late result must not clobber it (race guard).
+    if (status === "checking") {
+      setStatus(data?.authenticated ? "authed" : "unauthed");
+    }
   } catch {
     // Can't reach the server to confirm — treat as locked (the gated UI
     // stays closed; the lander is shown). The API clients degrade to
     // empty states independently.
-    setStatus("unauthed");
+    if (status === "checking") setStatus("unauthed");
   }
 }
 
@@ -149,4 +154,16 @@ export function __resetAuthForTests() {
   status = HAS_GATE ? "checking" : "authed";
   checkStarted = false;
   listeners.clear();
+}
+
+/** Test-only: current module status (the HttpOnly cookie hides real
+ *  auth from JS, so tests observe the resolved store state here). */
+export function __statusForTests() {
+  return status;
+}
+
+/** Test-only: run the one-shot session check (normally fired by the
+ *  hook on mount). Lets tests exercise the in-flight race guard. */
+export function __checkSessionForTests() {
+  return checkSession();
 }
