@@ -1,6 +1,15 @@
 /** Typed API client + SSE wrapper for the prediction backend.
  *
  * Falls back to mock data when VITE_DEMO_MODE=true or API unreachable.
+ *
+ * NOTE (auth hardening PR-3): this client + its VITE_API_KEY belong to the
+ * RETIRED ES-prediction dashboard (#/forecast, unrouted in App.tsx). The
+ * only importers (usePrediction/useHealth via Dashboard.tsx) are not in the
+ * live route tree, so this file is tree-shaken out of the production bundle
+ * — VITE_API_KEY does NOT ship to users. The active dashboards
+ * (terminal/dc/straddle/markup) use session-cookie auth only, with no key
+ * in the bundle. If forecasting is ever revived, migrate this to the
+ * session-auth posture rather than re-introducing a bundled key.
  */
 
 import type {

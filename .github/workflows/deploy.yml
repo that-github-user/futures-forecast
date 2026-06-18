@@ -34,10 +34,17 @@ jobs:
           VITE_DC_API_URL: ${{ vars.DC_API_URL }}
           # VITE_DC_API_KEY + VITE_TERMINAL_API_KEY removed (PR-3): the
           # dashboards authenticate via the HttpOnly session cookie only,
-          # so no API key is baked into the public bundle. The DC_API_KEY
-          # and TERMINAL_API_KEY GitHub secrets can be deleted AFTER the
-          # burned keys are rotated server-side (see the private repo's
-          # rotation steps). VITE_DC_PASSWORD_HASH was removed in PR-2.
+          # so no API key is baked into the public bundle.
+          #
+          # Rollout: this frontend PR and the backend fail-closed PR are
+          # INDEPENDENT (deploy in either order — prod behavior is unchanged
+          # because the server still accepts the session cookie, and a
+          # logged-in operator is authorized by the cookie, not the key).
+          # The order that matters comes AFTER both are live: rotate the
+          # burned keys server-side (private repo deploy/KEY_ROTATION.md —
+          # it must restart the DC daemon with its new key), THEN delete the
+          # DC_API_KEY + TERMINAL_API_KEY GitHub secrets here.
+          # VITE_DC_PASSWORD_HASH was already removed in PR-2.
           VITE_TERMINAL_API_URL: ${{ vars.TERMINAL_API_URL }}
 
       - uses: actions/upload-pages-artifact@v3
