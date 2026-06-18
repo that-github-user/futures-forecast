@@ -211,6 +211,21 @@
 .lumen-auth.error input {
   border-color: var(--neg-persimmon);
 }
+.lumen-auth input:disabled,
+.lumen-auth .enter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Rate-limit notice — aligns with the auth row, italic-serif to match. */
+.lumen-auth-msg {
+  margin-left: 96px;
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--neg-persimmon);
+}
 
 /* ── Footer — italic-serif couplet ─────────────── */
 .lumen-foot {

@@ -27,9 +27,11 @@ interface Props {
 }
 
 export function LumenLander({ redirectTo = "#/app" }: Props) {
-  const { tryUnlock } = useAuth();
+  const { login, authed, hasGate } = useAuth();
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [reducedMotion, setReducedMotion] = useState<boolean>(prefersReducedMotion);
 
   // Track changes to the OS-level reduced-motion preference live.
@@ -41,16 +43,33 @@ export function LumenLander({ redirectTo = "#/app" }: Props) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // The lander is the auth surface; don't auto-redirect even when no
-  // gate is configured — the user always sees the page and clicks
-  // Enter to proceed. tryUnlock("") returns true when no hash is set,
-  // so an empty submit becomes a valid "open the door" action in dev.
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (tryUnlock(value)) {
+  // When a gate exists, this effect OWNS navigation: it fires both for a
+  // returning operator whose cookie is still valid (the one-shot check
+  // resolves authed) and for a fresh login (login() flips authed). It is
+  // deliberately scoped to hasGate so a no-gate build still shows the
+  // lander on mount instead of auto-bouncing to the app.
+  useEffect(() => {
+    if (hasGate && authed) {
       window.location.hash = redirectTo;
+    }
+  }, [hasGate, authed, redirectTo]);
+
+  // The lander IS the auth surface. Submit verifies the password
+  // SERVER-SIDE (sets the HttpOnly session cookie on success).
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    const res = await login(value);
+    setSubmitting(false);
+    if (res.ok) {
+      // With a gate, the effect above handles the redirect (login flipped
+      // authed). Without a gate (dev/demo) there's no authed effect, so
+      // an empty/any submit "opens the door" here.
+      if (!hasGate) window.location.hash = redirectTo;
     } else {
       setError(true);
+      setRateLimited(res.rateLimited ?? false);
       setValue("");
     }
   };
@@ -90,15 +109,22 @@ export function LumenLander({ redirectTo = "#/app" }: Props) {
               autoComplete="off"
               autoFocus
               value={value}
+              disabled={submitting}
               onChange={(e) => {
                 setValue(e.target.value);
                 setError(false);
+                setRateLimited(false);
               }}
             />
-            <button type="submit" className="enter">
-              Enter.
+            <button type="submit" className="enter" disabled={submitting}>
+              {submitting ? "…" : "Enter."}
             </button>
           </form>
+          {rateLimited && (
+            <p className="lumen-auth-msg" role="alert">
+              Too many attempts. Wait a moment, then try again.
+            </p>
+          )}
         </section>
 
         <footer className="lumen-foot">

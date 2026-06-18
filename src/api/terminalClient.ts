@@ -24,6 +24,8 @@ import type {
   VwapData,
 } from "./terminalTypes";
 
+import { notifyUnauthorized } from "../hooks/useAuth";
+
 export type { TerminalIntradayBar } from "./terminalTypes";
 
 const TERMINAL_API_URL = import.meta.env.VITE_TERMINAL_API_URL || "";
@@ -33,11 +35,25 @@ async function get<T>(path: string, requireAuth = true): Promise<T | null> {
   if (!TERMINAL_API_URL) return null;
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
+    // Legacy key header — kept through the dual-accept window (PR-2); the
+    // server also accepts the session cookie. Removed in PR-3 once the
+    // cookie flow is confirmed live, along with the baked-in key.
     if (requireAuth && TERMINAL_API_KEY) {
       headers["X-Terminal-Key"] = TERMINAL_API_KEY;
     }
-    const r = await fetch(`${TERMINAL_API_URL}${path}`, { headers });
-    if (!r.ok) return null;
+    // Send the HttpOnly session cookie (set by /auth/login). Same-site
+    // to the frontend (denoisedalpha.com → terminal.denoisedalpha.com).
+    const r = await fetch(`${TERMINAL_API_URL}${path}`, {
+      headers,
+      credentials: "include",
+    });
+    if (!r.ok) {
+      // A 401 on a gated call means the session cookie is gone/expired —
+      // re-lock so the operator is sent to the lander rather than left
+      // with silently-empty panels. (Dormant until PR-3 removes the key.)
+      if (r.status === 401 && requireAuth) notifyUnauthorized();
+      return null;
+    }
     return (await r.json()) as T;
   } catch {
     return null;

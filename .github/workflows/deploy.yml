@@ -33,7 +33,10 @@ jobs:
           VITE_DEMO_MODE: ${{ vars.DEMO_MODE || 'true' }}
           VITE_DC_API_URL: ${{ vars.DC_API_URL }}
           VITE_DC_API_KEY: ${{ secrets.DC_API_KEY }}
-          VITE_DC_PASSWORD_HASH: ${{ vars.DC_PASSWORD_HASH }}
+          # VITE_DC_PASSWORD_HASH removed (PR-2): the password is now
+          # verified server-side via the session cookie, not a bcrypt hash
+          # baked into the public bundle. The DC_PASSWORD_HASH repo var can
+          # be deleted. (The *_API_KEY secrets stay until PR-3.)
           VITE_TERMINAL_API_URL: ${{ vars.TERMINAL_API_URL }}
           VITE_TERMINAL_API_KEY: ${{ secrets.TERMINAL_API_KEY }}
 
