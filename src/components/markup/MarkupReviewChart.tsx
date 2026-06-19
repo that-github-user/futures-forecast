@@ -134,6 +134,10 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
   const paintLastBar = useCallback(() => {
     const legend = legendRef.current;
     if (!legend) return;
+    // Palette colors are set in the create-chart effect, which runs before the
+    // bars/liveBar effects (effects fire in declaration order). Guard anyway so
+    // a future reorder can't paint the legend with empty inline colors.
+    if (!colorsRef.current.up || !colorsRef.current.down) return;
     const bar = lastBarRef.current;
     legend.innerHTML = bar
       ? legendHtml(
