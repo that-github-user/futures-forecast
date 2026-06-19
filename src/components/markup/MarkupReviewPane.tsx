@@ -20,6 +20,7 @@ import {
   filterAlerts,
   fromInputDate,
   passesFilters,
+  shiftSessionDate,
   subsetStats,
   toInputDate,
   type AlertFilters,
@@ -115,6 +116,14 @@ export function MarkupReviewPane() {
           </span>
         </div>
         <div className="markup-review__controls">
+          <button
+            className="markup-review__nav"
+            onClick={() => setDate((d) => shiftSessionDate(d, -1))}
+            aria-label="Previous session"
+            title="Previous session"
+          >
+            ‹
+          </button>
           <input
             type="date"
             className="markup-review__date"
@@ -122,6 +131,15 @@ export function MarkupReviewPane() {
             max={toInputDate(etDateString())}
             onChange={(e) => setDate(fromInputDate(e.target.value))}
           />
+          <button
+            className="markup-review__nav"
+            onClick={() => setDate((d) => shiftSessionDate(d, 1))}
+            disabled={date >= etDateString()}
+            aria-label="Next session"
+            title="Next session"
+          >
+            ›
+          </button>
           <div className="markup-review__seg">
             {(["1m", "5m"] as const).map((t) => (
               <button
