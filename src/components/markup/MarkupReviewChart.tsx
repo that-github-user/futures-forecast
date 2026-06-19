@@ -9,7 +9,7 @@
  * so a filter change is just `setMarkers(...)` — no refetch, no chart rebuild.
  */
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   CandlestickSeries,
   CrosshairMode,
@@ -58,6 +58,34 @@ const etTime = (iso: string): string =>
     hour12: false,
   }).format(new Date(iso));
 
+// Axis/crosshair times are ET (US market) — Lightweight Charts defaults to UTC
+// for UTCTimestamp data, so format explicitly. `sec` is epoch seconds.
+const ET_HM = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+const etHM = (sec: number): string => ET_HM.format(new Date(sec * 1000));
+
+/** TradingView-style OHLC legend HTML for one bar. The OHLC values are colored
+ *  with the SAME palette colors that draw the candles (up/down), so the legend
+ *  always matches the bar — colors are passed in from resolveLumenPalette (no
+ *  user input, so the inline style is injection-safe). */
+function legendHtml(
+  bar: CandlestickData,
+  sec: number | null,
+  upColor: string,
+  downColor: string,
+): string {
+  const color = bar.close >= bar.open ? upColor : downColor;
+  const f = (v: number) => v.toFixed(2);
+  const t = sec != null ? `<span class="mr-legend__t">${etHM(sec)} ET</span>` : "";
+  const v = (label: string, n: number) =>
+    `<span class="mr-legend__v" style="color:${color}">${label} ${f(n)}</span>`;
+  return `${t}${v("O", bar.open)}${v("H", bar.high)}${v("L", bar.low)}${v("C", bar.close)}`;
+}
+
 /** Build the tooltip HTML. Only enum/number fields are interpolated — no
  *  free-text — so there is no injection surface on the trusted API payload. */
 function tooltipHtml(hits: MarkupReviewAlert[]): string {
@@ -94,12 +122,39 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
   // Newest bar time on the series (seed or live) — series.update() must never
   // be called with an older time, so live ticks below this are dropped.
   const lastBarTimeRef = useRef<number>(-Infinity);
+  // OHLC legend (top-left): shows the hovered bar, or the latest bar when not
+  // hovering (TradingView-style).
+  const legendRef = useRef<HTMLDivElement>(null);
+  const lastBarRef = useRef<CandlestickData | null>(null);
+  const hoveringRef = useRef(false);
+  // Candle up/down colors (from the palette) so the legend matches the bars.
+  const colorsRef = useRef<{ up: string; down: string }>({ up: "", down: "" });
+
+  /** Paint the legend with the latest bar (used when not hovering). */
+  const paintLastBar = useCallback(() => {
+    const legend = legendRef.current;
+    if (!legend) return;
+    // Palette colors are set in the create-chart effect, which runs before the
+    // bars/liveBar effects (effects fire in declaration order). Guard anyway so
+    // a future reorder can't paint the legend with empty inline colors.
+    if (!colorsRef.current.up || !colorsRef.current.down) return;
+    const bar = lastBarRef.current;
+    legend.innerHTML = bar
+      ? legendHtml(
+          bar,
+          Number.isFinite(lastBarTimeRef.current) ? lastBarTimeRef.current : null,
+          colorsRef.current.up,
+          colorsRef.current.down,
+        )
+      : "";
+  }, []);
 
   // Create the chart once.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const p = resolveLumenPalette();
+    colorsRef.current = { up: p.posCream, down: p.negPersimmon };
     const chart = createChart(el, {
       autoSize: true,
       layout: { background: { color: p.paperDeep }, textColor: p.ink60 },
@@ -110,6 +165,14 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
         timeVisible: true,
         secondsVisible: false,
         borderColor: p.ink20,
+        // ET axis labels (US market) — default is UTC for UTCTimestamp data.
+        tickMarkFormatter: (time: Time): string =>
+          typeof time === "number" ? etHM(time) : "",
+      },
+      // ET crosshair time label (bottom axis).
+      localization: {
+        timeFormatter: (time: Time): string =>
+          typeof time === "number" ? `${etHM(time)} ET` : "",
       },
     });
     const series = chart.addSeries(CandlestickSeries, {
@@ -124,6 +187,25 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     markersRef.current = createSeriesMarkers(series, []);
 
     const onMove = (param: MouseEventParams<Time>) => {
+      // OHLC legend: the hovered bar, or revert to the latest when off-data.
+      const series = seriesRef.current;
+      const bar =
+        series && typeof param.time === "number"
+          ? (param.seriesData.get(series) as CandlestickData | undefined)
+          : undefined;
+      if (bar && legendRef.current) {
+        hoveringRef.current = true;
+        legendRef.current.innerHTML = legendHtml(
+          bar,
+          param.time as number,
+          colorsRef.current.up,
+          colorsRef.current.down,
+        );
+      } else {
+        hoveringRef.current = false;
+        paintLastBar();
+      }
+
       const tip = tooltipRef.current;
       if (!tip) return;
       // param.time is a UTCTimestamp (number) for this intraday time-scale
@@ -141,7 +223,8 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
       tip.style.display = "block";
       const w = el.clientWidth;
       tip.style.left = `${Math.max(8, Math.min(param.point.x + 14, w - 248))}px`;
-      tip.style.top = `${Math.max(8, param.point.y + 12)}px`;
+      // Keep clear of the top-left OHLC legend on a near-top hover.
+      tip.style.top = `${Math.max(28, param.point.y + 12)}px`;
     };
     chart.subscribeCrosshairMove(onMove);
 
@@ -152,7 +235,9 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
       seriesRef.current = null;
       markersRef.current = null;
     };
-  }, []);
+    // paintLastBar is a stable useCallback([]) — listed to satisfy
+    // exhaustive-deps; the chart is still created exactly once.
+  }, [paintLastBar]);
 
   // Bars → setData + fit.
   useEffect(() => {
@@ -169,8 +254,10 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     series.setData(data);
     lastBarTimeRef.current =
       data.length > 0 ? (data[data.length - 1].time as number) : -Infinity;
+    lastBarRef.current = data.length > 0 ? data[data.length - 1] : null;
+    if (!hoveringRef.current) paintLastBar();
     chart.timeScale().fitContent();
-  }, [bars]);
+  }, [bars, paintLastBar]);
 
   // Live forming candle → incremental series.update() (no rebuild, no fit, so
   // the operator's pan/zoom is preserved). Monotonic guard: never update a bar
@@ -180,15 +267,18 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     const series = seriesRef.current;
     if (!series || !liveBar) return;
     if (liveBar.time < lastBarTimeRef.current) return;
-    series.update({
+    const candle: CandlestickData = {
       time: liveBar.time as UTCTimestamp,
       open: liveBar.open,
       high: liveBar.high,
       low: liveBar.low,
       close: liveBar.close,
-    });
+    };
+    series.update(candle);
     lastBarTimeRef.current = liveBar.time;
-  }, [liveBar]);
+    lastBarRef.current = candle;
+    if (!hoveringRef.current) paintLastBar(); // keep the legend on the live bar
+  }, [liveBar, paintLastBar]);
 
   // Alerts → markers + crosshair index.
   useEffect(() => {
@@ -211,6 +301,11 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
   return (
     <div className="markup-review-chart">
       <div ref={containerRef} className="markup-review-chart__canvas" />
+      <div
+        ref={legendRef}
+        className="markup-review-chart__legend mr-legend"
+        aria-hidden="true"
+      />
       <div ref={tooltipRef} className="markup-review-chart__tooltip mr-tip" />
     </div>
   );
