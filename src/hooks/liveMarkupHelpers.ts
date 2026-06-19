@@ -41,6 +41,9 @@ export function deriveLiveMarkup(
   liveAlerts: MarkupAlert[],
 ): MarkupState | null {
   if (!base || base.band.length === 0) return null;
+  // Outside the markup live window (RTH + 15-min SPXW curb) the panel hides —
+  // the detector is idle and only the ES-derived spot would still move.
+  if (base.live_window === false) return null;
   const seen = new Set(base.recent_alerts.map((a) => a.ts));
   const recent_alerts: MarkupAlert[] = [
     ...liveAlerts.filter((a) => !seen.has(a.ts)),

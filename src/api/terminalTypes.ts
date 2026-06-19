@@ -377,6 +377,11 @@ export interface MarkupState {
   updated_at: string;
   age_seconds: number | null;
   stale: boolean;
+  /** True during the markup live window (NYSE RTH + the 15-min SPXW post-close
+   *  curb). The live panel hides when false — post-curb the option quotes have
+   *  stopped, so a still-ticking spot line is not a live markup. Optional /
+   *  defaults to "live" when absent (pre-field backend). */
+  live_window?: boolean;
   band: MarkupBandStrike[];
   recent_alerts: MarkupAlert[];
   /** Rolling ~2-min (120s) SPX spot samples `[iso_ts_ET, price]` for the

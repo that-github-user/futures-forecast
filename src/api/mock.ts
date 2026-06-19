@@ -693,7 +693,10 @@ export function mockMarkupState(): MarkupState {
   }
   return {
     session_date: todayET, active_expiry: todayET, center_atm: atm,
-    updated_at: isoAt(2), age_seconds: 2, stale: false, band, recent_alerts,
+    updated_at: isoAt(2), age_seconds: 2, stale: false,
+    // Demo always shows the panel (it's a showcase, not gated on real hours).
+    live_window: true,
+    band, recent_alerts,
     spot_series,
   };
 }

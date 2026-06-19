@@ -87,6 +87,15 @@ describe("deriveLiveMarkup", () => {
     expect(deriveLiveMarkup(baseState({ band: [] }), [["t", 1]], [])).toBeNull();
   });
 
+  it("returns null when outside the live window (post-curb), even with a band", () => {
+    expect(deriveLiveMarkup(baseState({ live_window: false }), [["t", 1]], [])).toBeNull();
+  });
+
+  it("shows when live_window is true or absent (backward-compat)", () => {
+    expect(deriveLiveMarkup(baseState({ live_window: true }), [], [])).not.toBeNull();
+    expect(deriveLiveMarkup(baseState(), [], [])).not.toBeNull(); // absent → live
+  });
+
   it("overlays the live spot series over the coarse one", () => {
     const base = baseState({ spot_series: [["coarse", 7500]] });
     const live: [string, number][] = [["fine1", 7510], ["fine2", 7511]];
