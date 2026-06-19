@@ -209,12 +209,8 @@
 .mr-legend__t {
   color: #8b949e;
 }
-.mr-legend__v.up {
-  color: #3fb950;
-}
-.mr-legend__v.down {
-  color: #f85149;
-}
+/* .mr-legend__v color is set inline from the candle palette so the legend
+   always matches the bar colors (see legendHtml). */
 .markup-review-chart__tooltip {
   position: absolute;
   z-index: 5;
@@ -340,5 +336,10 @@
   }
   .markup-review__filters input[type="range"] {
     width: 88px;
+  }
+  /* Tighten the OHLC legend so it doesn't crowd a narrow phone chart. */
+  .markup-review-chart__legend {
+    font-size: 10px;
+    gap: 7px;
   }
 }

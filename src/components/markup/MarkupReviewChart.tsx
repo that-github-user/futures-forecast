@@ -68,17 +68,22 @@ const ET_HM = new Intl.DateTimeFormat("en-US", {
 });
 const etHM = (sec: number): string => ET_HM.format(new Date(sec * 1000));
 
-/** TradingView-style OHLC legend HTML for one bar (colored by up/down). */
-function legendHtml(bar: CandlestickData, sec: number | null): string {
-  const cls = bar.close >= bar.open ? "up" : "down";
+/** TradingView-style OHLC legend HTML for one bar. The OHLC values are colored
+ *  with the SAME palette colors that draw the candles (up/down), so the legend
+ *  always matches the bar — colors are passed in from resolveLumenPalette (no
+ *  user input, so the inline style is injection-safe). */
+function legendHtml(
+  bar: CandlestickData,
+  sec: number | null,
+  upColor: string,
+  downColor: string,
+): string {
+  const color = bar.close >= bar.open ? upColor : downColor;
   const f = (v: number) => v.toFixed(2);
   const t = sec != null ? `<span class="mr-legend__t">${etHM(sec)} ET</span>` : "";
-  return (
-    `${t}<span class="mr-legend__v ${cls}">O ${f(bar.open)}</span>` +
-    `<span class="mr-legend__v ${cls}">H ${f(bar.high)}</span>` +
-    `<span class="mr-legend__v ${cls}">L ${f(bar.low)}</span>` +
-    `<span class="mr-legend__v ${cls}">C ${f(bar.close)}</span>`
-  );
+  const v = (label: string, n: number) =>
+    `<span class="mr-legend__v" style="color:${color}">${label} ${f(n)}</span>`;
+  return `${t}${v("O", bar.open)}${v("H", bar.high)}${v("L", bar.low)}${v("C", bar.close)}`;
 }
 
 /** Build the tooltip HTML. Only enum/number fields are interpolated — no
@@ -122,6 +127,8 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
   const legendRef = useRef<HTMLDivElement>(null);
   const lastBarRef = useRef<CandlestickData | null>(null);
   const hoveringRef = useRef(false);
+  // Candle up/down colors (from the palette) so the legend matches the bars.
+  const colorsRef = useRef<{ up: string; down: string }>({ up: "", down: "" });
 
   /** Paint the legend with the latest bar (used when not hovering). */
   const paintLastBar = useCallback(() => {
@@ -132,6 +139,8 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
       ? legendHtml(
           bar,
           Number.isFinite(lastBarTimeRef.current) ? lastBarTimeRef.current : null,
+          colorsRef.current.up,
+          colorsRef.current.down,
         )
       : "";
   }, []);
@@ -141,6 +150,7 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     const el = containerRef.current;
     if (!el) return;
     const p = resolveLumenPalette();
+    colorsRef.current = { up: p.posCream, down: p.negPersimmon };
     const chart = createChart(el, {
       autoSize: true,
       layout: { background: { color: p.paperDeep }, textColor: p.ink60 },
@@ -181,7 +191,12 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
           : undefined;
       if (bar && legendRef.current) {
         hoveringRef.current = true;
-        legendRef.current.innerHTML = legendHtml(bar, param.time as number);
+        legendRef.current.innerHTML = legendHtml(
+          bar,
+          param.time as number,
+          colorsRef.current.up,
+          colorsRef.current.down,
+        );
       } else {
         hoveringRef.current = false;
         paintLastBar();
@@ -204,7 +219,8 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
       tip.style.display = "block";
       const w = el.clientWidth;
       tip.style.left = `${Math.max(8, Math.min(param.point.x + 14, w - 248))}px`;
-      tip.style.top = `${Math.max(8, param.point.y + 12)}px`;
+      // Keep clear of the top-left OHLC legend on a near-top hover.
+      tip.style.top = `${Math.max(28, param.point.y + 12)}px`;
     };
     chart.subscribeCrosshairMove(onMove);
 
