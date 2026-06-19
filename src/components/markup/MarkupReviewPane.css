@@ -190,6 +190,31 @@
   position: absolute;
   inset: 0;
 }
+
+/* TradingView-style OHLC legend, top-left (hovered bar, else latest). */
+.markup-review-chart__legend {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #c9d1d9;
+  text-shadow: 0 1px 2px #0b0e14cc;
+}
+.mr-legend__t {
+  color: #8b949e;
+}
+.mr-legend__v.up {
+  color: #3fb950;
+}
+.mr-legend__v.down {
+  color: #f85149;
+}
 .markup-review-chart__tooltip {
   position: absolute;
   z-index: 5;
