@@ -89,6 +89,25 @@
   color: #c9d1d9;
 }
 
+.markup-review__nav {
+  background: #11151c;
+  color: #8b949e;
+  border: 1px solid #20262e;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.markup-review__nav:hover:not(:disabled) {
+  color: #c9d1d9;
+}
+.markup-review__nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .markup-review__filters {
   display: flex;
   align-items: center;

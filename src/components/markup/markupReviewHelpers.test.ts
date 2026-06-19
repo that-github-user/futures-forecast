@@ -11,6 +11,7 @@ import {
   median,
   mfeSize,
   passesFilters,
+  shiftSessionDate,
   subsetStats,
   toInputDate,
 } from "./markupReviewHelpers";
@@ -37,6 +38,33 @@ function mk(o: Partial<MarkupReviewAlert> = {}): MarkupReviewAlert {
 }
 
 // ── filters ────────────────────────────────────────────────────────────
+
+describe("shiftSessionDate", () => {
+  // 2026-06-18 is a Thursday; 19 Fri, 20 Sat, 21 Sun, 22 Mon.
+  const MAX = "20260630";
+
+  it("steps back/forward one weekday", () => {
+    expect(shiftSessionDate("20260618", -1, MAX)).toBe("20260617");
+    expect(shiftSessionDate("20260618", 1, MAX)).toBe("20260619");
+  });
+
+  it("skips weekends", () => {
+    expect(shiftSessionDate("20260622", -1, MAX)).toBe("20260619"); // Mon → Fri
+    expect(shiftSessionDate("20260619", 1, MAX)).toBe("20260622"); // Fri → Mon
+  });
+
+  it("does not step past today on a forward move (no-op)", () => {
+    expect(shiftSessionDate("20260618", 1, "20260618")).toBe("20260618");
+  });
+
+  it("can always step backward past the max", () => {
+    expect(shiftSessionDate("20260618", -1, "20260618")).toBe("20260617");
+  });
+
+  it("crosses month/year boundaries", () => {
+    expect(shiftSessionDate("20260101", -1, MAX)).toBe("20251231"); // Thu → Wed
+  });
+});
 
 describe("passesFilters", () => {
   it("direction filter", () => {

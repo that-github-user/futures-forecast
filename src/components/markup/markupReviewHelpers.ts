@@ -28,6 +28,28 @@ export const toInputDate = (yyyymmdd: string): string =>
     : yyyymmdd;
 export const fromInputDate = (v: string): string => v.replace(/-/g, "");
 
+/** Step a session date one weekday in `dir` (-1 prev, +1 next), skipping
+ *  weekends (most empty days) and never going past `maxYmd` (today, ET) on
+ *  a forward step. Holidays still land on an empty session — rare enough
+ *  that the pane's "no data" state is fine. yyyymmdd in/out. */
+export function shiftSessionDate(
+  yyyymmdd: string,
+  dir: -1 | 1,
+  maxYmd: string = etDateString(),
+): string {
+  if (yyyymmdd.length !== 8) return yyyymmdd;
+  const y = +yyyymmdd.slice(0, 4);
+  const m = +yyyymmdd.slice(4, 6);
+  const d = +yyyymmdd.slice(6, 8);
+  let dt = new Date(Date.UTC(y, m - 1, d));
+  do {
+    dt = new Date(dt.getTime() + dir * 86_400_000);
+  } while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6); // skip Sun/Sat
+  const out = `${dt.getUTCFullYear()}${String(dt.getUTCMonth() + 1).padStart(2, "0")}${String(dt.getUTCDate()).padStart(2, "0")}`;
+  // Clamp forward steps to today (no future sessions).
+  return dir === 1 && out > maxYmd ? yyyymmdd : out;
+}
+
 // ── filters ────────────────────────────────────────────────────────────
 
 export interface AlertFilters {
