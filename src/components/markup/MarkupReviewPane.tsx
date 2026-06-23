@@ -30,11 +30,6 @@ import {
   liveSessionCandle,
 } from "../../hooks/liveMarkupHelpers";
 
-// Suppress the live forming candle when it would float more than this far
-// past the last historical bar — i.e. after SPX RTH closes (bars freeze at
-// 16:00 ET while the spot keeps ticking ES-derived). During RTH the seed
-// lags only ~1-2 min (INTRADAY_CACHE_TTL_S=30s), well under this.
-const LIVE_CANDLE_MAX_GAP_S = 300;
 import "./MarkupReviewPane.css";
 
 const MarkupReviewChart = lazy(() =>
@@ -75,13 +70,8 @@ export function MarkupReviewPane() {
   const isToday = date === etDateString();
   const liveBar = useMemo(() => {
     if (!isToday || !live?.spot_series) return null;
-    const bars = data?.bars;
-    const lastBarSec =
-      bars && bars.length > 0
-        ? Date.parse(bars[bars.length - 1].time) / 1000
-        : null;
-    return liveSessionCandle(live.spot_series, lastBarSec, LIVE_CANDLE_MAX_GAP_S);
-  }, [isToday, live, data]);
+    return liveSessionCandle(live.spot_series);
+  }, [isToday, live]);
   const chartAlerts = useMemo(() => {
     if (!isToday || !live) return filtered;
     const seen = new Set(filtered.map((a) => a.alert_ts));
