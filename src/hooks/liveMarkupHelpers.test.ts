@@ -4,6 +4,8 @@ import {
   boundSpotWindow,
   buildFormingCandle,
   deriveLiveMarkup,
+  etMinutesOfDay,
+  isCashRthMinute,
   liveAlertToReview,
   liveSessionCandle,
 } from "./liveMarkupHelpers";
@@ -148,26 +150,71 @@ describe("buildFormingCandle", () => {
   });
 });
 
-describe("liveSessionCandle (contiguity gate)", () => {
-  const spots: [string, number][] = [["2026-06-18T15:59:10-04:00", 7509]];
-  const candleSec = Date.parse("2026-06-18T19:59:00Z") / 1000; // 15:59 ET minute
-
-  it("shows the candle when contiguous with the last bar (RTH lag)", () => {
-    const lastBar = Date.parse("2026-06-18T19:58:00Z") / 1000; // 1 min behind
-    expect(liveSessionCandle(spots, lastBar, 300)?.time).toBe(candleSec);
+describe("etMinutesOfDay (DST-correct ET wall-clock)", () => {
+  it("reads EDT (summer, UTC-4)", () => {
+    // 2026-06-18T13:30:00Z → 09:30 EDT → 570
+    expect(etMinutesOfDay(Date.parse("2026-06-18T13:30:00Z") / 1000)).toBe(570);
   });
 
-  it("suppresses the candle when it floats far past the last bar (post-close)", () => {
-    const lastBar = Date.parse("2026-06-18T19:30:00Z") / 1000; // 29 min behind
-    expect(liveSessionCandle(spots, lastBar, 300)).toBeNull();
+  it("reads EST (winter, UTC-5) — same UTC hour, different ET", () => {
+    // 2026-01-15T13:30:00Z → 08:30 EST → 510 (proves the offset flips with DST)
+    expect(etMinutesOfDay(Date.parse("2026-01-15T13:30:00Z") / 1000)).toBe(510);
+  });
+});
+
+describe("isCashRthMinute (SPX cash 09:30–16:00 ET)", () => {
+  const at = (iso: string) => isCashRthMinute(Date.parse(iso) / 1000);
+
+  it("true mid-session", () => {
+    expect(at("2026-06-18T14:31:00Z")).toBe(true); // 10:31 ET
   });
 
-  it("shows the candle when there are no historical bars yet", () => {
-    expect(liveSessionCandle(spots, null, 300)?.time).toBe(candleSec);
+  it("true exactly at the 09:30 open (inclusive)", () => {
+    expect(at("2026-06-18T13:30:00Z")).toBe(true); // 09:30 ET
+  });
+
+  it("false at the 16:00 close (exclusive)", () => {
+    expect(at("2026-06-18T20:00:00Z")).toBe(false); // 16:00 ET
+  });
+
+  it("false pre-open", () => {
+    expect(at("2026-06-18T13:29:00Z")).toBe(false); // 09:29 ET
+  });
+
+  it("false post-close (the float the gate suppresses)", () => {
+    expect(at("2026-06-18T20:05:00Z")).toBe(false); // 16:05 ET
+  });
+});
+
+describe("liveSessionCandle (cash-RTH gate)", () => {
+  it("shows the forming candle during the cash session", () => {
+    const spots: [string, number][] = [["2026-06-18T10:31:10-04:00", 7509]];
+    expect(liveSessionCandle(spots)?.time).toBe(
+      Date.parse("2026-06-18T14:31:00Z") / 1000,
+    );
+  });
+
+  it("shows the candle regardless of how stale the (now-removed) seed is", () => {
+    // Regression for the freeze bug: 5+ min into the page's life the candle must
+    // still draw. No historical-bar reference exists to go stale anymore.
+    const spots: [string, number][] = [["2026-06-18T15:59:10-04:00", 7509]];
+    expect(liveSessionCandle(spots)?.time).toBe(
+      Date.parse("2026-06-18T19:59:00Z") / 1000,
+    );
+  });
+
+  it("suppresses the candle once cash RTH has closed (post-16:00 float)", () => {
+    const spots: [string, number][] = [["2026-06-18T16:05:00-04:00", 7509]];
+    expect(liveSessionCandle(spots)).toBeNull();
+  });
+
+  it("suppresses the candle before the 09:30 open", () => {
+    const spots: [string, number][] = [["2026-06-18T09:15:00-04:00", 7509]];
+    expect(liveSessionCandle(spots)).toBeNull();
   });
 
   it("returns null when there are no spots", () => {
-    expect(liveSessionCandle([], 123, 300)).toBeNull();
+    expect(liveSessionCandle([])).toBeNull();
   });
 });
 

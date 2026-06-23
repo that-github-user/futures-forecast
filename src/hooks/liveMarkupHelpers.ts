@@ -96,24 +96,73 @@ export function buildFormingCandle(
   return { time: minuteStartMs / 1000, open, high, low, close };
 }
 
-/** The forming candle to overlay on the session chart — but ONLY when it
- *  actually extends the session. Returns null when the candle would float
- *  more than `maxGapS` past the last historical bar, which happens once SPX
- *  RTH has closed (the 1-min bars freeze at 16:00 ET while the spot keeps
- *  updating ES-derived) — otherwise a lone candle is drawn across a huge
- *  time gap. `lastBarTimeSec` is the last historical bar's time in epoch
- *  seconds (null when there are no bars yet → no gap to check). */
+const ET_HM_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+const RTH_OPEN_MIN = 9 * 60 + 30; // 09:30 ET
+const RTH_CLOSE_MIN = 16 * 60; // 16:00 ET
+
+/** ET minutes-since-midnight for an epoch-SECONDS timestamp, DST-correct via
+ *  Intl (the offset flips EDT/EST with the date, so a fixed UTC offset would be
+ *  wrong half the year). Returns null if the parts can't be read. */
+export function etMinutesOfDay(sec: number): number | null {
+  const parts = ET_HM_FMT.formatToParts(new Date(sec * 1000));
+  let hh: number | null = null;
+  let mm: number | null = null;
+  for (const p of parts) {
+    if (p.type === "hour") hh = Number(p.value);
+    else if (p.type === "minute") mm = Number(p.value);
+  }
+  if (hh == null || mm == null || Number.isNaN(hh) || Number.isNaN(mm)) {
+    return null;
+  }
+  // en-US + hour12:false renders midnight as "24" in some engines — normalize.
+  if (hh === 24) hh = 0;
+  return hh * 60 + mm;
+}
+
+/** Is the given minute (epoch seconds) inside the SPX cash RTH session
+ *  [09:30, 16:00) ET? */
+export function isCashRthMinute(sec: number): boolean {
+  const m = etMinutesOfDay(sec);
+  if (m == null) return false;
+  return m >= RTH_OPEN_MIN && m < RTH_CLOSE_MIN;
+}
+
+/** The forming candle to overlay on the session chart — but ONLY while the SPX
+ *  cash session (09:30–16:00 ET) is open. After 16:00 the IBKR 1-min bars
+ *  freeze while the spot keeps ticking (ES-derived), so a forming candle would
+ *  float past the real session; before 09:30 there's no session yet.
+ *
+ *  Gating on the forming MINUTE's own ET wall-clock — NOT on a gap from the
+ *  last historical bar — is deliberate. The historical bars are fetched ONCE
+ *  per session (useMarkupReview) and go stale as the wall clock advances, so
+ *  the old gap-from-seed check silently suppressed the LIVE candle ~5 min after
+ *  page load (the freeze bug). A minute's own clock can't go stale.
+ *
+ *  Holiday / half-day SESSION gating is handled upstream: when the backend
+ *  `live_window` flag is false the whole live overlay (candle + Tell) hides, so
+ *  this only ever runs inside a real session window. (On a half-day the cash
+ *  close is 13:00, which this 16:00 bound doesn't tighten — but `live_window`
+ *  drops the overlay shortly after, capping any float to the curb window.)
+ *
+ *  Deliberately NOT clamped to the last historical bar: if IBKR's historical
+ *  tail is stale/truncated mid-session the live candle may draw detached to its
+ *  right (cosmetic; the pane shows a `bars stale` badge). That's preferred over
+ *  clamping — a clamp against the last drawn bar would suppress the FIRST live
+ *  bar after a truncated seed and, since the reference only advances when a bar
+ *  is drawn, never recover: a freeze in the degraded case. Showing live price
+ *  beats hiding it. */
 export function liveSessionCandle(
   spots: [string, number][],
-  lastBarTimeSec: number | null,
-  maxGapS: number,
 ): LiveCandle | null {
   const candle = buildFormingCandle(spots);
   if (!candle) return null;
-  if (lastBarTimeSec != null && candle.time - lastBarTimeSec > maxGapS) {
-    return null;
-  }
-  return candle;
+  return isCashRthMinute(candle.time) ? candle : null;
 }
 
 /** Map a live MarkupAlert (the SSE/recent-alerts shape) to the review-alert
