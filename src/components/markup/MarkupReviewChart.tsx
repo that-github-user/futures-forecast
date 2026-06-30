@@ -2,7 +2,7 @@
  * MarkupReviewChart — SPX 1-min candles (lightweight-charts v5) with markup
  * alert markers. Up-arrows (call → spot UP) below the bar, down-arrows (put →
  * DOWN) above, clustered ×N per bar. Styling is CAUSAL — color = at-fire
- * conviction tier, size = ask magnitude, hollow circle = CAUTION/trap — never the
+ * conviction tier, size = ask magnitude, grey circle = CAUTION/trap — never the
  * outcome (see buildMarkers / quotemark docs/signal_arrow_styling.md). Hover a bar
  * with alerts → an imperative tooltip (σ / strike / dist-from-ATM / MFE / MAE /
  * status — the OUTCOME, shown for comparison), off the crosshair time → alert index.

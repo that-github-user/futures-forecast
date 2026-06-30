@@ -136,6 +136,18 @@ describe("buildMarkers", () => {
     const pend = buildMarkers([mk({ ...base, status: "pending", mfe: null })])[0];
     expect([pend.color, pend.size, pend.shape]).toEqual([fin.color, fin.size, fin.shape]);
   });
+  it("breadth counts every fired strike regardless of status (causal)", () => {
+    // 4 strikes fired in the bar, one pending + one lost — breadth must be 4
+    // (→ STRONG), never demoted by the post-fire status of a strike.
+    const m = buildMarkers([
+      mk({ ask_jump: 2.5, dist_from_atm: 0, status: "finalized" }),
+      mk({ ask_jump: 2.5, dist_from_atm: 5, status: "finalized" }),
+      mk({ ask_jump: 2.5, dist_from_atm: -5, status: "pending", mfe: null }),
+      mk({ ask_jump: 2.5, dist_from_atm: 10, status: "lost", mfe: null }),
+    ])[0];
+    expect(m.text).toBe("×4");
+    expect(m.color).toBe(CONVICTION_COLORS.up.strong);
+  });
   it("markers are sorted ascending by time", () => {
     const later = mk({ bar_time: "2026-06-16T14:00:00Z" });
     const earlier = mk({ bar_time: "2026-06-16T13:00:00Z" });
@@ -162,6 +174,7 @@ describe("conviction scoring (causal)", () => {
     expect(todScore(180)).toBe(-0.5); // midday
     expect(todScore(300)).toBe(0.5); // afternoon
     expect(todScore(380)).toBe(0); // power+curb
+    expect(todScore(-5)).toBe(0); // pre-open guarded (not the open bucket)
   });
   it("askSize — monotonic in ask magnitude", () => {
     expect(askSize(1.5)).toBe(1);

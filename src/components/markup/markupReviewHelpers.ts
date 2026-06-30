@@ -58,7 +58,9 @@ export interface AlertFilters {
   minZ: number;
   /** |dist_from_atm| ceiling (null = no limit) — e.g. "ATM-only" = 0/5. */
   maxDist: number | null;
-  /** Include pending/lost (NULL-outcome) alerts in the markers + stats. */
+  /** Include pending/lost (NULL-outcome) alerts. The pane honors this for the
+   *  STATS rollup only; the causal chart always renders every fired strike
+   *  (status is a post-fire field and must not scope the at-fire arrows). */
   includePending: boolean;
 }
 
@@ -133,6 +135,7 @@ export function askScore(maxAskJump: number): number {
 
 /** Time-of-day score by RTH session phase (open best, midday dead). */
 export function todScore(minSinceOpen: number): number {
+  if (minSinceOpen < 0) return 0; // pre-open (RTH-gated feed; defensive)
   if (minSinceOpen < 30) return 1.0; // open [0,30)
   if (minSinceOpen < 120) return 0.0; // morning [30,120)
   if (minSinceOpen < 240) return -0.5; // midday [120,240) — dead zone
@@ -186,8 +189,9 @@ export function askSize(maxAskJump: number): number {
 }
 
 /** Tier → color, per direction. Brightness (conviction) is a separate channel from
- *  direction (shape). CAUTION is neutral grey, drawn as a hollow "noise" circle —
- *  so a lone big-ask spike or ATM-only dud never looks hot. */
+ *  direction (shape). CAUTION is a neutral-grey filled circle (lightweight-charts
+ *  circles are solid, not hollow) — so a lone big-ask spike or ATM-only dud never
+ *  looks hot. */
 export const CONVICTION_COLORS: Record<"up" | "down", Record<Tier, string>> = {
   up: { strong: "#3fb950", moderate: "#2f8f43", weak: "#2b6b3f", caution: "#6e7681" },
   down: { strong: "#f85149", moderate: "#c2403a", weak: "#7d342f", caution: "#6e7681" },
@@ -213,8 +217,9 @@ function pushGroup(
 }
 
 /** One marker per (bar, direction) cluster, styled by CAUSAL conviction (never by
- *  outcome). Breadth is over the DISPLAYED cluster — enable "include pending" for
- *  the full at-fire breadth when a bar has pending strikes. */
+ *  outcome). Breadth is the count of the passed-in cluster; the pane feeds the
+ *  status-inclusive set so a pending/lost strike still counts toward the at-fire
+ *  ladder (explicit σ/dist view filters still scope what's shown). */
 export function buildMarkers(alerts: MarkupReviewAlert[]): ReviewMarker[] {
   const groups = new Map<string, MarkupReviewAlert[]>();
   for (const a of alerts) pushGroup(groups, `${a.bar_time}|${a.direction}`, a);
