@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { MarkupReviewAlert } from "../../api/terminalTypes";
 import {
+  CONVICTION_COLORS,
   DEFAULT_FILTERS,
+  askScore,
+  askSize,
+  breadthScore,
   buildMarkers,
+  conviction,
   etDateString,
   filterAlerts,
   fromInputDate,
   indexByBarTime,
   isoToUtc,
   median,
-  mfeSize,
+  minSinceOpenET,
   passesFilters,
   shiftSessionDate,
   subsetStats,
   toInputDate,
+  todScore,
 } from "./markupReviewHelpers";
 
 function mk(o: Partial<MarkupReviewAlert> = {}): MarkupReviewAlert {
@@ -106,11 +112,41 @@ describe("buildMarkers", () => {
     expect(m).toHaveLength(2);
     expect(m.map((x) => x.shape).sort()).toEqual(["arrowDown", "arrowUp"]);
   });
-  it("MFE encodes marker size; all-pending cluster renders dim + size 1", () => {
-    expect(buildMarkers([mk({ mfe: 12 })])[0].size).toBe(4);
-    const dim = buildMarkers([mk({ status: "pending", mfe: null })])[0];
-    expect(dim.size).toBe(1);
-    expect(dim.color).toBe("#2b6b3f"); // upDim
+  it("styles by causal conviction (not outcome): strong open cluster → bright arrow", () => {
+    // 4 strikes (breadth 1.0) + sweet-spot ask 2.5 (1.0) + open bar (1.0) = 3.0 → STRONG
+    const m = buildMarkers([
+      mk({ ask_jump: 2.5, dist_from_atm: 0 }),
+      mk({ ask_jump: 2.5, dist_from_atm: 5 }),
+      mk({ ask_jump: 2.5, dist_from_atm: -5 }),
+      mk({ ask_jump: 2.5, dist_from_atm: 10 }),
+    ])[0];
+    expect(m.shape).toBe("arrowUp");
+    expect(m.color).toBe(CONVICTION_COLORS.up.strong);
+    expect(m.size).toBe(3); // askSize(2.5)
+    expect(m.text).toBe("×4");
+  });
+  it("lone big-ask spike → CAUTION circle, never a hot arrow", () => {
+    const m = buildMarkers([mk({ ask_jump: 3.5, dist_from_atm: 5 })])[0];
+    expect(m.shape).toBe("circle");
+    expect(m.color).toBe(CONVICTION_COLORS.up.caution);
+  });
+  it("styling is outcome-independent (pending vs finalized identical)", () => {
+    const base = { ask_jump: 2.5, dist_from_atm: 5 as number };
+    const fin = buildMarkers([mk({ ...base, status: "finalized", mfe: 30 })])[0];
+    const pend = buildMarkers([mk({ ...base, status: "pending", mfe: null })])[0];
+    expect([pend.color, pend.size, pend.shape]).toEqual([fin.color, fin.size, fin.shape]);
+  });
+  it("breadth counts every fired strike regardless of status (causal)", () => {
+    // 4 strikes fired in the bar, one pending + one lost — breadth must be 4
+    // (→ STRONG), never demoted by the post-fire status of a strike.
+    const m = buildMarkers([
+      mk({ ask_jump: 2.5, dist_from_atm: 0, status: "finalized" }),
+      mk({ ask_jump: 2.5, dist_from_atm: 5, status: "finalized" }),
+      mk({ ask_jump: 2.5, dist_from_atm: -5, status: "pending", mfe: null }),
+      mk({ ask_jump: 2.5, dist_from_atm: 10, status: "lost", mfe: null }),
+    ])[0];
+    expect(m.text).toBe("×4");
+    expect(m.color).toBe(CONVICTION_COLORS.up.strong);
   });
   it("markers are sorted ascending by time", () => {
     const later = mk({ bar_time: "2026-06-16T14:00:00Z" });
@@ -120,13 +156,51 @@ describe("buildMarkers", () => {
   });
 });
 
-describe("mfeSize", () => {
-  it("buckets", () => {
-    expect(mfeSize(12)).toBe(4);
-    expect(mfeSize(7)).toBe(3);
-    expect(mfeSize(3)).toBe(2);
-    expect(mfeSize(1)).toBe(1);
-    expect(mfeSize(null)).toBe(1);
+describe("conviction scoring (causal)", () => {
+  it("breadthScore — monotonic in ladder breadth", () => {
+    expect(breadthScore(1)).toBe(0);
+    expect(breadthScore(3)).toBe(0.3);
+    expect(breadthScore(4)).toBe(1.0);
+  });
+  it("askScore — inverted-U, sweet spot 2.2–3.0", () => {
+    expect(askScore(1.5)).toBe(0);
+    expect(askScore(2.0)).toBe(0.4);
+    expect(askScore(2.5)).toBe(1.0);
+    expect(askScore(3.5)).toBe(0.6);
+  });
+  it("todScore — open best, midday dead", () => {
+    expect(todScore(10)).toBe(1.0); // open
+    expect(todScore(60)).toBe(0); // morning
+    expect(todScore(180)).toBe(-0.5); // midday
+    expect(todScore(300)).toBe(0.5); // afternoon
+    expect(todScore(380)).toBe(0); // power+curb
+    expect(todScore(-5)).toBe(0); // pre-open guarded (not the open bucket)
+  });
+  it("askSize — monotonic in ask magnitude", () => {
+    expect(askSize(1.5)).toBe(1);
+    expect(askSize(2.0)).toBe(2);
+    expect(askSize(2.5)).toBe(3);
+    expect(askSize(3.5)).toBe(4);
+  });
+  it("tiers: strong / moderate / weak by score", () => {
+    const t = (o: Parameters<typeof conviction>[0]) => conviction(o).tier;
+    expect(t({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 10, atmOnly: false })).toBe("strong"); // 3.0
+    expect(t({ clusterSize: 1, maxAskJump: 1.4, minSinceOpen: 10, atmOnly: false })).toBe("moderate"); // 1.0
+    expect(t({ clusterSize: 1, maxAskJump: 1.4, minSinceOpen: 60, atmOnly: false })).toBe("weak"); // 0.0
+  });
+  it("midday never reads STRONG", () => {
+    expect(conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 180, atmOnly: false }).tier).toBe("moderate");
+  });
+  it("trap overrides → CAUTION (lone big-ask, ATM-only)", () => {
+    expect(conviction({ clusterSize: 1, maxAskJump: 3.5, minSinceOpen: 10, atmOnly: false }).tier).toBe("caution");
+    expect(conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 10, atmOnly: true }).tier).toBe("caution");
+  });
+});
+
+describe("minSinceOpenET", () => {
+  it("ET minutes since 09:30 (DST-correct)", () => {
+    expect(minSinceOpenET("2026-06-16T13:36:00Z")).toBe(6); // 09:36 EDT
+    expect(minSinceOpenET("2026-06-16T19:30:00Z")).toBe(360); // 15:30 EDT
   });
 });
 

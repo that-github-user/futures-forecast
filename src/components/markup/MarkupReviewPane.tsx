@@ -64,6 +64,17 @@ export function MarkupReviewPane() {
   );
   const stats = useMemo(() => subsetStats(filtered), [filtered]);
 
+  // The chart arrows are CAUSAL — every fired strike is a real signal, so the
+  // post-fire `status` lifecycle (pending/lost) must NOT scope them, or it would
+  // shrink the at-fire ladder breadth that drives conviction (a 4-strike bar with
+  // one pending strike must still read as breadth 4). Feed the chart all statuses;
+  // only the stats rollup above honors the includePending toggle.
+  const chartFiltered = useMemo(
+    () =>
+      data ? filterAlerts(data.alerts, { ...filters, includePending: true }) : [],
+    [data, filters],
+  );
+
   // Live overlay (today only): the forming candle from the SSE spot stream,
   // and live alerts (mapped to the review shape, filtered + deduped against the
   // fetched alerts) merged into the chart's markers.
@@ -73,13 +84,17 @@ export function MarkupReviewPane() {
     return liveSessionCandle(live.spot_series);
   }, [isToday, live]);
   const chartAlerts = useMemo(() => {
-    if (!isToday || !live) return filtered;
-    const seen = new Set(filtered.map((a) => a.alert_ts));
+    if (!isToday || !live) return chartFiltered;
+    const seen = new Set(chartFiltered.map((a) => a.alert_ts));
     const liveAlerts = live.recent_alerts
       .map((a) => liveAlertToReview(a, live.center_atm))
-      .filter((a) => passesFilters(a, filters) && !seen.has(a.alert_ts));
-    return [...filtered, ...liveAlerts];
-  }, [isToday, live, filtered, filters]);
+      .filter(
+        (a) =>
+          passesFilters(a, { ...filters, includePending: true }) &&
+          !seen.has(a.alert_ts),
+      );
+    return [...chartFiltered, ...liveAlerts];
+  }, [isToday, live, chartFiltered, filters]);
 
   // σ-slider span follows the session's actual σ range (the detector's σ is
   // unbounded above), so a high-σ blowout is always reachable by the filter
@@ -196,7 +211,7 @@ export function MarkupReviewPane() {
             checked={filters.includePending}
             onChange={(e) => setF({ includePending: e.target.checked })}
           />
-          incl. pending
+          incl. pending (stats)
         </label>
       </div>
 

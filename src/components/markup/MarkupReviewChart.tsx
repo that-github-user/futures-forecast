@@ -1,9 +1,11 @@
 /**
  * MarkupReviewChart — SPX 1-min candles (lightweight-charts v5) with markup
- * alert markers. Green up-arrows (call → spot UP) below the bar, red
- * down-arrows (put → DOWN) above, MFE-encoded by size, clustered ×N per bar.
- * Hover a bar with alerts → an imperative tooltip (σ / strike / dist-from-ATM /
- * MFE / MAE / status), driven off the crosshair time → alert index.
+ * alert markers. Up-arrows (call → spot UP) below the bar, down-arrows (put →
+ * DOWN) above, clustered ×N per bar. Styling is CAUSAL — color = at-fire
+ * conviction tier, size = ask magnitude, grey circle = CAUTION/trap — never the
+ * outcome (see buildMarkers / quotemark docs/signal_arrow_styling.md). Hover a bar
+ * with alerts → an imperative tooltip (σ / strike / dist-from-ATM / MFE / MAE /
+ * status — the OUTCOME, shown for comparison), off the crosshair time → alert index.
  *
  * Markers + tooltip derive from the ALREADY-FILTERED alerts the pane passes in,
  * so a filter change is just `setMarkers(...)` — no refetch, no chart rebuild.
@@ -32,8 +34,10 @@ import type {
 } from "../../api/terminalTypes";
 import {
   buildMarkers,
+  conviction,
   indexByBarTime,
   isoToUtc,
+  minSinceOpenET,
 } from "./markupReviewHelpers";
 
 interface Props {
@@ -109,7 +113,23 @@ function tooltipHtml(hits: MarkupReviewAlert[]): string {
       </div>`;
     })
     .join("");
-  return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""}</div>${rows}`;
+  // Causal conviction tier per direction-cluster — explains the marker styling
+  // (color/shape) the viewer is hovering. Computed from at-fire features only.
+  const chips = (["up", "down"] as const)
+    .map((d) => hits.filter((h) => h.direction === d))
+    .filter((g) => g.length > 0)
+    .map((g) => {
+      const tier = conviction({
+        clusterSize: g.length,
+        maxAskJump: g.reduce((m, h) => Math.max(m, h.ask_jump ?? 0), 0),
+        minSinceOpen: minSinceOpenET(g[0].bar_time),
+        atmOnly: g.every((h) => h.dist_from_atm === 0),
+      }).tier;
+      const arrow = g[0].direction === "up" ? "▲" : "▼";
+      return `<span class="mr-tip__conv mr-tip__conv--${tier}">${arrow} ${tier.toUpperCase()}</span>`;
+    })
+    .join("");
+  return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""} ${chips}</div>${rows}`;
 }
 
 export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {

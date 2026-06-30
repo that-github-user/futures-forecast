@@ -58,7 +58,9 @@ export interface AlertFilters {
   minZ: number;
   /** |dist_from_atm| ceiling (null = no limit) — e.g. "ATM-only" = 0/5. */
   maxDist: number | null;
-  /** Include pending/lost (NULL-outcome) alerts in the markers + stats. */
+  /** Include pending/lost (NULL-outcome) alerts. The pane honors this for the
+   *  STATS rollup only; the causal chart always renders every fired strike
+   *  (status is a post-fire field and must not scope the at-fire arrows). */
   includePending: boolean;
 }
 
@@ -89,32 +91,117 @@ export const filterAlerts = (
 
 // ── markers ──────────────────────────────────────────────────────────
 
-export const MARKER_COLORS = {
-  up: "#3fb950",
-  down: "#f85149",
-  upDim: "#2b6b3f",
-  downDim: "#7d342f",
-} as const;
+// Arrows are styled by the at-fire CONVICTION of the setup — NOT by how the move
+// turned out. Conviction is a causal score (ladder breadth + ask magnitude +
+// time-of-day) from features known the instant the signal fires; outcome columns
+// (mfe/mae/es_*) never touch the styling. Spec + provenance: quotemark
+// docs/signal_arrow_styling.md. Channels are kept separate so a strong short can't
+// look like a weak long: SHAPE = direction, COLOR = conviction tier, SIZE = ask
+// magnitude, ×N badge = cluster breadth.
 
 /** ISO (UTC-Z) → lightweight-charts UTCTimestamp (epoch seconds). */
 export const isoToUtc = (iso: string): UTCTimestamp =>
   Math.floor(Date.parse(iso) / 1000) as UTCTimestamp;
 
-/** MFE → marker size bucket (1 small … 4 large). NULL (pending) → 1, so a
- *  winner reads bigger than a dud at a glance. */
-export function mfeSize(mfe: number | null): number {
-  if (mfe == null) return 1;
-  if (mfe >= 10) return 4;
-  if (mfe >= 5) return 3;
-  if (mfe >= 2) return 2;
+/** Minutes since the 09:30 ET open for an ISO instant (DST-correct via Intl). */
+export function minSinceOpenET(iso: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hh * 60 + mm - (9 * 60 + 30);
+}
+
+export type Tier = "strong" | "moderate" | "weak" | "caution";
+
+/** Ladder breadth — the strongest, monotonic factor (per-event PF 1.55/1.46/2.45). */
+export function breadthScore(clusterSize: number): number {
+  if (clusterSize >= 4) return 1.0;
+  if (clusterSize >= 2) return 0.3;
+  return 0.0;
+}
+
+/** RAW max ask-jump — inverted-U, sweet spot 2.2–3.0 (PF 1.25/1.68/2.57/1.72). */
+export function askScore(maxAskJump: number): number {
+  if (maxAskJump >= 3.0) return 0.6;
+  if (maxAskJump >= 2.2) return 1.0;
+  if (maxAskJump >= 1.8) return 0.4;
+  return 0.0;
+}
+
+/** Time-of-day score by RTH session phase (open best, midday dead). */
+export function todScore(minSinceOpen: number): number {
+  if (minSinceOpen < 0) return 0; // pre-open (RTH-gated feed; defensive)
+  if (minSinceOpen < 30) return 1.0; // open [0,30)
+  if (minSinceOpen < 120) return 0.0; // morning [30,120)
+  if (minSinceOpen < 240) return -0.5; // midday [120,240) — dead zone
+  if (minSinceOpen < 360) return 0.5; // afternoon [240,360)
+  return 0.0; // power + curb [360,…)
+}
+
+/** Midday [120,240) — "muted": can never read STRONG. */
+export const isMidday = (minSinceOpen: number): boolean =>
+  minSinceOpen >= 120 && minSinceOpen < 240;
+
+export interface ConvictionInput {
+  clusterSize: number;
+  maxAskJump: number;
+  minSinceOpen: number;
+  /** the cluster fired ATM-only (every strike dist==0, no wings). */
+  atmOnly: boolean;
+}
+
+export interface Conviction {
+  score: number;
+  tier: Tier;
+}
+
+/** Causal conviction from at-fire features. The doc's optional align_score (prior
+ *  /ES trend) is omitted — the review feed carries no pre-fire ES context — so
+ *  score ∈ [-0.5, 3.0]. */
+export function conviction(i: ConvictionInput): Conviction {
+  const score =
+    breadthScore(i.clusterSize) +
+    askScore(i.maxAskJump) +
+    todScore(i.minSinceOpen);
+  // Trap overrides → force CAUTION regardless of the sum.
+  const trap =
+    (i.clusterSize === 1 && i.maxAskJump >= 3.0) || // lone big-ask spike (PF ~0.9)
+    i.atmOnly; // ATM-only duds
+  let tier: Tier;
+  if (trap) tier = "caution";
+  else if (score >= 2.0 && !isMidday(i.minSinceOpen)) tier = "strong";
+  else if (score >= 1.0) tier = "moderate";
+  else tier = "weak";
+  return { score, tier };
+}
+
+/** Arrow size from RAW ask magnitude (monotonic — "longer = bigger markup"). */
+export function askSize(maxAskJump: number): number {
+  if (maxAskJump >= 3.0) return 4;
+  if (maxAskJump >= 2.2) return 3;
+  if (maxAskJump >= 1.8) return 2;
   return 1;
 }
+
+/** Tier → color, per direction. Brightness (conviction) is a separate channel from
+ *  direction (shape). CAUTION is a neutral-grey filled circle (lightweight-charts
+ *  circles are solid, not hollow) — so a lone big-ask spike or ATM-only dud never
+ *  looks hot. */
+export const CONVICTION_COLORS: Record<"up" | "down", Record<Tier, string>> = {
+  up: { strong: "#3fb950", moderate: "#2f8f43", weak: "#2b6b3f", caution: "#6e7681" },
+  down: { strong: "#f85149", moderate: "#c2403a", weak: "#7d342f", caution: "#6e7681" },
+};
 
 export interface ReviewMarker {
   time: UTCTimestamp;
   position: "aboveBar" | "belowBar";
   color: string;
-  shape: "arrowUp" | "arrowDown";
+  shape: "arrowUp" | "arrowDown" | "circle";
   size: number;
   text: string;
 }
@@ -129,9 +216,10 @@ function pushGroup(
   else m.set(key, [a]);
 }
 
-/** One marker per (bar, direction) cluster — same-direction alerts that floor
- *  to the same bar collapse to one arrow + count badge (×N), MFE-encoded by the
- *  cluster's best finalized excursion; an all-pending cluster renders dim. */
+/** One marker per (bar, direction) cluster, styled by CAUSAL conviction (never by
+ *  outcome). Breadth is the count of the passed-in cluster; the pane feeds the
+ *  status-inclusive set so a pending/lost strike still counts toward the at-fire
+ *  ladder (explicit σ/dist view filters still scope what's shown). */
 export function buildMarkers(alerts: MarkupReviewAlert[]): ReviewMarker[] {
   const groups = new Map<string, MarkupReviewAlert[]>();
   for (const a of alerts) pushGroup(groups, `${a.bar_time}|${a.direction}`, a);
@@ -139,21 +227,22 @@ export function buildMarkers(alerts: MarkupReviewAlert[]): ReviewMarker[] {
   const out: ReviewMarker[] = [];
   for (const group of groups.values()) {
     const up = group[0].direction === "up";
-    const anyFinal = group.some((g) => g.status === "finalized");
-    const maxMfe = group.reduce((m, g) => Math.max(m, g.mfe ?? 0), 0);
+    const clusterSize = group.length;
+    const maxAskJump = group.reduce((m, g) => Math.max(m, g.ask_jump ?? 0), 0);
+    const atmOnly = group.every((g) => g.dist_from_atm === 0);
+    const c = conviction({
+      clusterSize,
+      maxAskJump,
+      minSinceOpen: minSinceOpenET(group[0].bar_time),
+      atmOnly,
+    });
     out.push({
       time: isoToUtc(group[0].bar_time),
       position: up ? "belowBar" : "aboveBar",
-      color: anyFinal
-        ? up
-          ? MARKER_COLORS.up
-          : MARKER_COLORS.down
-        : up
-          ? MARKER_COLORS.upDim
-          : MARKER_COLORS.downDim,
-      shape: up ? "arrowUp" : "arrowDown",
-      size: mfeSize(anyFinal ? maxMfe : null),
-      text: group.length > 1 ? `×${group.length}` : "",
+      color: CONVICTION_COLORS[up ? "up" : "down"][c.tier],
+      shape: c.tier === "caution" ? "circle" : up ? "arrowUp" : "arrowDown",
+      size: askSize(maxAskJump),
+      text: clusterSize > 1 ? `×${clusterSize}` : "",
     });
   }
   // lightweight-charts requires markers ascending (and effectively unique) by time.
