@@ -181,8 +181,22 @@ export function useStraddleData(intervalMs = POLL_INTERVAL): StraddleDataState {
       };
     }
 
+    let inFlight = false;
     const tick = async () => {
-      await fetchLatest();
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously (tab return fires visibilitychange + focus
+      // back-to-back). Without this, ONE return-to-tab gesture during
+      // an API blip runs 2-3 concurrent fetchLatest() calls, each
+      // incrementing failCountRef — enough to cross FAILURE_THRESHOLD
+      // and trip the STICKY demo fallback from a single gesture.
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        await fetchLatest();
+      } finally {
+        inFlight = false;
+      }
     };
     tick();
     const id = setInterval(tick, intervalMs);

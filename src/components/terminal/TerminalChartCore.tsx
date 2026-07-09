@@ -184,11 +184,25 @@ export function TerminalChartCore({
   // ── Bar-fetch polling (mirrors desktop) ──────────────────────────
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     const tick = async () => {
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously; keep one request in flight at a time.
+      if (inFlight) return;
+      inFlight = true;
       try {
         const data = await fetchTerminalIntradayBars();
         if (!cancelled) {
-          setBars(data.bars);
+          // Keep the previous candles when a refresh resolves EMPTY
+          // over a non-empty chart (fetch wrapper collapses failures
+          // to {bars: []}, and focus/visibility ticks fire at device-
+          // wake when the radio is often still down) — a momentary
+          // blank flash carries no information the stale badge doesn't.
+          // A cold chart (prev null/empty) still takes the payload.
+          setBars((prev) =>
+            data.bars.length === 0 && prev && prev.length > 0 ? prev : data.bars,
+          );
           // Default both to "fresh" when older payloads omit the
           // fields (graceful degradation during cross-repo deploy
           // ordering — older backend keeps `stale`/`data_age_seconds`
@@ -201,6 +215,8 @@ export function TerminalChartCore({
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to fetch bars");
         }
+      } finally {
+        inFlight = false;
       }
     };
     tick();

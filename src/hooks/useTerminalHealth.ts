@@ -40,8 +40,14 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
 
     const tick = async () => {
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously; keep one request in flight at a time.
+      if (inFlight) return;
+      inFlight = true;
       try {
         const h = await terminal.health();
         if (!cancelled) setData(h);
@@ -53,6 +59,8 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
         // `online === false` and the strip stays hidden rather than
         // showing a stuck-degraded state from an earlier tick.
         if (!cancelled) setData(null);
+      } finally {
+        inFlight = false;
       }
     };
 
