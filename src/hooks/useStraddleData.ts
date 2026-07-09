@@ -181,16 +181,49 @@ export function useStraddleData(intervalMs = POLL_INTERVAL): StraddleDataState {
       };
     }
 
+    let inFlight = false;
     const tick = async () => {
-      await fetchLatest();
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously (tab return fires visibilitychange + focus
+      // back-to-back). Without this, ONE return-to-tab gesture during
+      // an API blip runs 2-3 concurrent fetchLatest() calls, each
+      // incrementing failCountRef — enough to cross FAILURE_THRESHOLD
+      // and trip the STICKY demo fallback from a single gesture.
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        await fetchLatest();
+      } catch {
+        // fetchLatest never rejects today (the client wrapper swallows
+        // errors), but a listener-triggered tick must never leave an
+        // unhandled rejection — mirrors useTerminalSnapshot's guard.
+      } finally {
+        inFlight = false;
+      }
     };
     tick();
     const id = setInterval(tick, intervalMs);
+
+    // Immediate refetch on tab-visible / focus / reconnect — background
+    // tabs throttle the interval, and the straddle pane should repaint
+    // within one round-trip of the viewer returning. Same idiom as
+    // useTerminalSnapshot.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    window.addEventListener("online", tick);
+
     return () => {
       // Flip the gate BEFORE clearInterval so any in-flight await
       // resolving after this point bails out of its setState calls.
       mountedRef.current = false;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("online", tick);
     };
   }, [demoMode, intervalMs, fetchLatest]);
 

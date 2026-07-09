@@ -40,8 +40,14 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
 
     const tick = async () => {
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously; keep one request in flight at a time.
+      if (inFlight) return;
+      inFlight = true;
       try {
         const h = await terminal.health();
         if (!cancelled) setData(h);
@@ -53,14 +59,31 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
         // `online === false` and the strip stays hidden rather than
         // showing a stuck-degraded state from an earlier tick.
         if (!cancelled) setData(null);
+      } finally {
+        inFlight = false;
       }
     };
 
     tick();
     const id = setInterval(tick, intervalMs);
+
+    // Immediate refetch on tab-visible / focus / reconnect so the
+    // health strip reflects reality within one round-trip of the
+    // operator returning, instead of waiting out a background-
+    // throttled interval. Same idiom as useTerminalSnapshot.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    window.addEventListener("online", tick);
+
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("online", tick);
     };
   }, [intervalMs]);
 

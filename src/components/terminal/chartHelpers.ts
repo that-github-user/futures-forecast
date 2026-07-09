@@ -379,3 +379,55 @@ export function hexToRgba(hex: string, alpha: number): string {
   const b = parseInt(m[3], 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+
+// ── Bars-poll tick resolution ─────────────────────────────────────
+
+import type { TerminalIntradayBarsResponse } from "../../api/terminalTypes";
+
+/**
+ * Decide what a bars-poll tick does with the client response, keeping
+ * FAILURE (fetch returned null: API unreachable / unauthorized /
+ * network throw swallowed by the client wrapper) distinct from a
+ * LEGITIMATE empty payload (the server authoritatively says "no bars"
+ * — cold IBKR start, day rollover).
+ *
+ *  - "apply": server payload is authoritative — replace bars and take
+ *    its stale/data_age fields verbatim (a legit empty payload blanks
+ *    the chart honestly: "No bars available").
+ *  - "offline-warm": fetch failed over a warm chart — KEEP the candles
+ *    but force the CACHED badge on. Frozen candles must never look
+ *    live, and on this path there is no payload to drive the badge
+ *    (the failure collapse would otherwise CLEAR it — reviewer MAJOR).
+ *    stale-age is left untouched (last known value; the true age is
+ *    unknown while the API is unreachable).
+ *  - "offline-cold": fetch failed with nothing to show — surface the
+ *    honest "No bars available" empty state (never wedge on
+ *    "Loading…").
+ */
+export type BarsTickAction =
+  | {
+      kind: "apply";
+      bars: TerminalIntradayBar[];
+      stale: boolean;
+      dataAgeSeconds: number | null;
+    }
+  | { kind: "offline-warm" }
+  | { kind: "offline-cold" };
+
+export function resolveBarsTick(
+  prev: TerminalIntradayBar[] | null,
+  data: TerminalIntradayBarsResponse | null,
+): BarsTickAction {
+  if (data === null) {
+    return prev && prev.length > 0
+      ? { kind: "offline-warm" }
+      : { kind: "offline-cold" };
+  }
+  return {
+    kind: "apply",
+    bars: data.bars,
+    stale: data.stale === true,
+    dataAgeSeconds: data.data_age_seconds ?? null,
+  };
+}

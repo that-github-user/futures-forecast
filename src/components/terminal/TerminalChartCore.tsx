@@ -52,7 +52,7 @@ import {
   type CandlestickSeriesPartialOptions,
 } from "lightweight-charts";
 
-import { fetchTerminalIntradayBars } from "../../api/terminalClient";
+import { terminal } from "../../api/terminalClient";
 import type {
   TerminalIntradayBar,
   TerminalSnapshot,
@@ -70,6 +70,7 @@ import {
   findAnchorIdx,
   hexToRgba,
   isRthBar,
+  resolveBarsTick,
   resolveLumenPalette,
   vwapWithBandsSeries,
   VWAP_STYLES,
@@ -182,32 +183,81 @@ export function TerminalChartCore({
   );
 
   // ── Bar-fetch polling (mirrors desktop) ──────────────────────────
+  // Mirror of `bars` for the poll tick's failure branch — reading
+  // state from the empty-deps effect would be a stale closure.
+  const barsRef = useRef<TerminalIntradayBar[] | null>(null);
+
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     const tick = async () => {
+      // Coalesce overlapping triggers — the interval and the
+      // visibility/focus/online listeners below can fire near-
+      // simultaneously; keep one request in flight at a time.
+      if (inFlight) return;
+      inFlight = true;
       try {
-        const data = await fetchTerminalIntradayBars();
-        if (!cancelled) {
-          setBars(data.bars);
-          // Default both to "fresh" when older payloads omit the
-          // fields (graceful degradation during cross-repo deploy
-          // ordering — older backend keeps `stale`/`data_age_seconds`
-          // undefined, frontend treats that as "no signal of stale").
-          setStale(data.stale === true);
-          setDataAgeSeconds(data.data_age_seconds ?? null);
+        // Raw client call, NOT fetchTerminalIntradayBars: the wrapper
+        // collapses failure to {bars: []}, which is indistinguishable
+        // from a legit server "no bars" — resolveBarsTick needs the
+        // null-vs-payload distinction to keep frozen candles from
+        // ever looking live during an outage.
+        const data = await terminal.intradayBars();
+        if (cancelled) return;
+        const action = resolveBarsTick(barsRef.current, data);
+        if (action.kind === "apply") {
+          // Server payload is authoritative — including a legit empty
+          // (cold IBKR start / day rollover → honest "No bars
+          // available"). `stale`/`data_age_seconds` default to fresh
+          // when an older backend omits them (cross-repo deploy
+          // ordering tolerance).
+          barsRef.current = action.bars;
+          setBars(action.bars);
+          setStale(action.stale);
+          setDataAgeSeconds(action.dataAgeSeconds);
           setError(null);
+        } else if (action.kind === "offline-warm") {
+          // Fetch failed over a warm chart: keep the candles, force
+          // the CACHED badge on (no payload exists to drive it), and
+          // leave the last-known stale age untouched.
+          setStale(true);
+        } else if (barsRef.current === null) {
+          // offline-cold: nothing to show — leave "Loading…" for the
+          // honest "No bars available" empty state.
+          barsRef.current = [];
+          setBars([]);
         }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to fetch bars");
         }
+      } finally {
+        inFlight = false;
       }
     };
     tick();
     const id = window.setInterval(tick, POLL_INTERVAL_MS);
+
+    // Background tabs throttle setInterval (Chrome: ≥1/min, frozen tabs
+    // suspend entirely), so a returning viewer would stare at a gapped
+    // chart for up to a full throttled interval. Refetch the moment the
+    // tab becomes visible / regains focus / reconnects — the endpoint
+    // returns the full session window and setBars() is a full replace,
+    // so one successful fetch heals the whole gap. Same idiom as
+    // useTerminalSnapshot.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    window.addEventListener("online", tick);
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("online", tick);
     };
   }, []);
 
