@@ -127,10 +127,7 @@ export function subscribeMarkup(handlers: MarkupStreamHandlers): () => void {
   return () => es.close();
 }
 
-/** Convenience wrapper for the chart canvas — returns the bars array
- * (empty when API is offline / unauthorized / no bars yet) so the
- * component doesn't have to handle the null-vs-empty distinction. */
-export async function fetchTerminalIntradayBars(): Promise<TerminalIntradayBarsResponse> {
-  const data = await terminal.intradayBars();
-  return data ?? { bars: [] };
-}
+// (fetchTerminalIntradayBars removed — it collapsed fetch FAILURE into
+// {bars: []}, indistinguishable from a legit server empty. The chart
+// now calls terminal.intradayBars() and branches on null via
+// resolveBarsTick so frozen candles can never masquerade as live.)

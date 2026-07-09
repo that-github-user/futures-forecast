@@ -194,6 +194,10 @@ export function useStraddleData(intervalMs = POLL_INTERVAL): StraddleDataState {
       inFlight = true;
       try {
         await fetchLatest();
+      } catch {
+        // fetchLatest never rejects today (the client wrapper swallows
+        // errors), but a listener-triggered tick must never leave an
+        // unhandled rejection — mirrors useTerminalSnapshot's guard.
       } finally {
         inFlight = false;
       }
