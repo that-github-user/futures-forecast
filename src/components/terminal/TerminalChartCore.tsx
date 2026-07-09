@@ -205,9 +205,27 @@ export function TerminalChartCore({
     };
     tick();
     const id = window.setInterval(tick, POLL_INTERVAL_MS);
+
+    // Background tabs throttle setInterval (Chrome: ≥1/min, frozen tabs
+    // suspend entirely), so a returning viewer would stare at a gapped
+    // chart for up to a full throttled interval. Refetch the moment the
+    // tab becomes visible / regains focus / reconnects — the endpoint
+    // returns the full session window and setBars() is a full replace,
+    // so one successful fetch heals the whole gap. Same idiom as
+    // useTerminalSnapshot.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    window.addEventListener("online", tick);
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("online", tick);
     };
   }, []);
 

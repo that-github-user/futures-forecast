@@ -58,9 +58,24 @@ export function useTerminalHealth(intervalMs = 30_000): TerminalHealthState {
 
     tick();
     const id = setInterval(tick, intervalMs);
+
+    // Immediate refetch on tab-visible / focus / reconnect so the
+    // health strip reflects reality within one round-trip of the
+    // operator returning, instead of waiting out a background-
+    // throttled interval. Same idiom as useTerminalSnapshot.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
+    window.addEventListener("online", tick);
+
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("online", tick);
     };
   }, [intervalMs]);
 
