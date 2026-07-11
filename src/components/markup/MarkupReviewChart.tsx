@@ -119,14 +119,15 @@ function tooltipHtml(hits: MarkupReviewAlert[]): string {
     .map((d) => hits.filter((h) => h.direction === d))
     .filter((g) => g.length > 0)
     .map((g) => {
-      const tier = conviction({
+      const c = conviction({
         clusterSize: g.length,
         maxAskJump: g.reduce((m, h) => Math.max(m, h.ask_jump ?? 0), 0),
         minSinceOpen: minSinceOpenET(g[0].bar_time),
         atmOnly: g.every((h) => h.dist_from_atm === 0),
-      }).tier;
+      });
       const arrow = g[0].direction === "up" ? "▲" : "▼";
-      return `<span class="mr-tip__conv mr-tip__conv--${tier}">${arrow} ${tier.toUpperCase()}</span>`;
+      const muted = c.muted ? " · muted" : "";
+      return `<span class="mr-tip__conv mr-tip__conv--${c.tier}">${arrow} ${c.tier.toUpperCase()}${muted}</span>`;
     })
     .join("");
   return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""} ${chips}</div>${rows}`;
