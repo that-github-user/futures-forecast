@@ -95,9 +95,10 @@ export const filterAlerts = (
 // turned out. Conviction is a causal score (ladder breadth + ask magnitude +
 // time-of-day) from features known the instant the signal fires; outcome columns
 // (mfe/mae/es_*) never touch the styling. Spec + provenance: quotemark
-// docs/signal_arrow_styling.md. Channels are kept separate so a strong short can't
-// look like a weak long: SHAPE = direction, COLOR = conviction tier, SIZE = ask
-// magnitude, ×N badge = cluster breadth.
+// docs/signal_arrow_styling.md (17-session re-validation 2026-07-10, §8 — constants
+// move only under the §8 change rule). Channels are kept separate so a strong short
+// can't look like a weak long: SHAPE = direction, COLOR = conviction tier, SIZE =
+// ask magnitude, ×N badge = cluster breadth.
 
 /** ISO (UTC-Z) → lightweight-charts UTCTimestamp (epoch seconds). */
 export const isoToUtc = (iso: string): UTCTimestamp =>
@@ -125,27 +126,34 @@ export function breadthScore(clusterSize: number): number {
   return 0.0;
 }
 
-/** RAW max ask-jump — inverted-U, sweet spot 2.2–3.0 (PF 1.25/1.68/2.57/1.72). */
+/** RAW max ask-jump — coarse "is it a real markup" floor only. The 8-session
+ *  2.2–3.0 sweet spot did not replicate out-of-sample (§8: irreproducible under
+ *  any tested variable/grain — provenance void); <1.8 is the worst post-fit
+ *  bucket (PF 0.64/0.67 under both exit conventions). */
 export function askScore(maxAskJump: number): number {
-  if (maxAskJump >= 3.0) return 0.6;
-  if (maxAskJump >= 2.2) return 1.0;
-  if (maxAskJump >= 1.8) return 0.4;
-  return 0.0;
+  return maxAskJump >= 1.8 ? 0.3 : 0.0;
 }
 
-/** Time-of-day score by RTH session phase (open best, midday dead). */
+/** Time-of-day score by RTH session phase (re-validated 2026-07-10, §8: open held
+ *  in every era; midday dead in every era). */
 export function todScore(minSinceOpen: number): number {
   if (minSinceOpen < 0) return 0; // pre-open (RTH-gated feed; defensive)
   if (minSinceOpen < 30) return 1.0; // open [0,30)
   if (minSinceOpen < 120) return 0.0; // morning [30,120)
   if (minSinceOpen < 240) return -0.5; // midday [120,240) — dead zone
-  if (minSinceOpen < 360) return 0.5; // afternoon [240,360)
-  return 0.0; // power + curb [360,…)
+  // afternoon [240,360): +0.5 → 0.0 (2026-07-10) — collapsed post-fit under the
+  // fit convention; exit conventions disagree on sign, so neutral only.
+  if (minSinceOpen < 360) return 0.0;
+  // power+curb [360,…): 0.0 → -0.5 (2026-07-10) — PF 0.45 over 50 post-fit
+  // events, both exit conventions agree.
+  return -0.5;
 }
 
-/** Midday [120,240) — "muted": can never read STRONG. */
-export const isMidday = (minSinceOpen: number): boolean =>
-  minSinceOpen >= 120 && minSinceOpen < 240;
+/** Muted buckets — midday [120,240) and power+curb [360,…) (curb added
+ *  2026-07-10, §8): can never read STRONG. With align dropped the block is
+ *  currently unreachable (muted-bucket max score is 0.8) — kept for spec parity. */
+export const isMuted = (minSinceOpen: number): boolean =>
+  (minSinceOpen >= 120 && minSinceOpen < 240) || minSinceOpen >= 360;
 
 export interface ConvictionInput {
   clusterSize: number;
@@ -162,7 +170,8 @@ export interface Conviction {
 
 /** Causal conviction from at-fire features. The doc's optional align_score (prior
  *  /ES trend) is omitted — the review feed carries no pre-fire ES context — so
- *  score ∈ [-0.5, 3.0]. */
+ *  score ∈ [-0.5, 2.3] and STRONG (≥2.0) is effectively open-window-with-breadth
+ *  only (matches the data: post-fit STRONG events are rare but positive). */
 export function conviction(i: ConvictionInput): Conviction {
   const score =
     breadthScore(i.clusterSize) +
@@ -174,7 +183,7 @@ export function conviction(i: ConvictionInput): Conviction {
     i.atmOnly; // ATM-only duds
   let tier: Tier;
   if (trap) tier = "caution";
-  else if (score >= 2.0 && !isMidday(i.minSinceOpen)) tier = "strong";
+  else if (score >= 2.0 && !isMuted(i.minSinceOpen)) tier = "strong";
   else if (score >= 1.0) tier = "moderate";
   else tier = "weak";
   return { score, tier };
