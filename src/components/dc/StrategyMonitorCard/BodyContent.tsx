@@ -10,7 +10,7 @@
 import type { ReactNode } from "react";
 import { colors, fonts } from "../../../styles/tokens";
 import type { LifecycleInfo } from "../../../lib/dcLifecycle";
-import { dowName } from "../../../lib/dcLifecycle";
+import { dowName, isRetiredNotTraded } from "../../../lib/dcLifecycle";
 import type { DCStrategySpec } from "../../../api/dcTypes";
 import { LiveCountdown } from "../LiveCountdown";
 
