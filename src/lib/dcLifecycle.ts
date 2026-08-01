@@ -176,6 +176,8 @@ function isGoSignal(signal: string | null): boolean {
  *  as passed_skipped. The rule keeps forward-compat: a future
  *  "blocked_capital_xyz" defaults to passed_skipped without a
  *  frontend change.
+ *
+ *  EXCEPT "blocked_entries_disabled" — see RETIRED_NOT_TRADED below.
  */
 function attemptedEntryToday(todayOutcome: string | null): boolean {
   return todayOutcome === "entered" || todayOutcome === "blocked_order";
@@ -188,11 +190,37 @@ function attemptedEntryToday(todayOutcome: string | null): boolean {
  *  was down at entry time, or the API hasn't shipped #277 yet), fall
  *  back to the ensemble signal — preserves pre-#277 behavior so the
  *  card doesn't flip to "NO FIRE" on cold-start. */
+/** The 2026-08-01 DC retirement outcome: the signal fired, the daemon
+ *  deliberately did not trade it (`dc_entry.enabled: false`).
+ *
+ *  This renders in the FIRED family, not passed_skipped. "Skipped" means
+ *  the daemon evaluated and declined; this means it never got to decide,
+ *  because we withdrew from the product. Graying the card identically to
+ *  a genuine no-signal day misrepresents the day — a GO+ did fire.
+ *
+ *  Same shape as the brokerNoFill precedent: keep the fired STYLE so the
+ *  card stays highlighted, and relabel the chip so nothing claims an
+ *  order went out (see chipPresentation.ts).
+ *
+ *  HONEST LIMIT, do not overstate this in UI copy: the master switch sits
+ *  upstream of the S/L and margin gates, so this outcome proves the signal
+ *  fired and cleared the direction/risk/duplicate checks — NOT that the
+ *  trade would have been entered. The S/L gate is never evaluated on these
+ *  days. "Would have traded" is unknowable; "fired, not traded" is true.
+ */
+const RETIRED_NOT_TRADED = "blocked_entries_disabled";
+
+export function isRetiredNotTraded(todayOutcome: string | null): boolean {
+  return todayOutcome === RETIRED_NOT_TRADED;
+}
+
 function shouldRenderAsFired(
   signal: string | null,
   todayOutcome: string | null,
 ): boolean {
-  if (todayOutcome != null) return attemptedEntryToday(todayOutcome);
+  if (todayOutcome != null) {
+    return attemptedEntryToday(todayOutcome) || isRetiredNotTraded(todayOutcome);
+  }
   return isGoSignal(signal);
 }
 

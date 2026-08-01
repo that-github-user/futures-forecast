@@ -11,12 +11,17 @@ import { resolveChipPresentation } from "./chipPresentation";
 
 const resolve = (
   state: LifecycleState,
-  opts: { slGateFailing?: boolean; brokerNoFill?: boolean } = {},
+  opts: {
+    slGateFailing?: boolean;
+    brokerNoFill?: boolean;
+    entriesDisabled?: boolean;
+  } = {},
 ) =>
   resolveChipPresentation({
     state,
     slGateFailing: opts.slGateFailing ?? false,
     brokerNoFill: opts.brokerNoFill ?? false,
+    entriesDisabled: opts.entriesDisabled ?? false,
   });
 
 describe("resolveChipPresentation — default (no overrides)", () => {
@@ -30,6 +35,53 @@ describe("resolveChipPresentation — default (no overrides)", () => {
       styleKey: "passed_will_fire",
     });
     expect(resolve("primed")).toEqual({ label: "PRIMED", styleKey: "primed" });
+  });
+});
+
+describe("resolveChipPresentation — DC entry retired (2026-08-01)", () => {
+  it("relabels fired states to NOT TRADED but KEEPS the fired style", () => {
+    // Same shape as the no-fill precedent: the signal fired, so the card
+    // stays highlighted, but nothing may imply an order was submitted.
+    expect(resolve("passed_will_fire", { entriesDisabled: true })).toEqual({
+      label: "NOT TRADED",
+      styleKey: "passed_will_fire",
+    });
+    expect(resolve("recently_fired", { entriesDisabled: true })).toEqual({
+      label: "NOT TRADED",
+      styleKey: "recently_fired",
+    });
+    expect(resolve("firing", { entriesDisabled: true })).toEqual({
+      label: "NOT TRADED",
+      styleKey: "firing",
+    });
+  });
+
+  it("wins over slGateFailing, deliberately", () => {
+    // The master switch sits UPSTREAM of the S/L gate in the daemon, so on
+    // a retired day that gate is never evaluated. A live "GATE FAIL" chip
+    // would report a decision that was never made; "NOT TRADED" is true
+    // regardless of what the live ratio reads.
+    expect(resolve("passed_will_fire", {
+      entriesDisabled: true, slGateFailing: true,
+    })).toEqual({ label: "NOT TRADED", styleKey: "passed_will_fire" });
+  });
+
+  it("does not touch non-fired states", () => {
+    // A retired-day outcome should never appear alongside these, but if it
+    // does, the override must not invent a fired label for a quiet card.
+    expect(resolve("not_fired_yet", { entriesDisabled: true }))
+      .toEqual({ label: "WATCHING", styleKey: "not_fired_yet" });
+    expect(resolve("passed_skipped", { entriesDisabled: true }))
+      .toEqual({ label: "NO FIRE", styleKey: "passed_skipped" });
+  });
+
+  it("leaves every existing behaviour untouched when the flag is off", () => {
+    expect(resolve("passed_will_fire")).toEqual({
+      label: "FIRED EARLIER", styleKey: "passed_will_fire",
+    });
+    expect(resolve("passed_will_fire", { brokerNoFill: true })).toEqual({
+      label: "NO FILL", styleKey: "passed_will_fire",
+    });
   });
 });
 

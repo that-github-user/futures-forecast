@@ -30,7 +30,7 @@ import type {
   DCStrategySpec,
 } from "../../../api/dcTypes";
 import type { LifecycleInfo } from "../../../lib/dcLifecycle";
-import { formatEntryDays } from "../../../lib/dcLifecycle";
+import { formatEntryDays, isRetiredNotTraded } from "../../../lib/dcLifecycle";
 import { GateModePill } from "../GateModePill";
 import { SignalBadge } from "../SignalBadge";
 import { BodyContent } from "./BodyContent";
@@ -117,7 +117,10 @@ function StrategyMonitorCardImpl({
   // this in a fired state so the card stays highlighted, but the chip
   // must not read "JUST FIRED" (nothing filled). See chipPresentation.
   const brokerNoFill = info.todayOutcome === "blocked_order";
-  const chip = resolveChipPresentation({ state: info.state, slGateFailing, brokerNoFill });
+  const entriesDisabled = isRetiredNotTraded(info.todayOutcome ?? null);
+  const chip = resolveChipPresentation({
+    state: info.state, slGateFailing, brokerNoFill, entriesDisabled,
+  });
   const effectiveLabel = chip.label;
   const style = STATE_STYLES[chip.styleKey];
 

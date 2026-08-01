@@ -174,6 +174,42 @@ describe("deriveLifecycle: today_outcome blacklist-on-entered semantics (#277)",
     expect(info.state).toBe("passed_skipped");
   });
 
+  it("outcome=blocked_entries_disabled → passed_will_fire, NOT passed_skipped", () => {
+    // The 2026-08-01 DC retirement. A GO+ genuinely fired; we declined to
+    // trade it because the product is retired. Rendering it identically to
+    // a SKIP day ("NO FIRE", dimmed to 55%) misreports the session — the
+    // operator's framing is "we should have entered, we simply chose not
+    // to." So it lands in the fired family and stays highlighted; the chip
+    // is relabelled to "NOT TRADED" (chipPresentation) so nothing claims
+    // an order went out.
+    const info = deriveLifecycle(
+      s, "GO_PLUS", false, POST_WINDOW, "blocked_entries_disabled",
+      "DC entry disabled by config (signal was GO_PLUS)",
+    );
+    expect(info.state).toBe("passed_will_fire");
+    expect(info.state).not.toBe("passed_skipped");
+    expect(info.todayOutcome).toBe("blocked_entries_disabled");
+  });
+
+  it("blocked_entries_disabled is fired-family inside the 10-min window too", () => {
+    // Guards the recently_fired branch, which is a separate callsite of
+    // shouldRenderAsFired from the terminal post-window one above.
+    const info = deriveLifecycle(
+      s, "GO_PLUS", false, atET("09:50"), "blocked_entries_disabled",
+    );
+    expect(info.state).toBe("recently_fired");
+  });
+
+  it("does not drag other blocked_* outcomes into the fired family", () => {
+    // The retirement case is a named exception, not a loosening of the
+    // blacklist-on-entered rule.
+    for (const outcome of ["blocked_sl", "blocked_vix", "blocked_direction",
+                           "blocked_duplicate", "blocked_entries_disabled_typo"]) {
+      expect(deriveLifecycle(s, "GO", false, POST_WINDOW, outcome).state)
+        .toBe("passed_skipped");
+    }
+  });
+
   it("outcome=blocked_order → passed_will_fire (broker fill failed)", () => {
     // The 2026-05-15 case: every signal-side gate cleared, the daemon
     // submitted the reprice ladder, but the broker side didn't cross

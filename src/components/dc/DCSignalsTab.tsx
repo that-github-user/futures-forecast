@@ -242,16 +242,25 @@ export function DCSignalsTab({ signals, strategies = [], positions = [] }: Props
           slSuffix = ` — S/L: ${slRatio.toFixed(3)}${gate}`;
         }
 
+        // Wording is deliberately SIGNAL-centric ("signal fires"), not
+        // order-centric ("fires"). The pre-entry states are derived from
+        // the ensemble signal alone and cannot consult today's outcome —
+        // no row exists yet — so with DC entry retired (2026-08-01) these
+        // notifications would otherwise promise an order that will never
+        // be submitted. Phrased this way they stay true whether or not
+        // `dc_entry.enabled` is set. Making them fully entry-aware needs
+        // the daemon to expose that switch over the API; until then, do
+        // not reintroduce copy that implies a fill.
         if (next === "imminent") {
           const key = `${spec.name}|${info.nextEntryHHMM ?? ""}|imminent`;
           notifications.notify(
             key,
-            `${spec.name} is imminent`,
-            `Fires at ${info.nextEntryHHMM ?? "—"} ET${slSuffix}`,
+            `${spec.name} signal is imminent`,
+            `Signal fires at ${info.nextEntryHHMM ?? "—"} ET${slSuffix}`,
           );
         } else if (next === "firing") {
           const key = `${spec.name}|${info.nextEntryHHMM ?? info.lastEntryHHMM ?? ""}|firing`;
-          notifications.notify(key, `${spec.name} is firing now`, slSuffix ? slSuffix.slice(3) : undefined);
+          notifications.notify(key, `${spec.name} signal is firing now`, slSuffix ? slSuffix.slice(3) : undefined);
         }
         last.set(spec.name, next);
       }
