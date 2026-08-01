@@ -4,6 +4,15 @@
  *
  * One row per attempt: entered, skipped_signal, or blocked_* with full
  * context (features snapshot, S/L ratio at the time, reason text).
+ *
+ * 2026-08-01: automated DC entry is retired (daemon switch
+ * `dc_entry.enabled`, shipped false). The daemon still evaluates and
+ * records every signal, so from that date this tab stops being an
+ * execution log and becomes the "would have fired" RESEARCH record: a
+ * GO/GO+ that the daemon deliberately did not trade lands as
+ * `blocked_entries_disabled`, carrying the signal name. Those rows are
+ * now the primary content, which is why they get their own colour tier
+ * rather than falling through to the unknown-outcome default.
  */
 
 import { useMemo, useState } from "react";
@@ -34,6 +43,34 @@ function todayET(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
     .format(new Date());
 }
+
+/**
+ * Outcomes that get a summary chip, in display order.
+ *
+ * This list is EXHAUSTIVE-BY-HAND, not derived from the data: a chip only
+ * renders when its count is non-zero, so an outcome missing from this array
+ * is silently absent from the summary even while its rows sit in the table
+ * below. That is how `blocked_entries_disabled` was initially invisible.
+ * Exported so a test can pin membership — when the daemon gains an outcome,
+ * add it here.
+ */
+export const SUMMARY_OUTCOMES = [
+  "entered",
+  "blocked_entries_disabled",
+  "skipped_signal",
+  "blocked_sl",
+  "blocked_margin",
+  "blocked_risk",
+  "blocked_strike",
+  "blocked_legs",
+  "blocked_conn",
+  "blocked_data",
+  "blocked_vix",
+  "blocked_size",
+  "blocked_order",
+  "blocked_duplicate",
+  "blocked_deconflict",
+] as const;
 
 export function DCEventsTab() {
   const [date, setDate] = useState<string>(todayET());
@@ -116,10 +153,7 @@ export function DCEventsTab() {
 
       {/* Summary chips */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {(["entered", "skipped_signal", "blocked_sl", "blocked_margin",
-           "blocked_risk", "blocked_strike", "blocked_legs", "blocked_conn",
-           "blocked_data", "blocked_vix", "blocked_size", "blocked_order",
-           "blocked_duplicate", "blocked_deconflict"] as const).map((k) => {
+        {SUMMARY_OUTCOMES.map((k) => {
           const n = counts[k] ?? 0;
           if (n === 0) return null;
           const color = outcomeColor(k);
@@ -428,8 +462,15 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
   );
 }
 
-function outcomeColor(outcome: string): string {
+export function outcomeColor(outcome: string): string {
   if (outcome === "entered") return colors.accentGreen;
+  // The retirement state (2026-08-01). Deliberately NOT textMuted: a
+  // `blocked_entries_disabled` row means a GO/GO+ actually fired and we
+  // declined to trade it, which is the opposite of `skipped_signal`'s "no
+  // signal today". Flattening the two into the same grey would erase the
+  // distinction this tab now exists to show. Blue reads as informational
+  // rather than as any tier of failure — because it isn't one.
+  if (outcome === "blocked_entries_disabled") return colors.accentBlue;
   if (outcome === "skipped_signal") return colors.textMuted;
   // Two intermediate severity tiers between accentGreen (entered) and
   // accentRed (hard-error blocked): accentAmber for soft-block (sl/vix
@@ -446,7 +487,11 @@ function outcomeColor(outcome: string): string {
   return colors.textSecondary;
 }
 
-function labelFor(outcome: string): string {
+export function labelFor(outcome: string): string {
+  // The generic transform would render this one as "blk:entries disabled",
+  // which reads as a malfunction. It is a policy state, and now the most
+  // common row on the tab, so it gets a plain-language label.
+  if (outcome === "blocked_entries_disabled") return "not traded";
   return outcome.replace(/^blocked_/, "blk:").replace(/_/g, " ");
 }
 

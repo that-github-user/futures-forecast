@@ -176,6 +176,15 @@ function isGoSignal(signal: string | null): boolean {
  *  as passed_skipped. The rule keeps forward-compat: a future
  *  "blocked_capital_xyz" defaults to passed_skipped without a
  *  frontend change.
+ *
+ *  As of 2026-08-01 that forward-compat case is no longer hypothetical:
+ *  automated DC entry is retired (daemon switch `dc_entry.enabled`), so
+ *  every GO/GO+ now lands as "blocked_entries_disabled" and every card
+ *  renders passed_skipped. That is correct — no order was fired — and it
+ *  is why this function needed no change. If the operator later wants
+ *  retired-but-fired signals highlighted for research (rather than
+ *  grayed like a genuine no-signal day), THIS is the function to revisit;
+ *  it is a product decision, not a bug.
  */
 function attemptedEntryToday(todayOutcome: string | null): boolean {
   return todayOutcome === "entered" || todayOutcome === "blocked_order";
