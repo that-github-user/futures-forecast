@@ -70,6 +70,11 @@ export const SUMMARY_OUTCOMES = [
   "blocked_order",
   "blocked_duplicate",
   "blocked_deconflict",
+  // Credit-direction strategies (straddles) are signals/dashboard-only —
+  // engine/entry.py gate 0. Emitted by the daemon but absent from this
+  // list until 2026-08-01, i.e. chip-less rows: the same bug this list
+  // was extracted to prevent.
+  "blocked_direction",
 ] as const;
 
 export function DCEventsTab() {

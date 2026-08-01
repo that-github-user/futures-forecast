@@ -39,6 +39,10 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
   // operator isn't misled into thinking they hold a position.
   // Reason text comes from signal_events.outcome_reason via #277.
   const brokerNoFill = info.todayOutcome === "blocked_order";
+  // DC entry retired (2026-08-01): the signal fired, we chose not to trade
+  // it. These states are reached via shouldRenderAsFired, so the copy must
+  // report a fired SIGNAL without implying an order was ever sent.
+  const entriesDisabled = isRetiredNotTraded(info.todayOutcome ?? null);
   const noFillReason = info.todayOutcomeReason
     ?? "entry ladder exhausted with zero fills";
 
@@ -81,11 +85,13 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
     case "firing":
       return (
         <Body
-          headline="FIRING NOW"
+          headline={entriesDisabled ? "SIGNAL FIRED" : "FIRING NOW"}
           subline={
-            brokerNoFill
-              ? <NoFillLine reason={noFillReason} />
-              : formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)
+            entriesDisabled
+              ? "not traded — DC entry retired"
+              : brokerNoFill
+                ? <NoFillLine reason={noFillReason} />
+                : formatTime(info.nextEntryHHMM ?? info.lastEntryHHMM)
           }
           accent={colors.accentGreen}
           large
@@ -101,7 +107,13 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
       ) : (
         <Body
           headline={
-            info.lastEntryHHMM ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}` : "Just fired"
+            entriesDisabled
+              ? (info.lastEntryHHMM
+                  ? `Signal fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
+                  : "Signal fired")
+              : info.lastEntryHHMM
+                ? `Just fired at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
+                : "Just fired"
           }
           // Broker-no-fill override: keep the green "fired" accent
           // (per operator request — don't gray out for an automation-
@@ -109,11 +121,13 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
           // subline with the no-fill reason so the operator can tell
           // a real fill apart from a ladder-exhausted attempt.
           subline={
-            brokerNoFill
-              ? <NoFillLine reason={noFillReason} />
-              : info.lastEntryHHMM
-                ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
-                : ""
+            entriesDisabled
+              ? <>{formatSignal(signal)} — not traded (DC entry retired)</>
+              : brokerNoFill
+                ? <NoFillLine reason={noFillReason} />
+                : info.lastEntryHHMM
+                  ? <><LiveCountdown targetHHMM={info.lastEntryHHMM} mode="since" /> ago — signal was {formatSignal(signal)}</>
+                  : ""
           }
           accent={colors.accentGreen}
         />
@@ -132,16 +146,22 @@ export function BodyContent({ spec, signal, info, formatTime, tzLabel, gateSkipp
       ) : (
         <Body
           headline={
-            brokerNoFill
-              ? "Fired — broker did not fill"
-              : "Should have entered earlier"
+            entriesDisabled
+              ? "Signal fired — not traded"
+              : brokerNoFill
+                ? "Fired — broker did not fill"
+                : "Should have entered earlier"
           }
           subline={
-            brokerNoFill
-              ? <NoFillLine reason={noFillReason} />
-              : info.lastEntryHHMM
-                ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
-                : `Signal was ${formatSignal(signal)} at fire time`
+            entriesDisabled
+              ? (info.lastEntryHHMM
+                  ? `${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel} — DC entry retired`
+                  : `${formatSignal(signal)} — DC entry retired`)
+              : brokerNoFill
+                ? <NoFillLine reason={noFillReason} />
+                : info.lastEntryHHMM
+                  ? `Signal was ${formatSignal(signal)} at ${formatTime(info.lastEntryHHMM)} ${tzLabel}`
+                  : `Signal was ${formatSignal(signal)} at fire time`
           }
           accent={colors.accentGreen}
         />

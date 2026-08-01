@@ -96,6 +96,14 @@ describe("blocked_entries_disabled — the 2026-08-01 DC retirement state", () =
     expect(SUMMARY_OUTCOMES).toContain("blocked_entries_disabled");
   });
 
+  it("blocked_direction also gets a chip", () => {
+    // Found by review: the daemon emits this for credit-direction
+    // strategies (engine/entry.py gate 0) and it was ALSO missing from
+    // the list — the same defect, left behind while the list was being
+    // extracted to prevent exactly it.
+    expect(SUMMARY_OUTCOMES).toContain("blocked_direction");
+  });
+
   it("is summarised ahead of the failure outcomes", () => {
     // Display order: it belongs next to `entered` as a headline count,
     // not buried among the block reasons.

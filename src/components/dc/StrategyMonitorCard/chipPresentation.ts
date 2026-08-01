@@ -57,8 +57,21 @@ export function resolveChipPresentation(args: {
   state: LifecycleState;
   slGateFailing: boolean;
   brokerNoFill: boolean;
+  entriesDisabled?: boolean;
 }): ChipPresentation {
-  const { state, slGateFailing, brokerNoFill } = args;
+  const { state, slGateFailing, brokerNoFill, entriesDisabled = false } = args;
+
+  // 3. entriesDisabled — DC entry is retired (2026-08-01). The signal
+  //    fired; we chose not to trade it. Same treatment as brokerNoFill
+  //    (keep the fired style, relabel so nothing implies an order), but
+  //    it takes precedence over slGateFailing, deliberately: the master
+  //    switch sits UPSTREAM of the S/L gate, so on these days the daemon
+  //    never evaluated that gate at all. A live "GATE FAIL" chip would
+  //    report a decision that was never made, whereas "NOT TRADED" is
+  //    true regardless of what the live ratio happens to read.
+  if (entriesDisabled && FIRED_STATES.has(state)) {
+    return { label: "NOT TRADED", styleKey: state };
+  }
 
   if (slGateFailing) {
     return {
