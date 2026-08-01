@@ -101,6 +101,7 @@ export function DCEventsTab() {
   }, [events]);
 
   const counts = useMemo(() => summarizeOutcomes(events), [events]);
+  const tradedCount = useMemo(() => events.filter(isTradeWorthyEvent).length, [events]);
 
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -156,7 +157,26 @@ export function DCEventsTab() {
         </div>
       </div>
 
-      {/* Summary chips */}
+      {/* THE HEADLINE: the only question this tab needs to answer at a
+          glance — should we be in these positions, or not? Everything
+          below is the supporting detail, deliberately smaller. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <VerdictTile
+          n={tradedCount}
+          label={tradedCount === 1 ? "should be in" : "should be in"}
+          color={colors.accentBlue}
+          title="Every gate passed — signal was GO/GO+, S/L gate met, sizing and margin OK. The daemon would have entered; DC entry is retired so it did not."
+        />
+        <VerdictTile
+          n={events.length - tradedCount}
+          label="no trade"
+          color={colors.textMuted}
+          title="Would not have entered anyway — no signal, or a gate (S/L, VIX, margin, …) rejected it. See the breakdown below."
+        />
+      </div>
+
+      {/* Breakdown — the granularity, kept as metadata rather than the
+          headline. */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {SUMMARY_OUTCOMES.map((k) => {
           const n = counts[k] ?? 0;
@@ -490,6 +510,49 @@ export function outcomeColor(outcome: string): string {
       || outcome === "blocked_conn" || outcome === "blocked_data"
       || outcome === "blocked_order") return colors.accentRed;
   return colors.textSecondary;
+}
+
+/**
+ * THE BINARY. "Should we be in this position right now?"
+ *
+ * True for exactly two outcomes, and the reason they belong together is
+ * that in both the daemon cleared EVERY evaluation gate — signal was
+ * GO/GO+, S/L ratio met its minimum, sizing and margin passed:
+ *
+ *   entered                   — it traded (pre-retirement rows, and any
+ *                               future re-enable).
+ *   blocked_entries_disabled  — it would have traded; DC entry is retired
+ *                               so no order was sent.
+ *
+ * Everything else is false, including `blocked_order` (the daemon tried
+ * but the broker never crossed — a real miss, not a position we hold) and
+ * every signal-side rejection.
+ *
+ * This is only trustworthy because the daemon's master switch sits BELOW
+ * the S/L gate (engine/entry.py::_persist_and_submit). If it is ever moved
+ * above, `blocked_entries_disabled` stops meaning "all gates passed" and
+ * this function starts lying.
+ */
+export function isTradeWorthyEvent(e: { outcome: string }): boolean {
+  return e.outcome === "entered" || e.outcome === "blocked_entries_disabled";
+}
+
+function VerdictTile({ n, label, color, title }: {
+  n: number; label: string; color: string; title: string;
+}) {
+  return (
+    <div title={title} style={{
+      display: "inline-flex", alignItems: "baseline", gap: 8,
+      padding: "8px 14px", borderRadius: 8,
+      background: withAlpha(color, 0.1), border: `1px solid ${withAlpha(color, 0.35)}`,
+      color, fontFamily: fonts.sans, cursor: "help",
+    }}>
+      <span style={{ fontWeight: 700, fontSize: 22, fontFamily: fonts.mono }}>{n}</span>
+      <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6 }}>
+        {label}
+      </span>
+    </div>
+  );
 }
 
 export function labelFor(outcome: string): string {

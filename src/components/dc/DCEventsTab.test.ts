@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { DCSignalEvent } from "../../api/dcTypes";
 import {
   SUMMARY_OUTCOMES,
+  isTradeWorthyEvent,
   ivSourceCellStyle,
   ivSourceTitle,
   labelFor,
@@ -94,6 +95,25 @@ describe("blocked_entries_disabled — the 2026-08-01 DC retirement state", () =
     // table — so the tab would have under-reported its now-most-common
     // event. Colour and label alone do not fix that; membership does.
     expect(SUMMARY_OUTCOMES).toContain("blocked_entries_disabled");
+  });
+
+  it("counts toward the SHOULD BE IN verdict", () => {
+    // The operator's requirement: one binary, "should we be in this
+    // position right now or not". This outcome is the retired-product
+    // half of the yes side.
+    expect(isTradeWorthyEvent({ outcome: "blocked_entries_disabled" })).toBe(true);
+    expect(isTradeWorthyEvent({ outcome: "entered" })).toBe(true);
+  });
+
+  it("keeps every not-would-have-traded outcome on the NO side", () => {
+    // blocked_order is the subtle one: the daemon DID attempt, so the card
+    // lifecycle treats it as fired — but the broker never crossed, so we
+    // are not in the position. The verdict must not claim we are.
+    for (const outcome of ["blocked_order", "skipped_signal", "blocked_sl",
+                           "blocked_vix", "blocked_margin", "blocked_direction",
+                           "blocked_duplicate", "blocked_risk"]) {
+      expect(isTradeWorthyEvent({ outcome })).toBe(false);
+    }
   });
 
   it("blocked_direction also gets a chip", () => {
