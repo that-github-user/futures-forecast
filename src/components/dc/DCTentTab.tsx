@@ -37,6 +37,7 @@ import {
   daysSinceExpiry,
   filterTradesByDays,
   isTentRenderable,
+  phantomCategoryBadge,
   tentLifecycle,
   type TentLifecycle,
 } from "./dcTentTab.helpers";
@@ -365,19 +366,29 @@ function StatusPill({ label, color }: { label: string; color: string }) {
 
 /**
  * The Tent tab is operator-facing alpha research. This panel surfaces
- * plays the daemon recorded but couldn't fill at the broker — strikes
- * the strategy resolved, sized, gated, and submitted to the ladder,
- * where the broker side failed (no cross / parked-no-fill exhausted).
+ * plays the daemon fully resolved, sized and gated but never ended up
+ * holding. Two ways that happens, and the badge distinguishes them:
+ *
+ *   LADDER / PARKED / OTHER — an order went out and the broker side
+ *     failed (no cross, or parked at ask and still no fill).
+ *   AUTO OFF — automated entry is switched off (`dc_entry.enabled`),
+ *     so no order was ever submitted. Since 2026-08-01 this is the
+ *     only one the daemon can still produce.
  *
  * Framing is deliberately neutral. These are NOT "misses" to be flagged;
  * they're additional alpha exposure the operator can study alongside
  * real entries. The through-expiry tent renders identically to a real
  * position so the analysis surface is the same.
  *
+ * ONE CAVEAT WORTH KNOWING WHEN READING AN "AUTO OFF" CARD: its
+ * `intended_debit` is the mid-based price the ladder would have OPENED
+ * at, never tested against the book. The LADDER/PARKED cards are proof
+ * that mid often wasn't reachable — 75 of the first 82 phantoms walked
+ * all the way to the ask and still missed. So an AUTO OFF tent reads
+ * slightly optimistic versus what a real fill would have cost.
+ *
  * Each card opens the through-expiry phantom-tent modal (live + frozen
- * IV overlays, same as a real position). The block_category badge tells
- * the operator at a glance HOW the fill failed (LADDER exhausted vs
- * PARKED with no cross vs OTHER).
+ * IV overlays, same as a real position).
  */
 function MissedEntriesPanel({
   phantoms,
@@ -510,18 +521,15 @@ function PhantomChip({
   phantom: DCPhantomPosition;
   onClick: () => void;
 }) {
-  // Block category drives a small colored pill so the failure mode is
-  // visible at-a-glance without opening the modal. Falls back to "UNK"
-  // when the category is null — "MISS" reads too much like a positive-
-  // event term in trading slang.
-  const categoryLabel = (() => {
-    switch (phantom.block_category) {
-      case "ladder_exhausted": return "LADDER";
-      case "parked_no_fill": return "PARKED";
-      case "other": return "OTHER";
-      default: return "UNK";
-    }
-  })();
+  // Block category drives a small colored pill so the reason is visible
+  // at-a-glance without opening the modal. Label + semantic tone come
+  // from the pure helper (unit-tested there); this file owns only the
+  // tone → theme-color binding.
+  const { label: categoryLabel, tone } = phantomCategoryBadge(
+    phantom.block_category,
+  );
+  const categoryTone =
+    tone === "info" ? colors.accentIndigo : colors.accentAmber;
   const daysAgo = daysAgoET(phantom.entry_date);
   return (
     <button
@@ -560,9 +568,9 @@ function PhantomChip({
         <span style={{
           fontSize: 9,
           fontFamily: fonts.mono,
-          color: colors.accentAmber,
-          background: withAlpha(colors.accentAmber, 0.12),
-          border: `1px solid ${withAlpha(colors.accentAmber, 0.4)}`,
+          color: categoryTone,
+          background: withAlpha(categoryTone, 0.12),
+          border: `1px solid ${withAlpha(categoryTone, 0.4)}`,
           borderRadius: 2,
           padding: "1px 5px",
           letterSpacing: 0.5,

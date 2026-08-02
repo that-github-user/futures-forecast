@@ -15,6 +15,8 @@ import {
   etTodayYYYYMMDD,
   filterTradesByDays,
   isTentRenderable,
+  phantomCategoryBadge,
+  phantomDebitWasTested,
   tentLifecycle,
 } from "./dcTentTab.helpers";
 
@@ -172,5 +174,77 @@ describe("daysSinceExpiry", () => {
   it("null on a malformed expiry string", () => {
     expect(daysSinceExpiry("not-a-date", now)).toBeNull();
     expect(daysSinceExpiry("2026-05-15", now)).toBeNull(); // wrong format
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// phantomCategoryBadge — the pill on each Missed Entries card
+// ---------------------------------------------------------------------------
+
+describe("phantomCategoryBadge", () => {
+  it("labels the broker-side failures with the warning tone", () => {
+    // An order went out and the book refused it. Amber is correct here:
+    // these are genuinely the automation underperforming.
+    expect(phantomCategoryBadge("ladder_exhausted")).toEqual({
+      label: "LADDER",
+      tone: "warn",
+    });
+    expect(phantomCategoryBadge("parked_no_fill")).toEqual({
+      label: "PARKED",
+      tone: "warn",
+    });
+  });
+
+  it("gives entries_disabled its own tone, not the warning one", () => {
+    // THE POINT OF THIS HELPER. Since 2026-08-01 every new phantom
+    // carries this category, so painting it amber would render the
+    // whole panel as warnings that all mean "working as configured" —
+    // which is exactly how an operator learns to stop reading them.
+    const badge = phantomCategoryBadge("entries_disabled");
+    expect(badge.label).toBe("AUTO OFF");
+    expect(badge.tone).toBe("info");
+    expect(badge.tone).not.toBe(phantomCategoryBadge("parked_no_fill").tone);
+  });
+
+  it("renders an unknown category as UNK rather than guessing", () => {
+    // A new value on the daemon's CHECK enum without a case here must
+    // be visibly wrong, not silently mislabelled as an existing mode.
+    expect(phantomCategoryBadge("some_future_category").label).toBe("UNK");
+  });
+
+  it("handles null and undefined (legacy rows predate the enum)", () => {
+    expect(phantomCategoryBadge(null).label).toBe("UNK");
+    expect(phantomCategoryBadge(undefined).label).toBe("UNK");
+  });
+
+  it("covers every category the daemon's CHECK enum admits", () => {
+    // Mirrors the CHECK constraint on phantom_positions.block_category
+    // in automated-dc-entry state/store.py. Two repos, no shared symbol
+    // — if that enum grows, this list is the tripwire.
+    const daemonEnum = [
+      "ladder_exhausted",
+      "parked_no_fill",
+      "entries_disabled",
+      "other",
+    ];
+    for (const category of daemonEnum) {
+      expect(phantomCategoryBadge(category).label).not.toBe("UNK");
+    }
+  });
+});
+
+
+describe("phantomDebitWasTested", () => {
+  it("is false only for entries_disabled", () => {
+    // intended_debit on an entries_disabled row is the mid the ladder
+    // would have opened at — never submitted, so never proven
+    // reachable. The submitted categories are the counter-evidence:
+    // most of them walked to the ask and still missed.
+    expect(phantomDebitWasTested("entries_disabled")).toBe(false);
+    expect(phantomDebitWasTested("ladder_exhausted")).toBe(true);
+    expect(phantomDebitWasTested("parked_no_fill")).toBe(true);
+    expect(phantomDebitWasTested("other")).toBe(true);
+    expect(phantomDebitWasTested(null)).toBe(true);
   });
 });

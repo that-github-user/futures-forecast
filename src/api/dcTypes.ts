@@ -126,10 +126,19 @@ export interface DCTrade {
  * existing `dcApi.phantomTentBundle(uid)` endpoint to render the
  * through-expiry curve.
  *
- * `block_category` is the stable enum classifying why the fill failed:
- *   - "ladder_exhausted" — entry reprice ladder ran through all rungs
- *   - "parked_no_fill"   — held at ask for the configured park dwell
- *   - "other"            — future broker-reject / mid-fill paths
+ * `block_category` is the stable enum classifying why no fill happened:
+ *   - "ladder_exhausted"  — entry reprice ladder ran through all rungs
+ *   - "parked_no_fill"    — held at ask for the configured park dwell
+ *   - "entries_disabled"  — automated entry is switched off; no order
+ *                           was ever submitted (the only category the
+ *                           daemon still emits since 2026-08-01)
+ *   - "other"             — future broker-reject / mid-fill paths
+ *
+ * The first two and the third are NOT comparable. On a submitted order
+ * `intended_debit` is a price the book demonstrably refused; on an
+ * "entries_disabled" row it is the untested mid the ladder would have
+ * started from, so phantom P&L computed off it runs optimistic. Group
+ * by block_category before comparing phantom results to real trades.
  */
 export interface DCPhantomPosition {
   id: number;
