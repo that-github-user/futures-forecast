@@ -372,20 +372,25 @@ function StatusPill({ label, color }: { label: string; color: string }) {
  *   LADDER / PARKED / OTHER — an order went out and the broker side
  *     failed (no cross, or parked at ask and still no fill).
  *   AUTO OFF — automated entry is switched off (`dc_entry.enabled`),
- *     so no order was ever submitted. Since 2026-08-01 this is the
- *     only one the daemon can still produce.
+ *     so no order was ever submitted. While that switch is off this is
+ *     the only one the daemon can produce.
  *
  * Framing is deliberately neutral. These are NOT "misses" to be flagged;
  * they're additional alpha exposure the operator can study alongside
  * real entries. The through-expiry tent renders identically to a real
  * position so the analysis surface is the same.
  *
- * ONE CAVEAT WORTH KNOWING WHEN READING AN "AUTO OFF" CARD: its
- * `intended_debit` is the mid-based price the ladder would have OPENED
- * at, never tested against the book. The LADDER/PARKED cards are proof
- * that mid often wasn't reachable — 75 of the first 82 phantoms walked
- * all the way to the ask and still missed. So an AUTO OFF tent reads
- * slightly optimistic versus what a real fill would have cost.
+ * TWO THINGS TO KNOW WHEN READING AN "AUTO OFF" CARD:
+ *
+ *  1. Its `intended_debit` is the mid-based price the ladder would have
+ *     OPENED at, never tested against the book. The LADDER/PARKED cards
+ *     exist because mid is not always reachable, so an AUTO OFF tent
+ *     reads optimistic versus what a real fill would have cost.
+ *  2. It is UNIT SIZED — `intended_quantity` is always 1. With no fills
+ *     there are no wins or losses, so the daemon's D'Alembert multiplier
+ *     is frozen rather than live; recording it would dress a stale
+ *     constant up as a sizing decision. Scale by whatever rule you want
+ *     to test; per-contract economics are linear.
  *
  * Each card opens the through-expiry phantom-tent modal (live + frozen
  * IV overlays, same as a real position).
@@ -443,11 +448,13 @@ function MissedEntriesPanel({
         marginBottom: 8,
         lineHeight: 1.4,
       }}>
-        Real strikes the daemon resolved, sized, and submitted to the
-        broker — fill failed (ladder exhausted or parked-at-ask with no
-        cross), so no position was held. Additional plays to study; the
-        through-expiry tent renders the same as a real entry. Click a
-        row to analyze.
+        Real strikes the daemon resolved, sized and gated, but never
+        ended up holding — either the order went out and the broker
+        never crossed (LADDER / PARKED), or automated entry was switched
+        off so no order was sent (AUTO OFF). Additional plays to study;
+        the through-expiry tent renders the same as a real entry. AUTO
+        OFF rows are unit sized and priced at mid, so they read a touch
+        optimistic. Click a row to analyze.
       </div>
       {/* Loading vs empty: until the first slow-tier poll settles,
           show a loading placeholder rather than "No missed entries" —
@@ -459,7 +466,7 @@ function MissedEntriesPanel({
         <div style={emptyStyle}>
           {days > 0
             ? `No unfilled plays in the last ${days} day${days === 1 ? "" : "s"}.`
-            : "No broker no-fills recorded yet."}
+            : "No unfilled plays recorded yet."}
         </div>
       ) : (
         <div

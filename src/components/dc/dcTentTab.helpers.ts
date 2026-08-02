@@ -143,9 +143,9 @@ export interface PhantomCategoryBadge {
  * deliberately ugly: an unlabelled pill is the signal that the two
  * sides drifted.
  *
- * Why `entries_disabled` gets its own tone: since the 2026-08-01
- * automation retirement it is the ONLY category the daemon still
- * emits, so every new card carries it. Amber-as-warning on a state
+ * Why `entries_disabled` gets its own tone: while automated entry is
+ * switched off it is the only category the daemon emits, so every new
+ * card carries it. Amber-as-warning on a state
  * that means "working as configured" would make the panel a wall of
  * warnings — the reliable way to teach an operator to stop reading
  * them. Indigo matches the Events tab's "should be in, we're not"
@@ -174,11 +174,12 @@ export function phantomCategoryBadge(
 /**
  * Whether a phantom's `intended_debit` was ever tested against the
  * book. False for `entries_disabled`: nothing was submitted, so the
- * debit is the mid the ladder would have OPENED at. The submitted
- * categories are the evidence that mid was frequently unreachable —
- * 75 of the first 82 phantoms walked to the ask and still missed — so
- * an untested debit reads optimistic. Anything comparing phantom P&L
- * against realized trades must split on this.
+ * debit is the mid the ladder would have OPENED at, rather than a
+ * price the book was ever asked to honour. The submitted categories
+ * exist precisely because mid is not always reachable, so an untested
+ * debit reads optimistic by roughly the concession a real fill would
+ * have had to make. Anything comparing phantom P&L against realized
+ * trades must split on this.
  */
 export function phantomDebitWasTested(
   category: string | null | undefined,

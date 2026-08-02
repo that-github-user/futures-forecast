@@ -128,6 +128,20 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
   }, [onClose]);
 
   const isPhantom = frozen?.phantom === true;
+  // WHICH KIND of phantom. Without this the modal asserted a broker
+  // fill-failure on every one — telling the operator to go read entry-
+  // ladder logs that do not exist for a play no order was ever sent
+  // for. Null (legacy rows, or an API too old to send the field) falls
+  // back to the neutral wording rather than to either specific claim.
+  const phantomCategory = frozen?.block_category ?? null;
+  const phantomWasSubmitted = isPhantom && phantomCategory !== null
+    && phantomCategory !== "entries_disabled";
+  // Red reads as regret and is right for a real miss; an entries-off
+  // row is the configured state, so it gets the same indigo the Tent
+  // and Events tabs use for "should be in, we're not".
+  const phantomTone = phantomCategory === "entries_disabled"
+    ? colors.accentIndigo
+    : colors.accentRed;
   const ivSourceLabel = labelForIvSource(live?.iv_source ?? frozen?.iv_source ?? null);
 
   // Filter the API's warnings array for the modal. When the frozen
@@ -199,7 +213,7 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
             <h3 style={{ margin: 0, fontSize: 16, color: colors.textBright }}>
               Tent — {title}
             </h3>
-            {isPhantom && <PhantomPill />}
+            {isPhantom && <PhantomPill category={phantomCategory} />}
             {ivSourceLabel && <IvSourceBadge label={ivSourceLabel} />}
           </div>
           <button
@@ -255,22 +269,33 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
             style={{
               marginBottom: 12,
               padding: "8px 12px",
-              background: withAlpha(colors.accentRed, 0.08),
-              border: `1px solid ${withAlpha(colors.accentRed, 0.3)}`,
+              background: withAlpha(phantomTone, 0.08),
+              border: `1px solid ${withAlpha(phantomTone, 0.3)}`,
               borderRadius: 4,
               fontSize: 12,
               color: colors.textPrimary,
               lineHeight: 1.5,
             }}
           >
-            <strong style={{ color: colors.accentRed }}>Phantom:</strong>{" "}
-            the daemon's entry-fill phase failed (ladder exhausted /
-            parked-at-ask without fill) after every signal-side gate
-            cleared. Followers got the GO signal manually; this row
+            <strong style={{ color: phantomTone }}>Phantom:</strong>{" "}
+            every signal-side gate cleared but the daemon never held
+            this position.{" "}
+            {phantomWasSubmitted
+              ? "The order went to market and the book never crossed "
+                + "(ladder exhausted / parked-at-ask without fill). "
+              : phantomCategory === "entries_disabled"
+                ? "Automated entry is switched off, so no order was "
+                  + "sent — this is the configured state, not a failure. "
+                  + "The row is unit sized and priced at mid, so its "
+                  + "curve reads a touch optimistic against a real fill. "
+                : ""}
+            Followers got the GO signal manually; this row
             preserves the would-have-entered trade so the tent
-            tracker stays honest. No action required on this row;
-            check the daemon's entry-ladder logs if the pattern
-            repeats.
+            tracker stays honest. No action required on this row
+            {phantomWasSubmitted
+              ? "; check the daemon's entry-ladder logs if the pattern "
+                + "repeats."
+              : "."}
           </div>
         )}
 
@@ -392,12 +417,21 @@ function IvSourceBadge({ label }: { label: string }) {
 }
 
 
-function PhantomPill() {
-  // Red (not amber) so the pill pops against the modal's dashed-amber
-  // container border. "Automation missed entry" is closer to a regret
-  // signal than a warning — amber is reserved for IV-degradation
-  // warnings; red here unambiguously marks "automation did not act
-  // when the followers were told to." R2#S2 fix.
+function PhantomPill({ category }: { category: string | null }) {
+  // Red for a genuine miss — the order went out and the book refused
+  // it. "Automation missed entry" is closer to a regret signal than a
+  // warning; amber is reserved for IV-degradation warnings, so red
+  // unambiguously marks "automation did not act when the followers
+  // were told to." R2#S2 fix.
+  //
+  // But `entries_disabled` is not a miss. No order was sent because
+  // the operator switched entry off, and while that switch is off it
+  // is the ONLY kind of phantom produced — so red here would paint
+  // every phantom in the system as a regret signal and burn out the
+  // one colour that means something. Indigo, matching the Tent tab's
+  // AUTO OFF pill and the Events tab's "should be in, we're not".
+  const isRegret = category !== "entries_disabled";
+  const tone = isRegret ? colors.accentRed : colors.accentIndigo;
   return (
     <span style={{
       fontSize: 10,
@@ -405,13 +439,13 @@ function PhantomPill() {
       borderRadius: 3,
       letterSpacing: 0.5,
       textTransform: "uppercase",
-      background: withAlpha(colors.accentRed, 0.15),
-      color: colors.accentRed,
-      border: `1px solid ${colors.accentRed}`,
+      background: withAlpha(tone, 0.15),
+      color: tone,
+      border: `1px solid ${tone}`,
       fontFamily: fonts.mono,
       fontWeight: 600,
     }}>
-      Automation Missed
+      {isRegret ? "Automation Missed" : "Auto Off"}
     </span>
   );
 }

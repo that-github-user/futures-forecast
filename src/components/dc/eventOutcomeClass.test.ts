@@ -217,21 +217,44 @@ describe("eventClassTooltip", () => {
     expect(eventClassTooltip("should_be_in")).toMatch(/ladder exhausted/i);
   });
 
-  it("should_be_in scopes the phantom claim by OUTCOME, not by date", () => {
-    // THE cross-tab correctness test. `entry.py:1258` is
-    // `if blocked.outcome == 'blocked_order':` — a string equality — so
-    // `blocked_entries_disabled` writes no phantom at all. The old copy
-    // said "attempts from 2026-05-15 onward also carry a phantom", which
-    // with the master switch off is wrong for 100% of future rows: it sends
-    // the operator to a Missed Entries panel that will never gain another
-    // card. Name the ladder rows, and say out loud that the entries-off
-    // rows end here.
+  it("should_be_in tracks which outcomes actually carry a phantom", () => {
+    // THE cross-tab correctness test, and it has now fired twice for
+    // opposite reasons — which is the point of pinning copy against a
+    // daemon-side fact rather than against prose someone liked.
+    //
+    // Round 1: the daemon matched `blocked.outcome == 'blocked_order'`,
+    // so `blocked_entries_disabled` wrote no phantom. Copy claiming
+    // otherwise sent the operator to a Missed Entries panel that would
+    // never gain another card.
+    //
+    // Round 2 (now): the daemon widened that to PHANTOM_WORTHY_OUTCOMES,
+    // so entries-off rows DO carry a phantom with a full through-expiry
+    // curve. The round-1 wording — "entries-off rows have no phantom and
+    // no through-expiry P&L, so this tab is their whole record" — became
+    // false the moment that shipped, and this assertion is what caught
+    // it. Keep asserting the CURRENT daemon behavior, not the phrasing.
     const t = eventClassTooltip("should_be_in");
-    expect(t).toMatch(/Only the ladder rows carry a phantom/);
+    expect(t).toMatch(/BOTH endings now carry a phantom/);
     expect(t).toMatch(/Tent tab/);
     expect(t).toMatch(/Missed Entries/);
-    expect(t).toMatch(/entries-off rows have no phantom/);
+    // The two falsified claims from round 1 must never come back.
+    expect(t).not.toMatch(/Only the ladder rows carry a phantom/);
+    expect(t).not.toMatch(/entries-off rows have no phantom/);
     expect(t).not.toMatch(/from 2026-05-15 onward/);
+  });
+
+  it("should_be_in states the entries-off recording semantics", () => {
+    // Two properties an operator will otherwise infer wrongly from a
+    // Missed Entries card, both introduced alongside the widened
+    // predicate: the row is unit sized (the D'Alembert multiplier is
+    // frozen with no fills feeding it, so recording it would dress a
+    // stale constant up as a sizing decision), and it is written once
+    // per would-be holding period rather than once per evaluation slot
+    // (with entries off the duplicate gate can never fire, so without
+    // that rule one intended position multiplies into one row per day).
+    const t = eventClassTooltip("should_be_in");
+    expect(t).toMatch(/unit sized/);
+    expect(t).toMatch(/holding period/);
   });
 
   it("should_be_in does not claim an order was sent for both endings", () => {

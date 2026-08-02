@@ -632,6 +632,14 @@ export interface DCTentResponse {
   days_to_back_exp: number;
   iv_source: DCTentIVSource;
   phantom: boolean;
+  // Only meaningful when `phantom` is true: which flavor of
+  // would-have-entered this is, mirroring
+  // phantom_positions.block_category. Without it the modal can only ask
+  // "is this a phantom?" and is forced to assume a broker-fill failure,
+  // which is wrong for every row written while automated entry is off.
+  // Null on real positions and on legacy phantoms predating the enum —
+  // treat null as "unknown flavor", not as "ladder failed".
+  block_category: string | null;
   as_of_resolved: string;
   snapshot_time: string | null;
   warnings: string[];

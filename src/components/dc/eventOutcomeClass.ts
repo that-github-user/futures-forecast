@@ -149,10 +149,11 @@ export function eventClassTooltip(c: EventClass): string {
         + "land here. The entry reprice ladder exhausted with zero fills — it went to "
         + "market and the market never crossed. Or the dc_entry.enabled master switch "
         + "was off, so no order was ever sent. Either way the system called the play "
-        + "and we are NOT in it. Only the ladder rows carry a phantom position, shown "
-        + "on the Tent tab as \"Missed Entries\" (phantom capture shipped 2026-05-15); "
-        + "entries-off rows have no phantom and no through-expiry P&L, so this tab is "
-        + "their whole record.";
+        + "and we are NOT in it. BOTH endings now carry a phantom position, shown on "
+        + "the Tent tab as \"Missed Entries\" with its full through-expiry curve — so "
+        + "this tab is the audit trail, not the whole record. Entries-off rows are "
+        + "unit sized, priced at mid, and recorded once per would-be holding period "
+        + "rather than once per evaluation.";
     case "no_trade":
       return "The system declined before ever sending an order — signal skip, S/L gate, "
         + "duplicate position, risk limit, or a data/connection failure. Nothing "
