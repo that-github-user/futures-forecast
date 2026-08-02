@@ -17,31 +17,34 @@
  * margin — and only THEN `_persist_and_submit`. Exactly two outcomes are
  * raised BELOW that line:
  *
- *   blocked_entries_disabled — the `dc_entry.enabled` master switch
- *     (entry.py:984). It sits above the first state mutation and below
- *     every evaluation gate, so reaching it means the daemon WOULD have
- *     entered. The comment at entry.py:950 says exactly that.
+ *   blocked_entries_disabled — the `dc_entry.enabled` master switch in
+ *     `_persist_and_submit`. It sits above the first state mutation and
+ *     below every evaluation gate, so reaching it means the daemon WOULD
+ *     have entered; the comment at that raise site says exactly that.
  *   blocked_order — the reprice ladder ran and the market never crossed
- *     (entry.py:1082). The daemon committed, went to market, got zero
- *     fills.
+ *     (the ladder-exhausted raise, same function). The daemon committed,
+ *     went to market, got zero fills.
  *
  * That predicate is NOT our invention — it is the daemon's own gate
  * ORDERING. Both raises sit inside `_persist_and_submit`, below every gate
  * that could still have said no on the merits; every other outcome names a
  * gate that did say no.
  *
- * It is deliberately NOT the daemon's phantom-write predicate, which is
- * strictly narrower. `entry.py:1258` reads `if blocked.outcome ==
- * 'blocked_order':` — a string equality, not a membership test — so a
- * `blocked_entries_disabled` play gets a `signal_events` row and NOTHING
- * else. Following the phantom writer instead would file the entire
- * post-retirement record under `no_trade`, which is the exact error this
- * module exists to undo. The asymmetry is a daemon-side gap, not a
- * classification signal: from 2026-08-01 the decision is preserved and the
- * through-expiry P&L is not, so the Tent tab's "Missed Entries" panel stops
- * accruing while this tab keeps counting. Any copy that sends the operator
- * across to that panel MUST name which outcome carries a phantom — see
- * `eventClassTooltip`.
+ * This set now MATCHES the daemon's phantom-write predicate
+ * (`engine/entry.py::PHANTOM_WORTHY_OUTCOMES`). It did not always: the
+ * writer used to be a string equality on `blocked_order`, so a
+ * `blocked_entries_disabled` play got a `signal_events` row and nothing
+ * else, and this module's job included documenting that gap loudly. The
+ * daemon has since widened the predicate, so both outcomes carry a
+ * phantom with a full through-expiry curve and the Tent tab's "Missed
+ * Entries" panel accrues for both.
+ *
+ * That history is worth keeping because the copy in this file has now
+ * been falsified in BOTH directions — first by claiming a phantom that
+ * did not exist, then by denying one that does. Any copy that sends the
+ * operator across to that panel MUST be re-checked against the daemon's
+ * predicate whenever it changes, not against what this comment says —
+ * see `eventClassTooltip` and its tests.
  *
  * The two are also mutually exclusive by config: with the master switch
  * off (2026-08-01 onward) `blocked_order` is unreachable, because its emit
@@ -52,11 +55,15 @@
  *
  * WHY THIS SUPERSEDES `isTradeWorthyEvent`. That predicate put
  * `blocked_order` on the NO side, reasoning "we do not hold the position".
- * True — and irrelevant to the question the headline tile asks. On the
- * 2026-04-20..2026-07-31 record that reading rendered "14 should be in"
- * while the Tent tab, in the same product, rendered 82 phantoms as "Missed
- * Entries": two answers to one question. "Do we hold it" is the `in`
- * class. "Should we be in it" is `in` ∪ `should_be_in`.
+ * True — and irrelevant to the question the headline tile asks. It made
+ * the same product give two different answers to one question: a small
+ * "should be in" count on this tab beside a much larger set of phantoms
+ * on the Tent tab. "Do we hold it" is the `in` class. "Should we be in
+ * it" is `in` ∪ `should_be_in`.
+ *
+ * (Deliberately stated without the production counts that used to sit
+ * here. This repo is public and the daemon's is not; live position and
+ * fill statistics do not belong on this side of that line.)
  *
  * UNKNOWN OUTCOMES FALL TO `no_trade`, deliberately. The conservative
  * direction is to UNDER-claim — an unrecognised string must never inflate
@@ -128,12 +135,12 @@ export function eventClassColor(c: EventClass): string {
  * and that set is closed: `entered` is unreachable with the master switch
  * off, so no row can join it.
  *
- * Every cross-tab pointer here is scoped by OUTCOME, never by date. The
- * daemon's phantom writer is a string equality on `blocked_order`
- * (`entry.py:1258`), so "everything since 2026-05-15 has a phantom" — the
- * wording this copy used to carry — is false for every row logged from the
- * 2026-08-01 retirement onward, which is the only kind of row it will get
- * from here on.
+ * Every cross-tab pointer here is scoped by OUTCOME, never by date —
+ * date-scoped wording ("everything since <date> has a phantom") has been
+ * wrong twice now, because what carries a phantom is decided by the
+ * daemon's predicate and that predicate moves. Name the outcome, check
+ * `engine/entry.py::PHANTOM_WORTHY_OUTCOMES`, and let the tests hold the
+ * pointer honest.
  */
 export function eventClassTooltip(c: EventClass): string {
   switch (c) {

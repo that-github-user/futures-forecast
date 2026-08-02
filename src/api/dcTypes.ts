@@ -130,8 +130,8 @@ export interface DCTrade {
  *   - "ladder_exhausted"  — entry reprice ladder ran through all rungs
  *   - "parked_no_fill"    — held at ask for the configured park dwell
  *   - "entries_disabled"  — automated entry is switched off; no order
- *                           was ever submitted (the only category the
- *                           daemon still emits since 2026-08-01)
+ *                           was ever submitted (while that switch is
+ *                           off, the only category the daemon emits)
  *   - "other"             — future broker-reject / mid-fill paths
  *
  * The first two and the third are NOT comparable. On a submitted order

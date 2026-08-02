@@ -197,10 +197,11 @@ describe("phantomCategoryBadge", () => {
   });
 
   it("gives entries_disabled its own tone, not the warning one", () => {
-    // THE POINT OF THIS HELPER. Since 2026-08-01 every new phantom
-    // carries this category, so painting it amber would render the
-    // whole panel as warnings that all mean "working as configured" —
-    // which is exactly how an operator learns to stop reading them.
+    // THE POINT OF THIS HELPER. While automated entry is switched off
+    // every new phantom carries this category, so painting it amber
+    // would render the whole panel as warnings that all mean "working
+    // as configured" — exactly how an operator learns to stop reading
+    // them.
     const badge = phantomCategoryBadge("entries_disabled");
     expect(badge.label).toBe("AUTO OFF");
     expect(badge.tone).toBe("info");
@@ -239,8 +240,8 @@ describe("phantomDebitWasTested", () => {
   it("is false only for entries_disabled", () => {
     // intended_debit on an entries_disabled row is the mid the ladder
     // would have opened at — never submitted, so never proven
-    // reachable. The submitted categories are the counter-evidence:
-    // most of them walked to the ask and still missed.
+    // reachable. The submitted categories exist precisely because mid
+    // is not always reachable, which is the counter-evidence.
     expect(phantomDebitWasTested("entries_disabled")).toBe(false);
     expect(phantomDebitWasTested("ladder_exhausted")).toBe(true);
     expect(phantomDebitWasTested("parked_no_fill")).toBe(true);

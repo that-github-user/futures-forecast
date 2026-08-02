@@ -3,12 +3,13 @@
  *
  * Two things are pinned here and both are load-bearing. First the class
  * boundary itself: it follows the daemon's gate ORDERING — the two outcomes
- * raised below `_persist_and_submit`'s first gate-free line. It is
- * deliberately WIDER than the daemon's phantom-write predicate, which is a
- * string equality on `blocked_order` (`entry.py:1258`) and therefore drops
+ * raised below `_persist_and_submit`'s first gate-free line. It now matches
+ * the daemon's phantom-write predicate exactly
+ * (`engine/entry.py::PHANTOM_WORTHY_OUTCOMES`); it used to be wider, back
+ * when that writer was a string equality on `blocked_order` that dropped
  * every post-retirement row. Getting this wrong in either direction makes
- * the Events tab and the Tent tab answer one question two ways — they did,
- * for one release: 14 "should be in" against 82 rendered "Missed Entries".
+ * the Events tab and the Tent tab answer one question two ways — which they
+ * did, for one release.
  *
  * Second, the COMPLETE outcome vocabulary. `engine/entry.py` is the sole
  * writer of `signal_events` and can emit exactly 16 strings; every one of
@@ -32,27 +33,28 @@ import {
 
 describe("classifyOutcome — the IN class", () => {
   it("'entered' is the only outcome we actually hold", () => {
-    // Backed one-for-one by a row in the positions table: 14 events, 14
-    // positions on the 2026-04-20..2026-07-31 record.
+    // Backed one-for-one by a row in the positions table. (Stated without
+    // the production counts that used to sit here — this repo is public
+    // and the daemon's is not.)
     expect(classifyOutcome("entered")).toBe("in");
   });
 });
 
 describe("classifyOutcome — the SHOULD BE IN class", () => {
   // The boundary. Both of these are raised BELOW every evaluation gate in
-  // engine/entry.py::attempt_entry. Only ONE of them also gets a
-  // phantom_positions row — that writer is narrower on purpose-by-accident
-  // (a string equality the daemon never widened), and following it here
-  // would erase the post-retirement record entirely.
+  // engine/entry.py::attempt_entry, and BOTH now get a phantom_positions
+  // row — the daemon's writer was widened from a string equality on
+  // blocked_order to PHANTOM_WORTHY_OUTCOMES. While that equality stood,
+  // following it here would have erased the post-retirement record.
 
   it("blocked_order — the ladder ran and the market never crossed", () => {
-    // entry.py:1082, inside _persist_and_submit, below the master switch.
-    // The daemon committed and went to market; zero fills. 98 rows.
+    // The ladder-exhausted raise inside _persist_and_submit, below the
+    // master switch. The daemon committed and went to market; zero fills.
     expect(classifyOutcome("blocked_order")).toBe("should_be_in");
   });
 
   it("blocked_entries_disabled — the master switch, not a gate", () => {
-    // entry.py:984. Sits above the first state mutation and below every
+    // The master switch. Sits above the first state mutation and below every
     // evaluation gate, so reaching it means the daemon WOULD have entered.
     expect(classifyOutcome("blocked_entries_disabled")).toBe("should_be_in");
   });
@@ -60,7 +62,7 @@ describe("classifyOutcome — the SHOULD BE IN class", () => {
   it("the two are the same class, and it is not the IN class", () => {
     // They are mutually exclusive by config — with dc_entry.enabled false
     // blocked_order is unreachable — so only their UNION spans the
-    // 2026-08-01 retirement boundary. And neither means we hold anything.
+    // automation-retirement boundary. And neither means we hold anything.
     expect(classifyOutcome("blocked_order"))
       .toBe(classifyOutcome("blocked_entries_disabled"));
     expect(classifyOutcome("blocked_order")).not.toBe(classifyOutcome("entered"));
@@ -259,7 +261,7 @@ describe("eventClassTooltip", () => {
 
   it("should_be_in does not claim an order was sent for both endings", () => {
     // `blocked_entries_disabled` never reaches the ladder — the master
-    // switch at entry.py:984 sits ABOVE it — so a blanket "the daemon went
+    // master switch sits ABOVE it — so a blanket "the daemon went
     // to market" is false for the only outcome this class still receives.
     const t = eventClassTooltip("should_be_in");
     expect(t).toMatch(/no order was ever sent/);

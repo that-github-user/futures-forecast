@@ -136,12 +136,22 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
   const phantomCategory = frozen?.block_category ?? null;
   const phantomWasSubmitted = isPhantom && phantomCategory !== null
     && phantomCategory !== "entries_disabled";
-  // Red reads as regret and is right for a real miss; an entries-off
-  // row is the configured state, so it gets the same indigo the Tent
-  // and Events tabs use for "should be in, we're not".
+  // THREE states, not two. Red reads as regret and is right for a real
+  // miss; entries-off is the configured state and gets the same indigo
+  // the Tent and Events tabs use for "should be in, we're not"; NULL
+  // means we do not know which, and must not be painted as either.
+  //
+  // Null is reachable in production today, not just on legacy rows: the
+  // bundle endpoint rehydrates cached curves from tent_curves, and every
+  // row cached before `block_category` existed deserializes with it
+  // unset. Those self-heal on the next precompute tick, but during that
+  // window a red MISSED pill on an entries-off play is exactly the false
+  // claim this whole change set exists to remove.
   const phantomTone = phantomCategory === "entries_disabled"
     ? colors.accentIndigo
-    : colors.accentRed;
+    : phantomCategory === null
+      ? colors.textSecondary
+      : colors.accentRed;
   const ivSourceLabel = labelForIvSource(live?.iv_source ?? frozen?.iv_source ?? null);
 
   // Filter the API's warnings array for the modal. When the frozen
@@ -430,8 +440,19 @@ function PhantomPill({ category }: { category: string | null }) {
   // every phantom in the system as a regret signal and burn out the
   // one colour that means something. Indigo, matching the Tent tab's
   // AUTO OFF pill and the Events tab's "should be in, we're not".
-  const isRegret = category !== "entries_disabled";
-  const tone = isRegret ? colors.accentRed : colors.accentIndigo;
+  // Null gets its own neutral state — see the phantomTone comment at the
+  // call site for why null is reachable in production, not merely on
+  // legacy rows. Claiming either flavor when we do not know is the bug.
+  const tone = category === "entries_disabled"
+    ? colors.accentIndigo
+    : category === null
+      ? colors.textSecondary
+      : colors.accentRed;
+  const label = category === "entries_disabled"
+    ? "Auto Off"
+    : category === null
+      ? "Phantom"
+      : "Automation Missed";
   return (
     <span style={{
       fontSize: 10,
@@ -445,7 +466,7 @@ function PhantomPill({ category }: { category: string | null }) {
       fontFamily: fonts.mono,
       fontWeight: 600,
     }}>
-      {isRegret ? "Automation Missed" : "Auto Off"}
+      {label}
     </span>
   );
 }
