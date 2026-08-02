@@ -55,10 +55,12 @@ export const dcApi = {
   trades: (limit = 50, offset = 0) =>
     dcGet<DCTrade[]>(`/dc-api/v1/trades?limit=${limit}&offset=${offset}`),
   // Phantom (would-have-entered) trades — rows the daemon recorded
-  // when every signal-side gate cleared but the broker-fill phase
-  // failed. The Tent tab surfaces these in a "missed entries" section
-  // so operators see the play they SHOULD have been holding even when
-  // automation couldn't fill. Default 30-day lookback.
+  // when every signal-side gate cleared but it never ended up holding:
+  // either the order went out and the broker never crossed, or
+  // automated entry is switched off so none was sent. `block_category`
+  // distinguishes them. The Tent tab surfaces these in a "missed
+  // entries" section so operators see the play they SHOULD have been
+  // holding. Default 30-day lookback.
   phantoms: (days = 30) =>
     dcGet<DCPhantomPosition[]>(`/dc-api/v1/phantoms?days=${days}`),
   strategies: () => dcGet<DCStrategyStats[]>("/dc-api/v1/strategies"),

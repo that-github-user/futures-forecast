@@ -3,12 +3,13 @@
  *
  * Two things are pinned here and both are load-bearing. First the class
  * boundary itself: it follows the daemon's gate ORDERING — the two outcomes
- * raised below `_persist_and_submit`'s first gate-free line. It is
- * deliberately WIDER than the daemon's phantom-write predicate, which is a
- * string equality on `blocked_order` (`entry.py:1258`) and therefore drops
+ * raised below `_persist_and_submit`'s first gate-free line. It now matches
+ * the daemon's phantom-write predicate exactly
+ * (`engine/entry.py::PHANTOM_WORTHY_OUTCOMES`); it used to be wider, back
+ * when that writer was a string equality on `blocked_order` that dropped
  * every post-retirement row. Getting this wrong in either direction makes
- * the Events tab and the Tent tab answer one question two ways — they did,
- * for one release: 14 "should be in" against 82 rendered "Missed Entries".
+ * the Events tab and the Tent tab answer one question two ways — which they
+ * did, for one release.
  *
  * Second, the COMPLETE outcome vocabulary. `engine/entry.py` is the sole
  * writer of `signal_events` and can emit exactly 16 strings; every one of
@@ -32,27 +33,28 @@ import {
 
 describe("classifyOutcome — the IN class", () => {
   it("'entered' is the only outcome we actually hold", () => {
-    // Backed one-for-one by a row in the positions table: 14 events, 14
-    // positions on the 2026-04-20..2026-07-31 record.
+    // Backed one-for-one by a row in the positions table. (Stated without
+    // the production counts that used to sit here — this repo is public
+    // and the daemon's is not.)
     expect(classifyOutcome("entered")).toBe("in");
   });
 });
 
 describe("classifyOutcome — the SHOULD BE IN class", () => {
   // The boundary. Both of these are raised BELOW every evaluation gate in
-  // engine/entry.py::attempt_entry. Only ONE of them also gets a
-  // phantom_positions row — that writer is narrower on purpose-by-accident
-  // (a string equality the daemon never widened), and following it here
-  // would erase the post-retirement record entirely.
+  // engine/entry.py::attempt_entry, and BOTH now get a phantom_positions
+  // row — the daemon's writer was widened from a string equality on
+  // blocked_order to PHANTOM_WORTHY_OUTCOMES. While that equality stood,
+  // following it here would have erased the post-retirement record.
 
   it("blocked_order — the ladder ran and the market never crossed", () => {
-    // entry.py:1082, inside _persist_and_submit, below the master switch.
-    // The daemon committed and went to market; zero fills. 98 rows.
+    // The ladder-exhausted raise inside _persist_and_submit, below the
+    // master switch. The daemon committed and went to market; zero fills.
     expect(classifyOutcome("blocked_order")).toBe("should_be_in");
   });
 
   it("blocked_entries_disabled — the master switch, not a gate", () => {
-    // entry.py:984. Sits above the first state mutation and below every
+    // The master switch. Sits above the first state mutation and below every
     // evaluation gate, so reaching it means the daemon WOULD have entered.
     expect(classifyOutcome("blocked_entries_disabled")).toBe("should_be_in");
   });
@@ -60,7 +62,7 @@ describe("classifyOutcome — the SHOULD BE IN class", () => {
   it("the two are the same class, and it is not the IN class", () => {
     // They are mutually exclusive by config — with dc_entry.enabled false
     // blocked_order is unreachable — so only their UNION spans the
-    // 2026-08-01 retirement boundary. And neither means we hold anything.
+    // automation-retirement boundary. And neither means we hold anything.
     expect(classifyOutcome("blocked_order"))
       .toBe(classifyOutcome("blocked_entries_disabled"));
     expect(classifyOutcome("blocked_order")).not.toBe(classifyOutcome("entered"));
@@ -217,26 +219,49 @@ describe("eventClassTooltip", () => {
     expect(eventClassTooltip("should_be_in")).toMatch(/ladder exhausted/i);
   });
 
-  it("should_be_in scopes the phantom claim by OUTCOME, not by date", () => {
-    // THE cross-tab correctness test. `entry.py:1258` is
-    // `if blocked.outcome == 'blocked_order':` — a string equality — so
-    // `blocked_entries_disabled` writes no phantom at all. The old copy
-    // said "attempts from 2026-05-15 onward also carry a phantom", which
-    // with the master switch off is wrong for 100% of future rows: it sends
-    // the operator to a Missed Entries panel that will never gain another
-    // card. Name the ladder rows, and say out loud that the entries-off
-    // rows end here.
+  it("should_be_in tracks which outcomes actually carry a phantom", () => {
+    // THE cross-tab correctness test, and it has now fired twice for
+    // opposite reasons — which is the point of pinning copy against a
+    // daemon-side fact rather than against prose someone liked.
+    //
+    // Round 1: the daemon matched `blocked.outcome == 'blocked_order'`,
+    // so `blocked_entries_disabled` wrote no phantom. Copy claiming
+    // otherwise sent the operator to a Missed Entries panel that would
+    // never gain another card.
+    //
+    // Round 2 (now): the daemon widened that to PHANTOM_WORTHY_OUTCOMES,
+    // so entries-off rows DO carry a phantom with a full through-expiry
+    // curve. The round-1 wording — "entries-off rows have no phantom and
+    // no through-expiry P&L, so this tab is their whole record" — became
+    // false the moment that shipped, and this assertion is what caught
+    // it. Keep asserting the CURRENT daemon behavior, not the phrasing.
     const t = eventClassTooltip("should_be_in");
-    expect(t).toMatch(/Only the ladder rows carry a phantom/);
+    expect(t).toMatch(/BOTH endings now carry a phantom/);
     expect(t).toMatch(/Tent tab/);
     expect(t).toMatch(/Missed Entries/);
-    expect(t).toMatch(/entries-off rows have no phantom/);
+    // The two falsified claims from round 1 must never come back.
+    expect(t).not.toMatch(/Only the ladder rows carry a phantom/);
+    expect(t).not.toMatch(/entries-off rows have no phantom/);
     expect(t).not.toMatch(/from 2026-05-15 onward/);
+  });
+
+  it("should_be_in states the entries-off recording semantics", () => {
+    // Two properties an operator will otherwise infer wrongly from a
+    // Missed Entries card, both introduced alongside the widened
+    // predicate: the row is unit sized (the D'Alembert multiplier is
+    // frozen with no fills feeding it, so recording it would dress a
+    // stale constant up as a sizing decision), and it is written once
+    // per would-be holding period rather than once per evaluation slot
+    // (with entries off the duplicate gate can never fire, so without
+    // that rule one intended position multiplies into one row per day).
+    const t = eventClassTooltip("should_be_in");
+    expect(t).toMatch(/unit sized/);
+    expect(t).toMatch(/holding period/);
   });
 
   it("should_be_in does not claim an order was sent for both endings", () => {
     // `blocked_entries_disabled` never reaches the ladder — the master
-    // switch at entry.py:984 sits ABOVE it — so a blanket "the daemon went
+    // master switch sits ABOVE it — so a blanket "the daemon went
     // to market" is false for the only outcome this class still receives.
     const t = eventClassTooltip("should_be_in");
     expect(t).toMatch(/no order was ever sent/);

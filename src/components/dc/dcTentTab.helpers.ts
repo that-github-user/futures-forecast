@@ -116,3 +116,57 @@ export function isTentRenderable(t: DCTrade): boolean {
     t.back_exp != null
   );
 }
+
+
+/**
+ * Tone for a phantom's category pill. Kept semantic rather than a raw
+ * color so this module stays theme-free and unit-testable.
+ *
+ *   "warn" — an order was submitted and the book refused it.
+ *   "info" — no order was ever submitted; this is a deliberate config
+ *            state, not a failure.
+ */
+export type PhantomCategoryTone = "warn" | "info";
+
+export interface PhantomCategoryBadge {
+  label: string;
+  tone: PhantomCategoryTone;
+}
+
+/**
+ * Map `phantom_positions.block_category` to its pill label + tone.
+ *
+ * The enum is owned by the daemon — see the CHECK constraint on
+ * `phantom_positions.block_category` in automated-dc-entry
+ * state/store.py, and `_block_category` in engine/entry.py. A value
+ * added there without a case here renders as "UNK", which is
+ * deliberately ugly: an unlabelled pill is the signal that the two
+ * sides drifted.
+ *
+ * Why `entries_disabled` gets its own tone: while automated entry is
+ * switched off it is the only category the daemon emits, so every new
+ * card carries it. Amber-as-warning on a state
+ * that means "working as configured" would make the panel a wall of
+ * warnings — the reliable way to teach an operator to stop reading
+ * them. Indigo matches the Events tab's "should be in, we're not"
+ * treatment for the same underlying pair of outcomes.
+ */
+export function phantomCategoryBadge(
+  category: string | null | undefined,
+): PhantomCategoryBadge {
+  switch (category) {
+    case "ladder_exhausted":
+      return { label: "LADDER", tone: "warn" };
+    case "parked_no_fill":
+      return { label: "PARKED", tone: "warn" };
+    case "entries_disabled":
+      return { label: "AUTO OFF", tone: "info" };
+    case "other":
+      return { label: "OTHER", tone: "warn" };
+    default:
+      // Includes null (legacy rows written before the enum existed).
+      // "MISS" reads too much like a positive-event term in trading
+      // slang, so "UNK" it is.
+      return { label: "UNK", tone: "warn" };
+  }
+}
