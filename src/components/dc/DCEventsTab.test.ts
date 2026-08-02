@@ -3,19 +3,22 @@
  *
  * The IV-source helpers encode the "traffic-light" mapping from backend
  * `iv_source` values to color + tooltip. The outcome helpers map
- * `signal_events.outcome` to colour, label, and summary-chip membership.
- * Frontend has no integration test for the whole tab (DOM-heavy), but
- * these helpers are pure — pinning their contract catches any accidental
- * remap (e.g. someone swapping chain/vix colors during a refactor), and
- * pins the one piece of tab state that is hand-maintained rather than
- * derived from the data (SUMMARY_OUTCOMES).
+ * `signal_events.outcome` to colour and label. Frontend has no integration
+ * test for the whole tab (DOM-heavy), but these helpers are pure — pinning
+ * their contract catches any accidental remap (e.g. someone swapping
+ * chain/vix colors during a refactor).
+ *
+ * The verdict axis moved out to `eventOutcomeClass.ts` and is pinned in
+ * `eventOutcomeClass.test.ts`: `isTradeWorthyEvent` and the hand-maintained
+ * `SUMMARY_OUTCOMES` whitelist are gone, replaced by `classifyOutcome` and a
+ * chip list DERIVED from the data. What remains here is the mechanical axis
+ * — which gate stopped it, and how badly — which is a different question
+ * from "should we be in it" and keeps its own colours.
  */
 
 import { describe, expect, it } from "vitest";
 import type { DCSignalEvent } from "../../api/dcTypes";
 import {
-  SUMMARY_OUTCOMES,
-  isTradeWorthyEvent,
   ivSourceCellStyle,
   ivSourceTitle,
   labelFor,
@@ -53,11 +56,15 @@ describe("blocked_entries_disabled — the 2026-08-01 DC retirement state", () =
   // This outcome became the tab's most common row when automated DC entry
   // was retired. Both helpers special-case it; these pin why.
 
-  it("renders blue, NOT the muted grey used for skipped_signal", () => {
+  it("renders indigo, NOT the muted grey used for skipped_signal", () => {
     // The distinction is the point: skipped_signal = no signal today,
     // blocked_entries_disabled = a GO/GO+ fired and we declined to trade
     // it. Collapsing them into one colour erases the research signal.
-    expect(outcomeColor("blocked_entries_disabled")).toBe("#3b82f6");
+    // Indigo, not the earlier blue: it borrows its should-be-in CLASS
+    // colour so the chip ties to the headline tile it feeds, and blue now
+    // belongs to the active-chip border (a selected chip and this outcome
+    // were previously the same hex).
+    expect(outcomeColor("blocked_entries_disabled")).toBe("#6366f1");
     expect(outcomeColor("blocked_entries_disabled"))
       .not.toBe(outcomeColor("skipped_signal"));
   });
@@ -72,8 +79,21 @@ describe("blocked_entries_disabled — the 2026-08-01 DC retirement state", () =
     }
   });
 
-  it("gets a plain-language label, not the generic blk: transform", () => {
-    expect(labelFor("blocked_entries_disabled")).toBe("not traded");
+  it("keeps blocked_order red even though it shares the should-be-in class", () => {
+    // The two axes answer different questions and both answers are true:
+    // the daemon went to market (class) AND the ladder exhausted with zero
+    // fills (colour). Recolouring it to the class tint would erase the
+    // 87.5% no-fill rate, which is the most actionable fact on the tab.
+    expect(outcomeColor("blocked_order")).toBe("#ef4444");
+    expect(outcomeColor("blocked_order"))
+      .not.toBe(outcomeColor("blocked_entries_disabled"));
+  });
+
+  it("gets a plain-language label naming the cause, not the generic blk: transform", () => {
+    // "entries off" rather than the earlier "not traded": with a SHOULD BE
+    // IN tile now above the chip row, "not traded" answered a question
+    // nobody asked and quietly contradicted it.
+    expect(labelFor("blocked_entries_disabled")).toBe("entries off");
     expect(labelFor("blocked_entries_disabled")).not.toMatch(/blk:/);
   });
 
@@ -89,48 +109,11 @@ describe("blocked_entries_disabled — the 2026-08-01 DC retirement state", () =
     expect(labelFor("blocked_something_new")).toBe("blk:something new");
   });
 
-  it("gets a summary chip", () => {
-    // The original gap. Chips render from a hand-maintained list, and an
-    // absent outcome is invisible in the summary even with rows in the
-    // table — so the tab would have under-reported its now-most-common
-    // event. Colour and label alone do not fix that; membership does.
-    expect(SUMMARY_OUTCOMES).toContain("blocked_entries_disabled");
-  });
-
-  it("counts toward the SHOULD BE IN verdict", () => {
-    // The operator's requirement: one binary, "should we be in this
-    // position right now or not". This outcome is the retired-product
-    // half of the yes side.
-    expect(isTradeWorthyEvent({ outcome: "blocked_entries_disabled" })).toBe(true);
-    expect(isTradeWorthyEvent({ outcome: "entered" })).toBe(true);
-  });
-
-  it("keeps every not-would-have-traded outcome on the NO side", () => {
-    // blocked_order is the subtle one: the daemon DID attempt, so the card
-    // lifecycle treats it as fired — but the broker never crossed, so we
-    // are not in the position. The verdict must not claim we are.
-    for (const outcome of ["blocked_order", "skipped_signal", "blocked_sl",
-                           "blocked_vix", "blocked_margin", "blocked_direction",
-                           "blocked_duplicate", "blocked_risk"]) {
-      expect(isTradeWorthyEvent({ outcome })).toBe(false);
-    }
-  });
-
-  it("blocked_direction also gets a chip", () => {
-    // Found by review: the daemon emits this for credit-direction
-    // strategies (engine/entry.py gate 0) and it was ALSO missing from
-    // the list — the same defect, left behind while the list was being
-    // extracted to prevent exactly it.
-    expect(SUMMARY_OUTCOMES).toContain("blocked_direction");
-  });
-
-  it("is summarised ahead of the failure outcomes", () => {
-    // Display order: it belongs next to `entered` as a headline count,
-    // not buried among the block reasons.
-    const idx = SUMMARY_OUTCOMES.indexOf("blocked_entries_disabled");
-    expect(idx).toBeGreaterThanOrEqual(0);
-    expect(idx).toBeLessThan(SUMMARY_OUTCOMES.indexOf("blocked_sl"));
-  });
+  // Chip MEMBERSHIP and the SHOULD BE IN verdict moved to
+  // eventOutcomeClass.test.ts. Membership is no longer a property of this
+  // file at all: the chip row derives from the outcomes present in the
+  // data, so an outcome can be mis-ordered but can never go chip-less —
+  // which is the defect the old whitelist kept reintroducing.
 });
 
 describe("ivSourceTitle", () => {
