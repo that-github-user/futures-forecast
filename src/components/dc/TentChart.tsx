@@ -11,9 +11,11 @@
  *   - Pole markers (the two short strikes — the "tent pegs")
  *   - Horizontal entry_debit reference line (P&L=0)
  *
- * Phantom positions get a dashed container border + an
- * "AUTOMATION MISSED" pill in the header. Real positions render
- * unadorned. Both pull from the same tent endpoint shape.
+ * Phantom positions get a dashed container border plus a pill in the
+ * header naming WHY no position was held — "AUTOMATION MISSED" for a
+ * broker no-fill, "AUTO OFF" when automated entry was switched off (see
+ * TentChartModal). Real positions render unadorned. Both pull from the
+ * same tent endpoint shape.
  *
  * The container's parent decides sizing; TentChart fills width and
  * uses a fixed `height` prop (default 340) so the modal can give it

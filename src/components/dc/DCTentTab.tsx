@@ -390,7 +390,16 @@ function StatusPill({ label, color }: { label: string; color: string }) {
  *     there are no wins or losses, so the daemon's D'Alembert multiplier
  *     is frozen rather than live; recording it would dress a stale
  *     constant up as a sizing decision. Scale by whatever rule you want
- *     to test; per-contract economics are linear.
+ *     to test; per-contract economics are linear. Note this scales the
+ *     dollar axis only — the tent SHAPE is per-contract either way, so
+ *     unit sizing is not what makes an AUTO OFF curve optimistic. The
+ *     untested mid entry in (1) is.
+ *  3. It is recorded once per would-be HOLDING PERIOD, not once per
+ *     evaluation slot. Same-day slots collapse into the opener; across
+ *     days they collapse for as long as the strategy's configured
+ *     max_dit says the position would still be open. A strategy with no
+ *     max_dit gets one row per day. So card COUNT is not a count of
+ *     signals — check the Events tab for that.
  *
  * Each card opens the through-expiry phantom-tent modal (live + frozen
  * IV overlays, same as a real position).
@@ -453,8 +462,10 @@ function MissedEntriesPanel({
         never crossed (LADDER / PARKED), or automated entry was switched
         off so no order was sent (AUTO OFF). Additional plays to study;
         the through-expiry tent renders the same as a real entry. AUTO
-        OFF rows are unit sized and priced at mid, so they read a touch
-        optimistic. Click a row to analyze.
+        OFF rows enter at an untested mid, so they read a touch
+        optimistic; they are also unit sized, and recorded once per
+        would-be holding period rather than once per slot. Click a row
+        to analyze.
       </div>
       {/* Loading vs empty: until the first slow-tier poll settles,
           show a loading placeholder rather than "No missed entries" —

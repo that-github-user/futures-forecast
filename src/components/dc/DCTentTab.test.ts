@@ -16,7 +16,6 @@ import {
   filterTradesByDays,
   isTentRenderable,
   phantomCategoryBadge,
-  phantomDebitWasTested,
   tentLifecycle,
 } from "./dcTentTab.helpers";
 
@@ -232,20 +231,5 @@ describe("phantomCategoryBadge", () => {
     for (const category of daemonEnum) {
       expect(phantomCategoryBadge(category).label).not.toBe("UNK");
     }
-  });
-});
-
-
-describe("phantomDebitWasTested", () => {
-  it("is false only for entries_disabled", () => {
-    // intended_debit on an entries_disabled row is the mid the ladder
-    // would have opened at — never submitted, so never proven
-    // reachable. The submitted categories exist precisely because mid
-    // is not always reachable, which is the counter-evidence.
-    expect(phantomDebitWasTested("entries_disabled")).toBe(false);
-    expect(phantomDebitWasTested("ladder_exhausted")).toBe(true);
-    expect(phantomDebitWasTested("parked_no_fill")).toBe(true);
-    expect(phantomDebitWasTested("other")).toBe(true);
-    expect(phantomDebitWasTested(null)).toBe(true);
   });
 });

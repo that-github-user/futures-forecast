@@ -114,13 +114,15 @@ export interface DCTrade {
 }
 
 /**
- * A would-have-entered trade. Every signal-side gate cleared but the
- * broker-fill phase failed (`blocked_order` — typically the entry
- * reprice ladder exhausted with zero fills, or parked-at-ask without
- * a fill). The daemon never owned contracts, but the play is real and
- * appears in the Tent tab's "missed entries" section so operators can
- * track the position they SHOULD have been holding even when
- * automation couldn't fill.
+ * A would-have-entered trade: every signal-side gate cleared but the
+ * daemon never ended up holding the position. Two ways that happens —
+ * the order went to market and the broker never crossed (`blocked_order`:
+ * the reprice ladder exhausted, or parked-at-ask without a fill), or
+ * automated entry is switched off so no order was ever sent
+ * (`blocked_entries_disabled`). The daemon owned no contracts either
+ * way, but the play is real and appears in the Tent tab's "missed
+ * entries" section so operators can track the position they SHOULD have
+ * been holding.
  *
  * `position_uid` always starts with `phantom_` — fan out to the
  * existing `dcApi.phantomTentBundle(uid)` endpoint to render the
@@ -134,11 +136,23 @@ export interface DCTrade {
  *                           off, the only category the daemon emits)
  *   - "other"             — future broker-reject / mid-fill paths
  *
- * The first two and the third are NOT comparable. On a submitted order
- * `intended_debit` is a price the book demonstrably refused; on an
- * "entries_disabled" row it is the untested mid the ladder would have
- * started from, so phantom P&L computed off it runs optimistic. Group
- * by block_category before comparing phantom results to real trades.
+ * The submitted categories and "entries_disabled" are NOT comparable.
+ * On a submitted order `intended_debit` is a price the book demonstrably
+ * refused; on an "entries_disabled" row it is the untested mid the
+ * ladder would have started from, so phantom P&L computed off it runs
+ * optimistic. Group by block_category before comparing phantom results
+ * to real trades.
+ *
+ * Two more things are true only of "entries_disabled" rows:
+ *   - `intended_quantity` is always 1. With no fills there are no wins
+ *     or losses, so the daemon's D'Alembert multiplier is frozen rather
+ *     than live; recording it would pass a stale constant off as a
+ *     sizing decision. Scale linearly for any sizing rule you want.
+ *   - They are written once per would-be HOLDING PERIOD, not once per
+ *     evaluation: same-day slots always collapse into the opener, and
+ *     across days they collapse for as long as the strategy's
+ *     configured max_dit says the position would still be open. A
+ *     strategy with no max_dit records one row per day.
  */
 export interface DCPhantomPosition {
   id: number;

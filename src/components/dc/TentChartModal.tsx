@@ -16,8 +16,11 @@
  *     Intrinsic") tints the curve label to match the API response.
  *   - warnings array renders as an amber banner above the chart.
  *     Operator MUST see degradation reasons explicitly.
- *   - phantom positions get a dashed border + "AUTOMATION MISSED"
- *     pill so they don't blend with real positions.
+ *   - phantom positions get a dashed border plus a category pill so
+ *     they don't blend with real positions: "AUTOMATION MISSED" when an
+ *     order went out and the book refused it, "AUTO OFF" when automated
+ *     entry was switched off and none was sent, "PHANTOM" when the API
+ *     did not say which.
  */
 
 import { useEffect, useState } from "react";
@@ -296,8 +299,10 @@ export function TentChartModal({ target, title, onClose }: TentChartModalProps) 
               : phantomCategory === "entries_disabled"
                 ? "Automated entry is switched off, so no order was "
                   + "sent — this is the configured state, not a failure. "
-                  + "The row is unit sized and priced at mid, so its "
-                  + "curve reads a touch optimistic against a real fill. "
+                  + "Entry is the untested mid, never submitted, so the "
+                  + "curve sits a touch better than a real fill would "
+                  + "have. (The row is also unit sized, which scales the "
+                  + "dollar axis but not the shape.) "
                 : ""}
             Followers got the GO signal manually; this row
             preserves the would-have-entered trade so the tent

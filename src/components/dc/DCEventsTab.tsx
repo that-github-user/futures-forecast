@@ -62,10 +62,12 @@ function todayET(): string {
 }
 
 /**
- * Row budget per fetch. A single session tops out around a dozen events;
- * "All history" is 321 rows as of 2026-07-31 and grows ~3/day, so 500 —
- * the hook's old hardcoded value — would have quietly become "the newest
- * 500" inside two months while the chip still said "All history". The API
+ * Row budget per fetch. A single session tops out around a dozen events,
+ * and "All history" grows steadily, so 500 — the hook's old hardcoded
+ * value — would have quietly become "the newest 500" within months while
+ * the chip still said "All history". (Stated without the live row count
+ * and date that used to sit here: this repo is public and the daemon's
+ * is not.) The API
  * caps at 5000 (api/app.py: `le=5000`); 2000 buys years of headroom and
  * the truncation note below catches the day it doesn't.
  */

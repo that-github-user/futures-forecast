@@ -41,11 +41,11 @@ interface DCData {
   summary: DCSummary | null;
   positions: DCPosition[];
   trades: DCTrade[];
-  // Would-have-entered positions — the daemon's blocked_order rows.
-  // Surfaced in the Tent tab's "missed entries" section so operators
-  // see plays they SHOULD have been holding even when automation
-  // couldn't fill. Polled on the slow tier (changes only on blocked
-  // entries — a few per day at most).
+  // Would-have-entered positions — the daemon's phantom rows, covering
+  // both a broker no-fill and an entries-switched-off play. Surfaced in
+  // the Tent tab's "missed entries" section so operators see plays they
+  // SHOULD have been holding. Polled on the slow tier (a few per day at
+  // most).
   phantoms: DCPhantomPosition[];
   // True after the first slow-tier poll completes. Distinguishes
   // "empty list because no phantoms exist" from "empty list because

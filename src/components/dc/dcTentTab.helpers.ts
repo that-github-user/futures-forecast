@@ -170,19 +170,3 @@ export function phantomCategoryBadge(
       return { label: "UNK", tone: "warn" };
   }
 }
-
-/**
- * Whether a phantom's `intended_debit` was ever tested against the
- * book. False for `entries_disabled`: nothing was submitted, so the
- * debit is the mid the ladder would have OPENED at, rather than a
- * price the book was ever asked to honour. The submitted categories
- * exist precisely because mid is not always reachable, so an untested
- * debit reads optimistic by roughly the concession a real fill would
- * have had to make. Anything comparing phantom P&L against realized
- * trades must split on this.
- */
-export function phantomDebitWasTested(
-  category: string | null | undefined,
-): boolean {
-  return category !== "entries_disabled";
-}

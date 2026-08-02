@@ -202,11 +202,21 @@ function attemptedEntryToday(todayOutcome: string | null): boolean {
  *  card stays highlighted, and relabel the chip so nothing claims an
  *  order went out (see chipPresentation.ts).
  *
- *  HONEST LIMIT, do not overstate this in UI copy: the master switch sits
- *  upstream of the S/L and margin gates, so this outcome proves the signal
- *  fired and cleared the direction/risk/duplicate checks — NOT that the
- *  trade would have been entered. The S/L gate is never evaluated on these
- *  days. "Would have traded" is unknowable; "fired, not traded" is true.
+ *  WHAT THIS OUTCOME ACTUALLY PROVES — this comment previously had it
+ *  backwards, and told UI authors to understate as a result. The master
+ *  switch sits DOWNSTREAM of the S/L and margin gates, not upstream:
+ *  `attempt_entry` runs prechecks → connect → strike resolve → deconflict →
+ *  leg qualify → `_snapshot_and_gate` (S/L, VIX) → `_size_and_margin` →
+ *  `_persist_and_submit`, and the switch is inside that last one. So
+ *  reaching `blocked_entries_disabled` means EVERY evaluation gate cleared,
+ *  S/L and margin included — the daemon would have entered, and the only
+ *  thing that stopped it was the switch.
+ *
+ *  That is exactly why the daemon now writes a phantom position for this
+ *  outcome (engine/entry.py::PHANTOM_WORTHY_OUTCOMES): it is a real play
+ *  with a through-expiry curve, not merely "the signal fired". UI copy may
+ *  say "would have traded" here. What it must NOT claim is that an order
+ *  went out — none did.
  */
 const RETIRED_NOT_TRADED = "blocked_entries_disabled";
 
