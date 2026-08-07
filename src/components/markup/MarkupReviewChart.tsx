@@ -44,10 +44,24 @@ interface Props {
   bars: TerminalIntradayBar[];
   /** Already-filtered alerts; markers + tooltip derive from these. */
   alerts: MarkupReviewAlert[];
-  /** Current forming 1-min candle from the live SSE spot stream (today only).
-   *  Applied via series.update() for a smooth live bar without a rebuild;
-   *  null for past sessions / when no live data. */
-  liveBar?: LiveCandle | null;
+  /** The live SSE spot window's 1-min candles (today only), ASCENDING by time —
+   *  the newest is the forming bar, the ones before it are the window's settled
+   *  minutes. Normally applied via series.update() for a smooth live tail
+   *  without a rebuild; empty for past sessions / when there's no live data.
+   *  Ascending is a contract, not a convenience: it is what lets a late-covered
+   *  minute be drawn BEFORE the newer one and keeps the rebuild path (see the
+   *  live effect) to the rare out-of-order repair. */
+  liveBars?: LiveCandle[];
+  /** Identifies the SESSION on screen (`date|tf`). fitContent() runs only when
+   *  this changes — see the bars effect — and the retained live candles belong
+   *  to it. */
+  fitKey: string;
+  /** Bumped by the operator's explicit ↻. The manual refresh no longer flashes
+   *  the loading state (that is what stops the 60s background poll blanking the
+   *  pane), so it no longer remounts the chart either — and the remount was what
+   *  used to re-fit. Without this there is no way back to a fitted view once the
+   *  session has grown under a zoom set early in the day. */
+  refitToken?: number;
 }
 
 const fmt = (v: number | null, d = 1): string =>
@@ -132,16 +146,41 @@ function tooltipHtml(hits: MarkupReviewAlert[]): string {
   return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""} ${chips}</div>${rows}`;
 }
 
-export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
+export function MarkupReviewChart({
+  bars,
+  alerts,
+  liveBars,
+  fitKey,
+  refitToken = 0,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const indexRef = useRef<Map<number, MarkupReviewAlert[]>>(new Map());
-  // Newest bar time on the series (seed or live) — series.update() must never
-  // be called with an older time, so live ticks below this are dropped.
+  // Newest bar time on the series (fetched or live) — series.update() cannot
+  // reach behind it, so a live candle below this needs a rebuild.
   const lastBarTimeRef = useRef<number>(-Infinity);
+  // The last setData payload from `bars` and its newest time. An IBKR bar always
+  // outranks the live candle for the same minute: the live one is bucketed from
+  // client-visible spot samples only, so its open is the first sample AFTER the
+  // minute started and its high/low miss every excursion between samples — on a
+  // pane whose job is reading MFE/MAE against bar range, that is the wrong high.
+  const fetchedRef = useRef<CandlestickData[]>([]);
+  const fetchedTailRef = useRef<number>(-Infinity);
+  // Live candles drawn past the fetched tail, keyed by minute. Retained because
+  // today's session is re-fetched every 60s and setData() would otherwise wipe
+  // every minute the IBKR bars have not reached yet — and a wiped minute that has
+  // since aged into the spot window's (suppressed) partial-oldest bucket can
+  // never be re-offered, so the wipe would blink a candle out until IBKR catches
+  // up.
+  const liveDrawnRef = useRef<Map<number, CandlestickData>>(new Map());
+  // The session the retained live candles belong to.
+  const sessionKeyRef = useRef<string | null>(null);
+  // The fit target the time scale was last fitted for — a background refetch of
+  // the SAME session must not re-fit (see the bars effect).
+  const fittedKeyRef = useRef<string | null>(null);
   // OHLC legend (top-left): shows the hovered bar, or the latest bar when not
   // hovering (TradingView-style).
   const legendRef = useRef<HTMLDivElement>(null);
@@ -155,7 +194,7 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     const legend = legendRef.current;
     if (!legend) return;
     // Palette colors are set in the create-chart effect, which runs before the
-    // bars/liveBar effects (effects fire in declaration order). Guard anyway so
+    // bars/liveBars effects (effects fire in declaration order). Guard anyway so
     // a future reorder can't paint the legend with empty inline colors.
     if (!colorsRef.current.up || !colorsRef.current.down) return;
     const bar = lastBarRef.current;
@@ -168,6 +207,38 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
         )
       : "";
   }, []);
+
+  /** The full series content: the fetched bars plus the live minutes past their
+   *  tail, ascending. Rebuilding with this is the ONLY way to place a candle
+   *  BEHIND the newest one already drawn — series.update() cannot reach back,
+   *  and that one-way door is what made the missing 10:47 candle permanent. It
+   *  is affordable now that fitContent() is gated on the session: a rebuild no
+   *  longer costs the operator's pan/zoom, which was the reason update() was the
+   *  only writer. */
+  const composeSeries = useCallback((): CandlestickData[] => {
+    const live = [...liveDrawnRef.current.values()].sort(
+      (a, b) => (a.time as number) - (b.time as number),
+    );
+    return [...fetchedRef.current, ...live];
+  }, []);
+
+  /** Stamp the newest bar on the series — the monotonic-guard reference and the
+   *  legend source. Every retained live candle sits past the fetched tail by
+   *  construction, so the newest of those IS the series tail whenever any
+   *  survive. */
+  const syncTail = useCallback(() => {
+    let tail: CandlestickData | null = null;
+    for (const c of liveDrawnRef.current.values()) {
+      if (!tail || (c.time as number) > (tail.time as number)) tail = c;
+    }
+    if (!tail) {
+      const fetched = fetchedRef.current;
+      tail = fetched.length > 0 ? fetched[fetched.length - 1] : null;
+    }
+    lastBarTimeRef.current = tail ? (tail.time as number) : -Infinity;
+    lastBarRef.current = tail;
+    if (!hoveringRef.current) paintLastBar();
+  }, [paintLastBar]);
 
   // Create the chart once.
   useEffect(() => {
@@ -205,6 +276,11 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     chartRef.current = chart;
     seriesRef.current = series;
     markersRef.current = createSeriesMarkers(series, []);
+    // The fitted-target ref describes THIS chart instance, not the component: a
+    // recreated chart (StrictMode double-invokes every effect in dev) starts
+    // with an unfitted time scale, and a ref left stamped by the discarded
+    // instance would suppress the fit on the one actually on screen.
+    fittedKeyRef.current = null;
 
     const onMove = (param: MouseEventParams<Time>) => {
       // OHLC legend: the hovered bar, or revert to the latest when off-data.
@@ -259,11 +335,21 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
     // exhaustive-deps; the chart is still created exactly once.
   }, [paintLastBar]);
 
-  // Bars → setData + fit.
+  // Bars → setData, and fit ONLY on a session change or an explicit ↻. setData
+  // still runs on every `bars` change — that is how the authoritative IBKR bar
+  // replaces the live approximation — but the session is re-fetched every 60s
+  // while viewing today, and fitting on each of those would yank the operator's
+  // pan/zoom back to fit once a minute.
   useEffect(() => {
     const series = seriesRef.current;
     const chart = chartRef.current;
     if (!series || !chart) return;
+    if (sessionKeyRef.current !== fitKey) {
+      // Retained live candles are stamped in TODAY's clock; another session must
+      // not inherit them.
+      sessionKeyRef.current = fitKey;
+      liveDrawnRef.current.clear();
+    }
     const data: CandlestickData[] = bars.map((b) => ({
       time: isoToUtc(b.time),
       open: b.open,
@@ -271,34 +357,81 @@ export function MarkupReviewChart({ bars, alerts, liveBar }: Props) {
       low: b.low,
       close: b.close,
     }));
-    series.setData(data);
-    lastBarTimeRef.current =
+    fetchedRef.current = data;
+    fetchedTailRef.current =
       data.length > 0 ? (data[data.length - 1].time as number) : -Infinity;
-    lastBarRef.current = data.length > 0 ? data[data.length - 1] : null;
-    if (!hoveringRef.current) paintLastBar();
-    chart.timeScale().fitContent();
-  }, [bars, paintLastBar]);
+    // Retire the live approximation up to the fetched TAIL. The boundary is the
+    // tail, not per-minute membership: composeSeries concatenates `[...fetched,
+    // ...live]`, which is only ascending while every retained live minute sits
+    // past the tail. So a hole INSIDE the fetched range — a gappy IBKR payload,
+    // as opposed to the SSE gap this file exists to heal — retires the live
+    // candle that could have filled it and waits for a later payload to carry
+    // the bar. Filling it here would mean a real merge-sort with dedup, and
+    // setData's ascending assert is stripped from the production bundle, so a
+    // mistake there corrupts the series silently.
+    for (const t of liveDrawnRef.current.keys()) {
+      if (t <= fetchedTailRef.current) liveDrawnRef.current.delete(t);
+    }
+    series.setData(composeSeries());
+    syncTail();
+    // Fitting an EMPTY series is a no-op, so stamping the target there would
+    // record the session as fitted and skip the fit when the bars actually
+    // arrive — the pane renders this chart on alerts alone when the bars are
+    // stale, so that is a reachable first payload.
+    const fitTarget = `${fitKey}#${refitToken}`;
+    if (data.length > 0 && fittedKeyRef.current !== fitTarget) {
+      fittedKeyRef.current = fitTarget;
+      chart.timeScale().fitContent();
+    }
+  }, [bars, fitKey, refitToken, composeSeries, syncTail]);
 
-  // Live forming candle → incremental series.update() (no rebuild, no fit, so
-  // the operator's pan/zoom is preserved). Monotonic guard: never update a bar
-  // older than the newest on the series. As the minute rolls, liveBar's later
-  // time appends a fresh bar; the prior one persists.
+  // Live window candles → incremental series.update(), or a rebuild when one
+  // reaches BACK behind the newest drawn bar. Walking the window ASCENDING heals
+  // a hole in the same pass — the late-covered minute is applied before the
+  // newer one, so update() takes both. The rebuild covers the case that ordering
+  // can't: a `spot` event advancing the drawn minute past the hole BEFORE the
+  // `state` event carrying the repair arrives (the SSE queue drops states first —
+  // spots are ~10x more frequent), which would otherwise leave the hole to the
+  // 60s poll.
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series || !liveBar) return;
-    if (liveBar.time < lastBarTimeRef.current) return;
-    const candle: CandlestickData = {
-      time: liveBar.time as UTCTimestamp,
-      open: liveBar.open,
-      high: liveBar.high,
-      low: liveBar.low,
-      close: liveBar.close,
-    };
-    series.update(candle);
-    lastBarTimeRef.current = liveBar.time;
-    lastBarRef.current = candle;
-    if (!hoveringRef.current) paintLastBar(); // keep the legend on the live bar
-  }, [liveBar, paintLastBar]);
+    if (!series || !liveBars?.length) return;
+    let changed = false;
+    let rebuild = false;
+    for (const lb of liveBars) {
+      // An IBKR bar already covers this minute — never overwrite truth with the
+      // spot approximation (see fetchedTailRef). This is NOT the clamp
+      // liveSessionCandles rejects: that one referenced the last DRAWN bar,
+      // which only advances when a bar is drawn and so could freeze the overlay
+      // permanently. This reference advances from the API alone, and a hole is
+      // by definition PAST it, so healing is unaffected.
+      if (lb.time <= fetchedTailRef.current) continue;
+      const candle: CandlestickData = {
+        time: lb.time as UTCTimestamp,
+        open: lb.open,
+        high: lb.high,
+        low: lb.low,
+        close: lb.close,
+      };
+      const drawn = liveDrawnRef.current.get(lb.time);
+      if (
+        drawn &&
+        drawn.open === candle.open &&
+        drawn.high === candle.high &&
+        drawn.low === candle.low &&
+        drawn.close === candle.close
+      ) {
+        continue;
+      }
+      liveDrawnRef.current.set(lb.time, candle);
+      changed = true;
+      if (lb.time < lastBarTimeRef.current) rebuild = true;
+      else series.update(candle);
+    }
+    if (!changed) return;
+    if (rebuild) series.setData(composeSeries());
+    syncTail(); // keep the legend on the live bar
+  }, [liveBars, composeSeries, syncTail]);
 
   // Alerts → markers + crosshair index.
   useEffect(() => {
