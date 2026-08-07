@@ -6,6 +6,7 @@
 
 import type { UTCTimestamp } from "lightweight-charts";
 import type { MarkupReviewAlert } from "../../api/terminalTypes";
+import { floorEpochSec, type Timeframe } from "../../lib/tfBuckets";
 
 // ── ET session-date helpers ───────────────────────────────────────────
 
@@ -251,57 +252,164 @@ export interface ReviewMarker {
   text: string;
 }
 
-function pushGroup(
-  m: Map<string, MarkupReviewAlert[]>,
-  key: string,
-  a: MarkupReviewAlert,
-): void {
-  const arr = m.get(key);
-  if (arr) arr.push(a);
-  else m.set(key, [a]);
+// GROUPING IS NOT PLACEMENT. The spec defines an event as a ONE-MINUTE
+// same-direction cluster and every PF number backing the constants above was fit
+// at that grain, so the grain must not follow the display timeframe: scoring on a
+// 5-minute grouping merges up to five events into one, inflates the breadth badge
+// on 39% of alerts, changes the displayed tier on 19% of them, and — the reason
+// this is a safety property and not a cosmetic one — dissolves the lone-spike
+// trap, which re-validation puts as the worst-performing bucket measured. Every
+// transition it produces FLATTERS. So alerts are clustered on the 1-minute floor
+// of `alert_ts` (tf-invariant, second-resolution, carried on every alert) and the
+// resulting marker is merely DRAWN on the display grid.
+//
+// The server's `bar_time` is deliberately not used as the grouping key: it is
+// pre-floored to the requested `tf`, which is exactly the coupling this splits.
+
+/** Epoch seconds of an alert's true fire instant. NaN when `alert_ts` won't
+ *  parse — every consumer below DROPS those rather than keying on the NaN.
+ *  Grouping now depends on this parse where the pane once only formatted it for
+ *  a tooltip line, so the blast radius of a malformed instant grew from one row
+ *  to every marker on the chart: a NaN key collapses every such alert into ONE
+ *  event whose count becomes its `cluster_size`, feeding a fabricated breadth
+ *  into the conviction score and the lone-spike trap test, and placing a marker
+ *  at an unplottable time. */
+const alertSec = (a: MarkupReviewAlert): number =>
+  Math.floor(Date.parse(a.alert_ts) / 1000);
+
+/** The spec's EVENT key — `alert_ts` floored to the minute (epoch seconds). */
+export const alertEventSec = (a: MarkupReviewAlert): number =>
+  floorEpochSec(alertSec(a), "1m");
+
+/** One same-direction, same-minute event: the spec's unit of conviction. */
+export interface AlertCluster {
+  /** `alert_ts` floored to the minute (epoch seconds). */
+  eventSec: number;
+  direction: "up" | "down";
+  /** The spec's `cluster_size` / ladder-breadth channel. */
+  clusterSize: number;
+  maxAskJump: number;
+  conviction: Conviction;
 }
 
-/** One marker per (bar, direction) cluster, styled by CAUSAL conviction (never by
- *  outcome). Breadth is the count of the passed-in cluster; the pane feeds the
+/** Split alerts into the spec's 1-minute same-direction events, ascending by
+ *  event minute then direction (a total order — every consumer that renders more
+ *  than one cluster needs a stable one).
+ *
+ *  Breadth is the count of the passed-in cluster; the pane feeds the
  *  status-inclusive set so a pending/lost strike still counts toward the at-fire
- *  ladder (explicit σ/dist view filters still scope what's shown). */
-export function buildMarkers(alerts: MarkupReviewAlert[]): ReviewMarker[] {
+ *  ladder (explicit σ/dist view filters still scope what's shown).
+ *
+ *  Time-of-day is read off `alert_ts` rather than the event key: flooring to a
+ *  minute cannot change an ET hour:minute, so the two are the same bucket, and
+ *  reading the raw instant keeps one fewer derived value in the scoring path. */
+export function clusterAlerts(alerts: MarkupReviewAlert[]): AlertCluster[] {
   const groups = new Map<string, MarkupReviewAlert[]>();
-  for (const a of alerts) pushGroup(groups, `${a.bar_time}|${a.direction}`, a);
-
-  const out: ReviewMarker[] = [];
+  for (const a of alerts) {
+    if (!Number.isFinite(alertSec(a))) continue;
+    const key = `${alertEventSec(a)}|${a.direction}`;
+    const arr = groups.get(key);
+    if (arr) arr.push(a);
+    else groups.set(key, [a]);
+  }
+  const out: AlertCluster[] = [];
   for (const group of groups.values()) {
-    const up = group[0].direction === "up";
     const clusterSize = group.length;
     const maxAskJump = group.reduce((m, g) => Math.max(m, g.ask_jump ?? 0), 0);
-    const atmOnly = group.every((g) => g.dist_from_atm === 0);
-    const c = conviction({
+    out.push({
+      eventSec: alertEventSec(group[0]),
+      direction: group[0].direction,
       clusterSize,
       maxAskJump,
-      minSinceOpen: minSinceOpenET(group[0].bar_time),
-      atmOnly,
+      conviction: conviction({
+        clusterSize,
+        maxAskJump,
+        minSinceOpen: minSinceOpenET(group[0].alert_ts),
+        atmOnly: group.every((g) => g.dist_from_atm === 0),
+      }),
     });
+  }
+  return out.sort(
+    (a, b) =>
+      a.eventSec - b.eventSec || a.direction.localeCompare(b.direction),
+  );
+}
+
+/** Which of two events sharing one display bar and one direction keeps the
+ *  marker. A 5-minute bar can carry five, and lightweight-charts draws one glyph
+ *  per (time, position) legibly — so one wins outright rather than being summed:
+ *  `×N` IS the spec's cluster_size channel, and a sum would be a different
+ *  quantity wearing the same encoding, re-introducing the inflated breadth this
+ *  file's grouping split exists to prevent.
+ *
+ *  CAUTION outranks everything. It is a trap override, not a low score — the
+ *  whole hazard of a coarser display grid is that it only ever FLATTERS, so the
+ *  one marker that survives collision must be the warning if there is one.
+ *  Below that: higher conviction score, then breadth, then ask magnitude, then
+ *  the earliest event. That last key makes the comparison TOTAL — two events on
+ *  one display bar in one direction have distinct minutes by construction — so
+ *  the winner is pinned even when every scored channel ties, which is common:
+ *  two breadth-2 events in one 5-minute bucket agree on all three. (Independence
+ *  from input order comes from clusterAlerts' sort, not from here.) */
+function outranks(a: AlertCluster, b: AlertCluster): boolean {
+  const aTrap = a.conviction.tier === "caution";
+  const bTrap = b.conviction.tier === "caution";
+  if (aTrap !== bTrap) return aTrap;
+  if (a.conviction.score !== b.conviction.score)
+    return a.conviction.score > b.conviction.score;
+  if (a.clusterSize !== b.clusterSize) return a.clusterSize > b.clusterSize;
+  if (a.maxAskJump !== b.maxAskJump) return a.maxAskJump > b.maxAskJump;
+  return a.eventSec < b.eventSec;
+}
+
+/** One marker per (display bar, direction), styled by the CAUSAL conviction of
+ *  the 1-minute event it represents (never by outcome). */
+export function buildMarkers(
+  alerts: MarkupReviewAlert[],
+  tf: Timeframe = "1m",
+): ReviewMarker[] {
+  const winners = new Map<string, AlertCluster>();
+  for (const c of clusterAlerts(alerts)) {
+    const key = `${floorEpochSec(c.eventSec, tf)}|${c.direction}`;
+    const held = winners.get(key);
+    if (!held || outranks(c, held)) winners.set(key, c);
+  }
+
+  const out: ReviewMarker[] = [];
+  for (const c of winners.values()) {
+    const up = c.direction === "up";
     out.push({
-      time: isoToUtc(group[0].bar_time),
+      time: floorEpochSec(c.eventSec, tf) as UTCTimestamp,
       position: up ? "belowBar" : "aboveBar",
-      color: markerColor(c, up),
-      shape: c.tier === "caution" ? "circle" : up ? "arrowUp" : "arrowDown",
-      size: askSize(maxAskJump),
-      text: clusterSize > 1 ? `×${clusterSize}` : "",
+      color: markerColor(c.conviction, up),
+      shape:
+        c.conviction.tier === "caution" ? "circle" : up ? "arrowUp" : "arrowDown",
+      size: askSize(c.maxAskJump),
+      text: c.clusterSize > 1 ? `×${c.clusterSize}` : "",
     });
   }
   // lightweight-charts requires markers ascending (and effectively unique) by time.
   return out.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-/** Index alerts by floored bar-time epoch (seconds) so a crosshair at a bar
- *  returns the whole cluster for the tooltip. */
+/** Index alerts by the DISPLAY bar they are drawn inside, so a crosshair returns
+ *  every alert under the hovered candle — at 5m that is up to five minutes'
+ *  worth, and the tooltip prints each one's true `alert_ts` second, which is the
+ *  only place the sub-bar timing survives.
+ *
+ *  Keyed off `alert_ts`, not the server's `bar_time`: a live alert is floored
+ *  client-side to the minute while a fetched one carries the server's `tf`
+ *  flooring, so the same event arriving down both paths would otherwise index
+ *  under two different keys and split its own cluster. */
 export function indexByBarTime(
   alerts: MarkupReviewAlert[],
+  tf: Timeframe = "1m",
 ): Map<number, MarkupReviewAlert[]> {
   const m = new Map<number, MarkupReviewAlert[]>();
   for (const a of alerts) {
-    const t = isoToUtc(a.bar_time) as number;
+    const sec = alertSec(a);
+    if (!Number.isFinite(sec)) continue;
+    const t = floorEpochSec(sec, tf);
     const arr = m.get(t);
     if (arr) arr.push(a);
     else m.set(t, [a]);

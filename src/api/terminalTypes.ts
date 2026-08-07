@@ -392,8 +392,12 @@ export interface MarkupState {
 
 /** One markup alert + its forward outcome, for the Markup Review pane
  *  (`/terminal/v1/markup/review`). Outputs only — no detector thresholds.
- *  `bar_time` is `alert_ts` floored to the timeframe (UTC) for marker
- *  placement; `alert_ts` keeps the true second-resolution ET instant.
+ *  `bar_time` is the server's floor of `alert_ts` to the requested `tf` (UTC),
+ *  retained for wire compatibility and NOT the placement or grouping key: the
+ *  client derives BOTH from `alert_ts` (see markupReviewHelpers + lib/tfBuckets)
+ *  because a tf-dependent grouping merges up to five one-minute events into one,
+ *  inflating the ×N breadth badge and dissolving the lone-spike CAUTION trap.
+ *  `alert_ts` keeps the true second-resolution ET instant.
  *  Outcome fields (mfe/mae/realized_move/…) are null for `pending` alerts
  *  (still inside the excursion window) and `lost` alerts (a recorder restart
  *  dropped their tracking). */

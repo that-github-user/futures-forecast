@@ -218,6 +218,12 @@
   pointer-events: none;
   min-width: 200px;
   max-width: 248px;
+  /* A 5-minute bar can hold twenty-odd alerts. tooltipHtml caps the ROW list so
+     the truncation is visible; this bounds what the header's conviction chips
+     can still wrap to. The tooltip cannot be scrolled (pointer-events: none in a
+     pane that does not scroll), so overflow has to be clipped, not offered. */
+  max-height: calc(100% - 40px);
+  overflow: hidden;
   background: #11151ceb;
   border: 1px solid #30363d;
   border-radius: 6px;
@@ -225,6 +231,11 @@
   font-size: 11px;
   line-height: 1.5;
   box-shadow: 0 4px 16px #0008;
+}
+.mr-tip__more {
+  color: #8b949e;
+  padding-top: 4px;
+  border-top: 1px solid #20262e;
 }
 .mr-tip__hd {
   color: #8b949e;

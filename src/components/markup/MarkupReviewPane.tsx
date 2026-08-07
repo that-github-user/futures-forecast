@@ -1,14 +1,16 @@
 /**
  * MarkupReviewPane — post-close review of a session's markup alerts on an SPX
- * 1-min candle chart. The discrimination instrument: filter/highlight alerts by
+ * candle chart. The discrimination instrument: filter/highlight alerts by
  * direction, σ band, distance-from-ATM, and exclude pending, then read the
  * subset's hit-rate / MFE / heat to hunt the feature that separates winners from
  * duds (the live recorder's reason for being).
  *
- * Reads `/terminal/v1/markup/review?date=&tf=` — once for a finalized (past)
+ * Reads `/terminal/v1/markup/review?date=` — once for a finalized (past)
  * session, re-polled every 60s while the selected date is TODAY, because only
  * the authoritative IBKR bars can repair a live candle the spot stream missed
- * for longer than its window.
+ * for longer than its window. The response's bars are 1-minute whatever `tf` is
+ * requested, so the timeframe toggle is a purely client-side display grid (see
+ * lib/tfBuckets) and never a round-trip.
  * The chart is lazy-loaded so lightweight-charts only ships on this route.
  */
 
@@ -32,6 +34,7 @@ import {
   liveAlertToReview,
   liveSessionCandles,
 } from "../../hooks/liveMarkupHelpers";
+import type { Timeframe } from "../../lib/tfBuckets";
 
 import "./MarkupReviewPane.css";
 
@@ -53,7 +56,7 @@ const DIST_OPTIONS: { label: string; value: number | null }[] = [
 
 export function MarkupReviewPane() {
   const [date, setDate] = useState<string>(() => etDateString());
-  const [tf, setTf] = useState<"1m" | "5m">("1m");
+  const [tf, setTf] = useState<Timeframe>("1m");
   const [filters, setFilters] = useState<AlertFilters>(DEFAULT_FILTERS);
   const [refitToken, setRefitToken] = useState(0);
 
@@ -63,9 +66,10 @@ export function MarkupReviewPane() {
   // candle the spot stream missed for longer than its window.
   const isToday = date === etDateString();
 
+  // `tf` is NOT passed: the timeframe is a client-side display grid, and making
+  // it a fetch key would unmount the chart on every toggle (see useMarkupReview).
   const { data, loading, offline, stale, refresh } = useMarkupReview(
     date,
-    tf,
     isToday,
   );
   // Live SSE markup (push). Null off-hours/cold/offline → the live section
@@ -94,8 +98,8 @@ export function MarkupReviewPane() {
   // against the fetched alerts) merged into the chart's markers.
   const liveBars = useMemo(() => {
     if (!isToday || !live?.spot_series) return [];
-    return liveSessionCandles(live.spot_series);
-  }, [isToday, live]);
+    return liveSessionCandles(live.spot_series, tf);
+  }, [isToday, live, tf]);
   const chartAlerts = useMemo(() => {
     if (!isToday || !live) return chartFiltered;
     const seen = new Set(chartFiltered.map((a) => a.alert_ts));
@@ -159,7 +163,7 @@ export function MarkupReviewPane() {
             ›
           </button>
           <div className="markup-review__seg">
-            {(["1m", "5m"] as const).map((t) => (
+            {(["1m", "5m"] as const satisfies readonly Timeframe[]).map((t) => (
               <button
                 key={t}
                 className={t === tf ? "is-active" : ""}
@@ -303,6 +307,7 @@ export function MarkupReviewPane() {
               bars={data!.bars}
               alerts={chartAlerts}
               liveBars={liveBars}
+              tf={tf}
               fitKey={`${date}|${tf}`}
               refitToken={refitToken}
             />
