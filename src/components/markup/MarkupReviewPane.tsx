@@ -5,7 +5,10 @@
  * subset's hit-rate / MFE / heat to hunt the feature that separates winners from
  * duds (the live recorder's reason for being).
  *
- * Reads `/terminal/v1/markup/review?date=&tf=` (post-close: fetch once per date).
+ * Reads `/terminal/v1/markup/review?date=&tf=` — once for a finalized (past)
+ * session, re-polled every 60s while the selected date is TODAY, because only
+ * the authoritative IBKR bars can repair a live candle the spot stream missed
+ * for longer than its window.
  * The chart is lazy-loaded so lightweight-charts only ships on this route.
  */
 
@@ -27,7 +30,7 @@ import {
 } from "./markupReviewHelpers";
 import {
   liveAlertToReview,
-  liveSessionCandle,
+  liveSessionCandles,
 } from "../../hooks/liveMarkupHelpers";
 
 import "./MarkupReviewPane.css";
@@ -52,8 +55,19 @@ export function MarkupReviewPane() {
   const [date, setDate] = useState<string>(() => etDateString());
   const [tf, setTf] = useState<"1m" | "5m">("1m");
   const [filters, setFilters] = useState<AlertFilters>(DEFAULT_FILTERS);
+  const [refitToken, setRefitToken] = useState(0);
 
-  const { data, loading, offline, refresh } = useMarkupReview(date, tf);
+  // The ET-date call lives HERE, not in the hook: `etDateString` is a
+  // components/ helper and hooks/ must not reach into it. Viewing today puts the
+  // review hook into background re-poll — the authoritative repair for a live
+  // candle the spot stream missed for longer than its window.
+  const isToday = date === etDateString();
+
+  const { data, loading, offline, stale, refresh } = useMarkupReview(
+    date,
+    tf,
+    isToday,
+  );
   // Live SSE markup (push). Null off-hours/cold/offline → the live section
   // hides and only the post-close review below shows.
   const { markup: live, connected } = useLiveMarkup();
@@ -75,13 +89,12 @@ export function MarkupReviewPane() {
     [data, filters],
   );
 
-  // Live overlay (today only): the forming candle from the SSE spot stream,
-  // and live alerts (mapped to the review shape, filtered + deduped against the
-  // fetched alerts) merged into the chart's markers.
-  const isToday = date === etDateString();
-  const liveBar = useMemo(() => {
-    if (!isToday || !live?.spot_series) return null;
-    return liveSessionCandle(live.spot_series);
+  // Live overlay (today only): the spot window's 1-min candles from the SSE
+  // stream, and live alerts (mapped to the review shape, filtered + deduped
+  // against the fetched alerts) merged into the chart's markers.
+  const liveBars = useMemo(() => {
+    if (!isToday || !live?.spot_series) return [];
+    return liveSessionCandles(live.spot_series);
   }, [isToday, live]);
   const chartAlerts = useMemo(() => {
     if (!isToday || !live) return chartFiltered;
@@ -156,7 +169,17 @@ export function MarkupReviewPane() {
               </button>
             ))}
           </div>
-          <button className="markup-review__refresh" onClick={refresh}>
+          <button
+            className="markup-review__refresh"
+            onClick={() => {
+              // ↻ no longer flashes the loading state, so it no longer remounts
+              // the chart — and the remount was what re-fitted the time scale.
+              // Bump the refit token so an explicit refresh still returns a
+              // session that has outgrown its zoom to a fitted view.
+              setRefitToken((n) => n + 1);
+              refresh();
+            }}
+          >
             ↻
           </button>
         </div>
@@ -253,6 +276,11 @@ export function MarkupReviewPane() {
         {data?.bars_stale && (
           <span className="markup-review__stale">bars stale</span>
         )}
+        {/* A failed background poll keeps the rendered session on screen (see
+            settleReview) — say so here rather than replacing the chart with the
+            offline message, which would unmount it and cost the operator's
+            pan/zoom and the live tail. */}
+        {stale && <span className="markup-review__stale">refresh failed</span>}
       </div>
 
       <div className="markup-review__body">
@@ -274,7 +302,9 @@ export function MarkupReviewPane() {
             <MarkupReviewChart
               bars={data!.bars}
               alerts={chartAlerts}
-              liveBar={liveBar}
+              liveBars={liveBars}
+              fitKey={`${date}|${tf}`}
+              refitToken={refitToken}
             />
           </Suspense>
         )}

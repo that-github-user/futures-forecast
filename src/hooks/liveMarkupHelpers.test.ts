@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { MarkupAlert, MarkupState } from "../api/terminalTypes";
 import {
   boundSpotWindow,
-  buildFormingCandle,
+  buildWindowCandles,
   deriveLiveMarkup,
   etMinutesOfDay,
   isCashRthMinute,
   liveAlertToReview,
-  liveSessionCandle,
+  liveSessionCandles,
+  mergeSpotSeries,
 } from "./liveMarkupHelpers";
 
 const baseState = (over: Partial<MarkupState> = {}): MarkupState => ({
@@ -120,33 +121,215 @@ describe("deriveLiveMarkup", () => {
   });
 });
 
-describe("buildFormingCandle", () => {
-  it("returns null with no spots", () => {
-    expect(buildFormingCandle([])).toBeNull();
+describe("buildWindowCandles", () => {
+  const utc = (hms: string) => Date.parse(`2026-06-18T${hms}Z`) / 1000;
+
+  it("returns nothing with no spots", () => {
+    expect(buildWindowCandles([])).toEqual([]);
   });
 
-  it("builds the current-minute OHLC from samples in that minute only", () => {
+  it("builds the newest minute's OHLC from that minute's samples only", () => {
     const spots: [string, number][] = [
-      ["2026-06-18T10:30:58-04:00", 7500], // previous minute → excluded
+      ["2026-06-18T10:30:58-04:00", 7500], // 10:30, oldest bucket → partial
       ["2026-06-18T10:31:00-04:00", 7510], // open
       ["2026-06-18T10:31:20-04:00", 7515], // high
       ["2026-06-18T10:31:40-04:00", 7508], // low
       ["2026-06-18T10:31:55-04:00", 7512], // close (latest)
     ];
-    const c = buildFormingCandle(spots);
-    // 10:31:00 EDT = 14:31:00 UTC → epoch seconds
-    expect(c).toEqual({
-      time: Date.parse("2026-06-18T14:31:00Z") / 1000,
-      open: 7510,
-      high: 7515,
-      low: 7508,
-      close: 7512,
-    });
+    // 10:30 is dropped: its one surviving sample is not its open (10:31:00 EDT
+    // = 14:31:00 UTC → epoch seconds).
+    expect(buildWindowCandles(spots)).toEqual([
+      {
+        time: utc("14:31:00"),
+        open: 7510,
+        high: 7515,
+        low: 7508,
+        close: 7512,
+      },
+    ]);
   });
 
-  it("a single sample yields a flat candle", () => {
-    const c = buildFormingCandle([["2026-06-18T10:31:10-04:00", 7510]]);
-    expect(c).toMatchObject({ open: 7510, high: 7510, low: 7510, close: 7510 });
+  it("a single sample yields a flat forming candle", () => {
+    expect(buildWindowCandles([["2026-06-18T10:31:10-04:00", 7510]])).toEqual([
+      { time: utc("14:31:00"), open: 7510, high: 7510, low: 7510, close: 7510 },
+    ]);
+  });
+
+  it("emits a minute that was never the newest one — the 10:47 hole", () => {
+    // Regression for the silently-dropped candle: the spot stream gapped across
+    // 10:47 and only healed (via the server's 120s window) once 10:48 was
+    // current, so 10:47 was never the newest sample's minute at any recompute.
+    // The single-candle builder could only ever emit 10:48 and the chart's
+    // monotonic guard then sealed 10:47 out for good.
+    const spots: [string, number][] = [
+      ["2026-06-18T10:46:10-04:00", 7500],
+      ["2026-06-18T10:46:50-04:00", 7502],
+      ["2026-06-18T10:47:05-04:00", 7505], // 10:47 open
+      ["2026-06-18T10:47:35-04:00", 7509], // 10:47 high
+      ["2026-06-18T10:47:50-04:00", 7503], // 10:47 low + close
+      ["2026-06-18T10:48:05-04:00", 7506], // forming
+    ];
+    expect(buildWindowCandles(spots)).toEqual([
+      {
+        time: utc("14:47:00"),
+        open: 7505,
+        high: 7509,
+        low: 7503,
+        close: 7503,
+      },
+      {
+        time: utc("14:48:00"),
+        open: 7506,
+        high: 7506,
+        low: 7506,
+        close: 7506,
+      },
+    ]);
+  });
+
+  it("excludes the oldest minute — the window truncation destroyed its open", () => {
+    const spots: [string, number][] = [
+      ["2026-06-18T10:46:59-04:00", 7500], // sole survivor of 10:46, NOT its open
+      ["2026-06-18T10:47:10-04:00", 7505],
+      ["2026-06-18T10:48:00-04:00", 7507],
+    ];
+    const out = buildWindowCandles(spots);
+    expect(out.map((c) => c.time)).toEqual([utc("14:47:00"), utc("14:48:00")]);
+    expect(out.some((c) => c.open === 7500)).toBe(false); // no fabricated open
+  });
+
+  it("keeps the oldest minute when its first sample lands ON the boundary", () => {
+    // The truncation exclusion is about a FABRICATED open; a sample exactly at
+    // the minute's start IS that minute's open, so suppressing it would only
+    // narrow the heal reach.
+    const spots: [string, number][] = [
+      ["2026-06-18T10:46:00-04:00", 7500], // exactly 10:46:00 → a real open
+      ["2026-06-18T10:46:40-04:00", 7504],
+      ["2026-06-18T10:47:10-04:00", 7505],
+    ];
+    const out = buildWindowCandles(spots);
+    expect(out.map((c) => c.time)).toEqual([utc("14:46:00"), utc("14:47:00")]);
+    expect(out[0].open).toBe(7500);
+  });
+
+  it("a window inside one minute still yields the forming candle", () => {
+    const spots: [string, number][] = [
+      ["2026-06-18T10:47:05-04:00", 7505],
+      ["2026-06-18T10:47:50-04:00", 7509],
+    ];
+    expect(buildWindowCandles(spots)).toEqual([
+      { time: utc("14:47:00"), open: 7505, high: 7509, low: 7505, close: 7509 },
+    ]);
+  });
+
+  it("skips unparseable timestamps instead of NaN-bucketing them", () => {
+    const spots: [string, number][] = [
+      ["not-a-date", 1],
+      ["2026-06-18T10:46:10-04:00", 7500],
+      ["2026-06-18T10:47:10-04:00", 7505],
+    ];
+    expect(buildWindowCandles(spots).map((c) => c.time)).toEqual([
+      utc("14:47:00"),
+    ]);
+    expect(buildWindowCandles([["not-a-date", 1]])).toEqual([]);
+  });
+});
+
+describe("mergeSpotSeries", () => {
+  const ts = (hms: string): string => `2026-06-18T${hms}-04:00`;
+
+  it("fills a gap in the fine-grained series from the server window", () => {
+    // The local SSE stream missed 10:31:05–10:31:35 (throttled tab / dropped
+    // queue entry); the server re-sends its whole window every state event.
+    const existing: [string, number][] = [
+      [ts("10:30:10"), 7500],
+      [ts("10:31:50"), 7509],
+    ];
+    const incoming: [string, number][] = [
+      [ts("10:31:05"), 7503],
+      [ts("10:31:35"), 7506],
+    ];
+    expect(mergeSpotSeries(existing, incoming, 120_000)).toEqual([
+      [ts("10:30:10"), 7500],
+      [ts("10:31:05"), 7503],
+      [ts("10:31:35"), 7506],
+      [ts("10:31:50"), 7509],
+    ]);
+  });
+
+  it("keeps the local sample on a timestamp collision", () => {
+    // The local sample is the sub-second SSE tick; the server series is a coarse
+    // 5s resample of the same instant and must never clobber it.
+    const existing: [string, number][] = [[ts("10:31:05"), 7503]];
+    const incoming: [string, number][] = [
+      [ts("10:31:05"), 9999],
+      [ts("10:31:10"), 7504],
+    ];
+    expect(mergeSpotSeries(existing, incoming, 120_000)).toEqual([
+      [ts("10:31:05"), 7503],
+      [ts("10:31:10"), 7504],
+    ]);
+  });
+
+  it("keeps the local sample when the two sources spell the instant differently", () => {
+    // The producers need not agree on formatting (sub-second local tick vs
+    // whole-second server resample, ET offset vs Z). Keyed on the raw string
+    // both would survive and the coarse price would widen the minute's
+    // high/low — the exact fidelity loss the precedence rule exists to prevent.
+    const existing: [string, number][] = [["2026-06-18T10:31:05.250-04:00", 7503]];
+    const incoming: [string, number][] = [["2026-06-18T14:31:05.250Z", 9999]];
+    expect(mergeSpotSeries(existing, incoming, 120_000)).toEqual([
+      ["2026-06-18T10:31:05.250-04:00", 7503],
+    ]);
+  });
+
+  it("bounds the merged series to the window", () => {
+    const existing: [string, number][] = [[ts("10:29:00"), 7490]];
+    const incoming: [string, number][] = [
+      [ts("10:31:30"), 7503],
+      [ts("10:32:00"), 7505],
+    ];
+    expect(mergeSpotSeries(existing, incoming, 120_000)).toEqual([
+      [ts("10:31:30"), 7503],
+      [ts("10:32:00"), 7505],
+    ]);
+  });
+
+  it("an absent server series leaves the local samples intact", () => {
+    // useLiveMarkup passes `s.spot_series ?? []` — spot_series is optional.
+    const existing: [string, number][] = [
+      [ts("10:31:05"), 7503],
+      [ts("10:31:10"), 7504],
+    ];
+    expect(mergeSpotSeries(existing, [], 120_000)).toEqual(existing);
+    expect(mergeSpotSeries([], [], 120_000)).toEqual([]);
+  });
+
+  it("drops unparseable timestamps rather than scrambling the sort", () => {
+    const existing: [string, number][] = [
+      ["not-a-date", 7],
+      [ts("10:31:00"), 7500],
+    ];
+    const incoming: [string, number][] = [[ts("10:31:30"), 7503]];
+    expect(mergeSpotSeries(existing, incoming, 120_000)).toEqual([
+      [ts("10:31:00"), 7500],
+      [ts("10:31:30"), 7503],
+    ]);
+  });
+
+  it("orders a lone late-delivered sample behind the tail", () => {
+    // The `onSpot` call shape: one sample, delivered after a state already
+    // merged the server window past it. Appending would leave the array
+    // unsorted, and boundSpotWindow reads its cutoff off the LAST element.
+    const existing: [string, number][] = [
+      [ts("10:31:00"), 7500],
+      [ts("10:31:50"), 7509],
+    ];
+    expect(mergeSpotSeries(existing, [[ts("10:31:20"), 7504]], 120_000)).toEqual([
+      [ts("10:31:00"), 7500],
+      [ts("10:31:20"), 7504],
+      [ts("10:31:50"), 7509],
+    ]);
   });
 });
 
@@ -186,35 +369,61 @@ describe("isCashRthMinute (SPX cash 09:30–16:00 ET)", () => {
   });
 });
 
-describe("liveSessionCandle (cash-RTH gate)", () => {
+describe("liveSessionCandles (cash-RTH gate)", () => {
+  const times = (spots: [string, number][]) =>
+    liveSessionCandles(spots).map((c) => c.time);
+  const utc = (hms: string) => Date.parse(`2026-06-18T${hms}Z`) / 1000;
+
   it("shows the forming candle during the cash session", () => {
-    const spots: [string, number][] = [["2026-06-18T10:31:10-04:00", 7509]];
-    expect(liveSessionCandle(spots)?.time).toBe(
-      Date.parse("2026-06-18T14:31:00Z") / 1000,
-    );
+    expect(times([["2026-06-18T10:31:10-04:00", 7509]])).toEqual([
+      utc("14:31:00"),
+    ]);
   });
 
   it("shows the candle regardless of how stale the (now-removed) seed is", () => {
     // Regression for the freeze bug: 5+ min into the page's life the candle must
     // still draw. No historical-bar reference exists to go stale anymore.
-    const spots: [string, number][] = [["2026-06-18T15:59:10-04:00", 7509]];
-    expect(liveSessionCandle(spots)?.time).toBe(
-      Date.parse("2026-06-18T19:59:00Z") / 1000,
-    );
+    expect(times([["2026-06-18T15:59:10-04:00", 7509]])).toEqual([
+      utc("19:59:00"),
+    ]);
   });
 
   it("suppresses the candle once cash RTH has closed (post-16:00 float)", () => {
-    const spots: [string, number][] = [["2026-06-18T16:05:00-04:00", 7509]];
-    expect(liveSessionCandle(spots)).toBeNull();
+    expect(times([["2026-06-18T16:05:00-04:00", 7509]])).toEqual([]);
   });
 
   it("suppresses the candle before the 09:30 open", () => {
-    const spots: [string, number][] = [["2026-06-18T09:15:00-04:00", 7509]];
-    expect(liveSessionCandle(spots)).toBeNull();
+    expect(times([["2026-06-18T09:15:00-04:00", 7509]])).toEqual([]);
   });
 
-  it("returns null when there are no spots", () => {
-    expect(liveSessionCandle([])).toBeNull();
+  it("returns nothing when there are no spots", () => {
+    expect(times([])).toEqual([]);
+  });
+
+  it("drops the out-of-session minutes and keeps the rest, at the close", () => {
+    // The window straddles 16:00: 15:58 is the partial oldest, 16:00 is the
+    // forming minute but past the cash close — only 15:59 survives.
+    expect(
+      times([
+        ["2026-06-18T15:58:30-04:00", 7500],
+        ["2026-06-18T15:59:20-04:00", 7502],
+        ["2026-06-18T16:00:10-04:00", 7504],
+        ["2026-06-18T16:00:50-04:00", 7505],
+      ]),
+    ).toEqual([utc("19:59:00")]);
+  });
+
+  it("drops a LEADING out-of-session minute without breaking the rest", () => {
+    // The window straddles the 09:30 open: dropping 09:29 must leave 09:30 and
+    // 09:31 ascending, or the chart's monotonic guard would cost a bar.
+    expect(
+      times([
+        ["2026-06-18T09:28:40-04:00", 7500],
+        ["2026-06-18T09:29:30-04:00", 7501],
+        ["2026-06-18T09:30:10-04:00", 7504],
+        ["2026-06-18T09:31:05-04:00", 7506],
+      ]),
+    ).toEqual([utc("13:30:00"), utc("13:31:00")]);
   });
 });
 

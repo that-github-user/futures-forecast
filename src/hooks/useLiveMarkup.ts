@@ -6,8 +6,9 @@
  *     markup fire the moment it happens, no refresh.
  *   - `spot` events accumulate a fine-grained, window-bounded SPX series
  *     (smooth live line) that overrides the coarse 5s series.
- *   - `state` events (~5s) refresh the per-strike bands and reconcile the
- *     authoritative alert ring.
+ *   - `state` events (~5s) refresh the per-strike bands, reconcile the
+ *     authoritative alert ring, and MERGE their 120s spot window into that
+ *     accumulator so a gap in the fine-grained stream self-heals.
  *
  * Returns null markup when there's no active band (off-hours / cold start /
  * offline → hide the panel), same contract as the polling hook. The browser
@@ -19,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { mockMarkupState } from "../api/mock";
 import { subscribeMarkup } from "../api/terminalClient";
 import type { MarkupAlert, MarkupState } from "../api/terminalTypes";
-import { boundSpotWindow, deriveLiveMarkup } from "./liveMarkupHelpers";
+import { deriveLiveMarkup, mergeSpotSeries } from "./liveMarkupHelpers";
 
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
 const SPOT_WINDOW_MS = 120_000; // matches the backend SPOT_WINDOW_S overlay window
@@ -72,19 +73,32 @@ export function useLiveMarkup(): LiveMarkupState {
       },
       onState: (s) => {
         stateRef.current = s;
-        // Seed the spot accumulation from the first state's series so the
-        // line isn't empty before the first `spot` arrives.
-        if (spotsRef.current.length === 0 && s.spot_series?.length) {
-          spotsRef.current = [...s.spot_series];
-        }
+        // Every state carries the server's full 120s spot window, so MERGE it
+        // (don't seed-when-empty): a gap in the fine-grained `spot` stream is
+        // re-covered within seconds instead of leaving a permanent hole that
+        // costs the live chart a whole 1-min candle. Local samples win on
+        // collision — see mergeSpotSeries.
+        spotsRef.current = mergeSpotSeries(
+          spotsRef.current,
+          s.spot_series ?? [],
+          SPOT_WINDOW_MS,
+        );
         // The fresh state's recent_alerts already include anything we showed
         // live → drop the live overlay to avoid double-counting.
         liveAlertsRef.current = [];
         recompute();
       },
       onSpot: (ts, price) => {
-        spotsRef.current = boundSpotWindow(
-          [...spotsRef.current, [ts, price]],
+        // Merged rather than appended: since the state path started merging, this
+        // array is sorted-by-contract, and other readers depend on that (the
+        // panel sparkline draws it in array order, and boundSpotWindow takes its
+        // cutoff from the LAST element rather than the max). A spot delivered
+        // behind the merged tail — queued behind a state, or the two producers'
+        // clocks a beat apart — would otherwise leave the series transiently
+        // out of order.
+        spotsRef.current = mergeSpotSeries(
+          spotsRef.current,
+          [[ts, price]],
           SPOT_WINDOW_MS,
         );
         recompute();

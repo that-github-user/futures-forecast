@@ -1,7 +1,7 @@
 /**
- * Pure reducers for the live markup SSE hook — kept separate from React so
- * the merge logic (spot-window bounding + alert dedup + hide-when-empty) is
- * unit-testable without a DOM.
+ * Pure reducers for the live markup SSE hook — kept separate from React so the
+ * merge logic (spot-window bounding + spot-series merge + candle bucketing +
+ * alert dedup + hide-when-empty) is unit-testable without a DOM.
  */
 
 import type {
@@ -24,6 +24,53 @@ export function boundSpotWindow(
   let i = 0;
   while (i < spots.length && Date.parse(spots[i][0]) < cutoff) i++;
   return i > 0 ? spots.slice(i) : spots;
+}
+
+/** Merge the server's coarse 5s `spot_series` into the locally-accumulated
+ *  fine-grained SSE samples, deduped by instant, then re-bound to the window.
+ *
+ *  The server re-sends its whole 120s spot window on EVERY `state` event (~5s),
+ *  so a gap in the fine-grained `spot` stream — a throttled background tab, a
+ *  drop-oldest SSE queue eviction, a short network stall — is re-covered by the
+ *  next state. Seeding the accumulator only while it was EMPTY threw that
+ *  coverage away and left the gap permanent, which is how a whole 1-minute
+ *  candle went missing from the live chart.
+ *
+ *  On a collision the EXISTING local sample wins: it is the higher-fidelity
+ *  sub-second SSE sample, while the server series is a coarse 5s resample of the
+ *  same instant. The server series only ever FILLS gaps.
+ *
+ *  Collisions are keyed on the parsed INSTANT, not the raw timestamp string. The
+ *  two producers need not spell an instant identically (a sub-second local tick
+ *  vs a whole-second server resample, an ET offset vs a Z suffix), and a string
+ *  key would then keep BOTH — the coarse sample would land in the same minute
+ *  bucket and widen that candle's high/low, which is exactly the fidelity loss
+ *  the precedence rule exists to prevent.
+ *
+ *  Samples whose timestamp won't parse are dropped rather than sorted to some
+ *  arbitrary end. They can be neither bucketed into a candle nor time-bounded,
+ *  a NaN in the comparator would make the whole sort order
+ *  implementation-defined, and sorting them oldest-first would halt
+ *  boundSpotWindow's truncation scan at the first NaN and let the series grow
+ *  unbounded. */
+export function mergeSpotSeries(
+  existing: [string, number][],
+  incoming: [string, number][],
+  windowMs: number,
+): [string, number][] {
+  const byMs = new Map<number, [string, number]>();
+  for (const sample of incoming) {
+    const ms = Date.parse(sample[0]);
+    if (!Number.isNaN(ms)) byMs.set(ms, sample);
+  }
+  for (const sample of existing) {
+    const ms = Date.parse(sample[0]);
+    if (!Number.isNaN(ms)) byMs.set(ms, sample);
+  }
+  const merged = [...byMs.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, sample]) => sample);
+  return boundSpotWindow(merged, windowMs);
 }
 
 /** Compose the MarkupState the panel renders from the last `state` snapshot
@@ -66,34 +113,73 @@ export interface LiveCandle {
   close: number;
 }
 
-/** Build the CURRENT (forming) 1-minute candle from the live spot series —
- *  open = first sample of the minute, high/low = extremes, close = latest.
- *  Returns null when there are no parseable samples. The chart series.update()s
- *  this each tick; as the minute rolls, the new candle's later time appends a
- *  fresh bar (the previous one persists), so the live chart accretes candles
- *  without an unbounded accumulator here. (A live approximation of SPX OHLC —
- *  true IBKR 1m bars replace it on the next post-close fetch.) */
-export function buildFormingCandle(
-  spots: [string, number][],
-): LiveCandle | null {
-  if (spots.length === 0) return null;
-  const lastMs = Date.parse(spots[spots.length - 1][0]);
-  if (Number.isNaN(lastMs)) return null;
-  const minuteStartMs = Math.floor(lastMs / 60_000) * 60_000;
-  let open: number | null = null;
-  let high = -Infinity;
-  let low = Infinity;
-  let close = 0;
+/** Build a 1-minute OHLC candle for EVERY safe minute in the live spot window,
+ *  ascending by time — open = first sample of the minute, high/low = extremes,
+ *  close = last.
+ *
+ *  Emitting only the newest sample's minute (the old single-candle builder) made
+ *  candle loss permanent: a minute that was never "newest" at any recompute —
+ *  because the spot stream gapped across it and only healed after the clock had
+ *  rolled — could never be drawn, and the chart's monotonic guard seals it out
+ *  the instant a later minute is drawn. Emitting the whole window lets the
+ *  chart apply the older minute FIRST and heal the hole in the same pass.
+ *
+ *  SAFE means the minute's OPEN is trustworthy. `boundSpotWindow` truncates the
+ *  series at an arbitrary instant, so the OLDEST bucket is normally PARTIAL and
+ *  its first surviving sample is not that minute's open — emitting it would draw
+ *  a candle with a fabricated open and body. A bucket therefore qualifies only
+ *  if either:
+ *    - it is the NEWEST bucket — the forming candle, partial by nature; or
+ *    - a sample survives AT OR BEFORE the bucket's start (a sample landing
+ *      exactly ON the boundary IS that minute's open), which bounds the
+ *      window's coverage back past the bucket, so its first sample is its open.
+ *  What the test proves is the window's EXTENT, not the absence of an INTERIOR
+ *  gap: if the stream itself gapped inside the minute the open is approximate
+ *  rather than an artifact of truncation, and the next merged state — or the
+ *  authoritative re-poll — corrects it. An interior gap isn't observable from
+ *  the samples, so no test on them can exclude it.
+ *  The test needs no window length, so it stays correct however the caller
+ *  bounds the series, and degrades to just the forming candle when the window
+ *  holds a single minute.
+ *
+ *  (A live approximation of SPX OHLC — true IBKR 1m bars replace it on the next
+ *  review fetch.) */
+export function buildWindowCandles(spots: [string, number][]): LiveCandle[] {
+  // Sorted defensively: both the per-minute open/close and the ascending output
+  // depend on order, and the merge interleaves the server's 5s series with the
+  // locally-accumulated sub-second samples.
+  const samples: { ms: number; price: number }[] = [];
   for (const [ts, price] of spots) {
-    const t = Date.parse(ts);
-    if (Number.isNaN(t) || t < minuteStartMs) continue;
-    if (open === null) open = price;
-    if (price > high) high = price;
-    if (price < low) low = price;
-    close = price;
+    const ms = Date.parse(ts);
+    if (!Number.isNaN(ms)) samples.push({ ms, price });
   }
-  if (open === null) return null;
-  return { time: minuteStartMs / 1000, open, high, low, close };
+  if (samples.length === 0) return [];
+  samples.sort((a, b) => a.ms - b.ms);
+
+  const buckets = new Map<number, LiveCandle>();
+  for (const { ms, price } of samples) {
+    const startMs = Math.floor(ms / 60_000) * 60_000;
+    const c = buckets.get(startMs);
+    if (!c) {
+      buckets.set(startMs, {
+        time: startMs / 1000,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+      });
+      continue;
+    }
+    if (price > c.high) c.high = price;
+    if (price < c.low) c.low = price;
+    c.close = price;
+  }
+
+  // Insertion order is ascending because the samples are.
+  const ordered = [...buckets.values()];
+  const firstMs = samples[0].ms;
+  const newestTime = ordered[ordered.length - 1].time;
+  return ordered.filter((c) => c.time === newestTime || firstMs <= c.time * 1000);
 }
 
 const ET_HM_FMT = new Intl.DateTimeFormat("en-US", {
@@ -133,16 +219,22 @@ export function isCashRthMinute(sec: number): boolean {
   return m >= RTH_OPEN_MIN && m < RTH_CLOSE_MIN;
 }
 
-/** The forming candle to overlay on the session chart — but ONLY while the SPX
- *  cash session (09:30–16:00 ET) is open. After 16:00 the IBKR 1-min bars
- *  freeze while the spot keeps ticking (ES-derived), so a forming candle would
- *  float past the real session; before 09:30 there's no session yet.
+/** The live window's candles to overlay on the session chart — but ONLY the
+ *  minutes inside the SPX cash session (09:30–16:00 ET). After 16:00 the IBKR
+ *  1-min bars freeze while the spot keeps ticking (ES-derived), so a live candle
+ *  would float past the real session; before 09:30 there's no session yet.
  *
- *  Gating on the forming MINUTE's own ET wall-clock — NOT on a gap from the
- *  last historical bar — is deliberate. The historical bars are fetched ONCE
- *  per session (useMarkupReview) and go stale as the wall clock advances, so
- *  the old gap-from-seed check silently suppressed the LIVE candle ~5 min after
- *  page load (the freeze bug). A minute's own clock can't go stale.
+ *  The filter is PER CANDLE, not all-or-nothing on the newest: a window
+ *  straddling the open or the close must still contribute its in-session
+ *  minutes, and dropping one candle must leave the rest ascending (the chart
+ *  applies them in order, so a break in that order would cost a bar).
+ *
+ *  Gating on each MINUTE's own ET wall-clock — NOT on a gap from the last
+ *  historical bar — is deliberate. The historical bars are fetched ONCE per
+ *  session for a past date and only every 60s for today (useMarkupReview), so
+ *  they go stale as the wall clock advances between fetches — which is how the
+ *  old gap-from-seed check silently suppressed the LIVE candle ~5 min after page
+ *  load (the freeze bug). A minute's own clock can't go stale.
  *
  *  Holiday / half-day SESSION gating is handled upstream: when the backend
  *  `live_window` flag is false the whole live overlay (candle + Tell) hides, so
@@ -151,18 +243,14 @@ export function isCashRthMinute(sec: number): boolean {
  *  drops the overlay shortly after, capping any float to the curb window.)
  *
  *  Deliberately NOT clamped to the last historical bar: if IBKR's historical
- *  tail is stale/truncated mid-session the live candle may draw detached to its
- *  right (cosmetic; the pane shows a `bars stale` badge). That's preferred over
- *  clamping — a clamp against the last drawn bar would suppress the FIRST live
- *  bar after a truncated seed and, since the reference only advances when a bar
- *  is drawn, never recover: a freeze in the degraded case. Showing live price
- *  beats hiding it. */
-export function liveSessionCandle(
-  spots: [string, number][],
-): LiveCandle | null {
-  const candle = buildFormingCandle(spots);
-  if (!candle) return null;
-  return isCashRthMinute(candle.time) ? candle : null;
+ *  tail is stale/truncated mid-session the live candles may draw detached to
+ *  their right (cosmetic; the pane shows a `bars stale` badge). That's preferred
+ *  over clamping — a clamp against the last drawn bar would suppress the FIRST
+ *  live bar after a truncated seed and, since the reference only advances when a
+ *  bar is drawn, never recover: a freeze in the degraded case. Showing live
+ *  price beats hiding it. */
+export function liveSessionCandles(spots: [string, number][]): LiveCandle[] {
+  return buildWindowCandles(spots).filter((c) => isCashRthMinute(c.time));
 }
 
 /** Map a live MarkupAlert (the SSE/recent-alerts shape) to the review-alert
