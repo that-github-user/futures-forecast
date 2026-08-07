@@ -3,6 +3,7 @@ import type { MarkupReviewAlert } from "../../api/terminalTypes";
 import {
   CONVICTION_COLORS,
   DEFAULT_FILTERS,
+  MUTED_ALPHA,
   askScore,
   askSize,
   breadthScore,
@@ -12,6 +13,7 @@ import {
   filterAlerts,
   fromInputDate,
   indexByBarTime,
+  isMuted,
   isoToUtc,
   median,
   minSinceOpenET,
@@ -113,7 +115,7 @@ describe("buildMarkers", () => {
     expect(m.map((x) => x.shape).sort()).toEqual(["arrowDown", "arrowUp"]);
   });
   it("styles by causal conviction (not outcome): strong open cluster → bright arrow", () => {
-    // 4 strikes (breadth 1.0) + sweet-spot ask 2.5 (1.0) + open bar (1.0) = 3.0 → STRONG
+    // 4 strikes (breadth 1.0) + ask floor 2.5 (0.3) + open bar (1.0) = 2.3 → STRONG
     const m = buildMarkers([
       mk({ ask_jump: 2.5, dist_from_atm: 0 }),
       mk({ ask_jump: 2.5, dist_from_atm: 5 }),
@@ -128,6 +130,15 @@ describe("buildMarkers", () => {
   it("lone big-ask spike → CAUTION circle, never a hot arrow", () => {
     const m = buildMarkers([mk({ ask_jump: 3.5, dist_from_atm: 5 })])[0];
     expect(m.shape).toBe("circle");
+    expect(m.color).toBe(CONVICTION_COLORS.up.caution);
+  });
+  it("muted-bucket arrows are alpha-dimmed (spec §4 dashed channel → opacity)", () => {
+    // 17:00Z = 13:00 ET = 210 min since open → midday (muted)
+    const m = buildMarkers([mk({ bar_time: "2026-06-16T17:00:00Z" })])[0];
+    expect(m.color).toBe(`${CONVICTION_COLORS.up.weak}${MUTED_ALPHA}`);
+  });
+  it("CAUTION stays solid grey even in a muted bucket (trap style stays distinct)", () => {
+    const m = buildMarkers([mk({ bar_time: "2026-06-16T17:00:00Z", ask_jump: 3.5 })])[0];
     expect(m.color).toBe(CONVICTION_COLORS.up.caution);
   });
   it("styling is outcome-independent (pending vs finalized identical)", () => {
@@ -162,19 +173,36 @@ describe("conviction scoring (causal)", () => {
     expect(breadthScore(3)).toBe(0.3);
     expect(breadthScore(4)).toBe(1.0);
   });
-  it("askScore — inverted-U, sweet spot 2.2–3.0", () => {
+  it("askScore — coarse floor at ≥1.8, no sweet spot (§8: 8-session peak void)", () => {
     expect(askScore(1.5)).toBe(0);
-    expect(askScore(2.0)).toBe(0.4);
-    expect(askScore(2.5)).toBe(1.0);
-    expect(askScore(3.5)).toBe(0.6);
+    expect(askScore(1.8)).toBe(0.3);
+    expect(askScore(2.5)).toBe(0.3);
+    expect(askScore(3.5)).toBe(0.3);
   });
-  it("todScore — open best, midday dead", () => {
+  it("todScore — open best; midday and power+curb dead; afternoon neutral", () => {
     expect(todScore(10)).toBe(1.0); // open
     expect(todScore(60)).toBe(0); // morning
     expect(todScore(180)).toBe(-0.5); // midday
-    expect(todScore(300)).toBe(0.5); // afternoon
-    expect(todScore(380)).toBe(0); // power+curb
+    expect(todScore(300)).toBe(0); // afternoon (neutralized 2026-07-10)
+    expect(todScore(380)).toBe(-0.5); // power+curb (demoted 2026-07-10)
     expect(todScore(-5)).toBe(0); // pre-open guarded (not the open bucket)
+  });
+  it("todScore — exact bucket edges", () => {
+    expect(todScore(0)).toBe(1.0); // open starts at 0
+    expect(todScore(30)).toBe(0); // morning starts at 30
+    expect(todScore(120)).toBe(-0.5); // midday starts at 120
+    expect(todScore(240)).toBe(0); // afternoon starts at 240
+    expect(todScore(360)).toBe(-0.5); // power+curb starts at 360
+  });
+  it("isMuted — midday and power+curb only, edges exact", () => {
+    expect(isMuted(-5)).toBe(false);
+    expect(isMuted(10)).toBe(false);
+    expect(isMuted(119)).toBe(false);
+    expect(isMuted(120)).toBe(true); // midday start
+    expect(isMuted(239)).toBe(true);
+    expect(isMuted(240)).toBe(false); // afternoon is neutral, not muted
+    expect(isMuted(359)).toBe(false);
+    expect(isMuted(360)).toBe(true); // power+curb start (added 2026-07-10)
   });
   it("askSize — monotonic in ask magnitude", () => {
     expect(askSize(1.5)).toBe(1);
@@ -184,12 +212,25 @@ describe("conviction scoring (causal)", () => {
   });
   it("tiers: strong / moderate / weak by score", () => {
     const t = (o: Parameters<typeof conviction>[0]) => conviction(o).tier;
-    expect(t({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 10, atmOnly: false })).toBe("strong"); // 3.0
+    expect(t({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 10, atmOnly: false })).toBe("strong"); // 2.3
+    expect(t({ clusterSize: 4, maxAskJump: 1.4, minSinceOpen: 10, atmOnly: false })).toBe("strong"); // 2.0 — breadth + open alone
     expect(t({ clusterSize: 1, maxAskJump: 1.4, minSinceOpen: 10, atmOnly: false })).toBe("moderate"); // 1.0
     expect(t({ clusterSize: 1, maxAskJump: 1.4, minSinceOpen: 60, atmOnly: false })).toBe("weak"); // 0.0
   });
-  it("midday never reads STRONG", () => {
-    expect(conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 180, atmOnly: false }).tier).toBe("moderate");
+  it("afternoon breadth cluster no longer reads STRONG (neutralized)", () => {
+    // 1.0 + 0.3 + 0.0 = 1.3 → moderate (was 1.0 + 1.0 + 0.5 = 2.5 → strong
+    // under the pre-re-validation constants)
+    expect(conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 300, atmOnly: false }).tier).toBe("moderate");
+  });
+  it("muted buckets (midday, power+curb) never read STRONG and set the muted flag", () => {
+    // best possible muted score: 1.0 + 0.3 - 0.5 = 0.8 → weak
+    const midday = conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 180, atmOnly: false });
+    const curb = conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 380, atmOnly: false });
+    expect(midday.tier).toBe("weak");
+    expect(curb.tier).toBe("weak");
+    expect(midday.muted).toBe(true);
+    expect(curb.muted).toBe(true);
+    expect(conviction({ clusterSize: 4, maxAskJump: 2.5, minSinceOpen: 10, atmOnly: false }).muted).toBe(false);
   });
   it("trap overrides → CAUTION (lone big-ask, ATM-only)", () => {
     expect(conviction({ clusterSize: 1, maxAskJump: 3.5, minSinceOpen: 10, atmOnly: false }).tier).toBe("caution");
