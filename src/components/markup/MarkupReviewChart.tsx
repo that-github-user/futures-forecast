@@ -1,11 +1,16 @@
 /**
- * MarkupReviewChart — SPX 1-min candles (lightweight-charts v5) with markup
- * alert markers. Up-arrows (call → spot UP) below the bar, down-arrows (put →
- * DOWN) above, clustered ×N per bar. Styling is CAUSAL — color = at-fire
- * conviction tier, size = ask magnitude, grey circle = CAUTION/trap — never the
- * outcome (see buildMarkers / quotemark docs/signal_arrow_styling.md). Hover a bar
- * with alerts → an imperative tooltip (σ / strike / dist-from-ATM / MFE / MAE /
- * status — the OUTCOME, shown for comparison), off the crosshair time → alert index.
+ * MarkupReviewChart — SPX candles (lightweight-charts v5) with markup alert
+ * markers. Up-arrows (call → spot UP) below the bar, down-arrows (put → DOWN)
+ * above, ×N per bar. Styling is CAUSAL — color = at-fire conviction tier, size =
+ * ask magnitude, grey circle = CAUTION/trap — never the outcome (see buildMarkers
+ * / quotemark docs/signal_arrow_styling.md). Hover a bar with alerts → an
+ * imperative tooltip (σ / strike / dist-from-ATM / MFE / MAE / status — the
+ * OUTCOME, shown for comparison), off the crosshair time → alert index.
+ *
+ * `tf` is a DISPLAY grid only. The API serves 1-minute bars at every timeframe
+ * and they are folded here; alert grouping and conviction stay at the spec's
+ * 1-minute grain whatever is on screen, so switching timeframe can never re-score
+ * an arrow.
  *
  * Markers + tooltip derive from the ALREADY-FILTERED alerts the pane passes in,
  * so a filter change is just `setMarkers(...)` — no refetch, no chart rebuild.
@@ -27,31 +32,41 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { resolveLumenPalette } from "../terminal/chartHelpers";
-import type { LiveCandle } from "../../hooks/liveMarkupHelpers";
 import type {
   MarkupReviewAlert,
   TerminalIntradayBar,
 } from "../../api/terminalTypes";
 import {
+  barsCoverageEndSec,
+  foldToGrid,
+  liveBucketDraw,
+  type FetchedTail,
+  type LiveCandle,
+  type Timeframe,
+} from "../../lib/tfBuckets";
+import {
   buildMarkers,
-  conviction,
+  clusterAlerts,
   indexByBarTime,
   isoToUtc,
-  minSinceOpenET,
 } from "./markupReviewHelpers";
 
 interface Props {
+  /** The API's 1-minute bars, always — folded onto the display grid here. */
   bars: TerminalIntradayBar[];
   /** Already-filtered alerts; markers + tooltip derive from these. */
   alerts: MarkupReviewAlert[];
-  /** The live SSE spot window's 1-min candles (today only), ASCENDING by time —
-   *  the newest is the forming bar, the ones before it are the window's settled
-   *  minutes. Normally applied via series.update() for a smooth live tail
-   *  without a rebuild; empty for past sessions / when there's no live data.
-   *  Ascending is a contract, not a convenience: it is what lets a late-covered
-   *  minute be drawn BEFORE the newer one and keeps the rebuild path (see the
-   *  live effect) to the rare out-of-order repair. */
+  /** The live SSE spot window's candles on the SAME display grid (today only),
+   *  ASCENDING by time — the newest is the forming bar, the ones before it are
+   *  the window's settled buckets. Normally applied via series.update() for a
+   *  smooth live tail without a rebuild; empty for past sessions / when there's
+   *  no live data. Ascending is a contract, not a convenience: it is what lets a
+   *  late-covered bucket be drawn BEFORE the newer one and keeps the rebuild
+   *  path (see the live effect) to the rare out-of-order repair. */
   liveBars?: LiveCandle[];
+  /** Display grid for the candles, the markers and the crosshair index. The
+   *  ALERT grain is never this — see markupReviewHelpers. */
+  tf: Timeframe;
   /** Identifies the SESSION on screen (`date|tf`). fitContent() runs only when
    *  this changes — see the bars effect — and the retained live candles belong
    *  to it. */
@@ -104,10 +119,29 @@ function legendHtml(
   return `${t}${v("O", bar.open)}${v("H", bar.high)}${v("L", bar.low)}${v("C", bar.close)}`;
 }
 
+/** Rows the tooltip prints before collapsing the rest into a count. The 5-minute
+ *  grid more than doubles the worst case (the densest bar in the corpus holds 22
+ *  alerts against 10 at 1m), and each row is a four-line grid — uncapped, one
+ *  hover paints a tooltip taller than the pane. It cannot be scrolled to
+ *  (`pointer-events: none`, and the pane does not scroll), so the overflow would
+ *  be unreadable AND cover the chart under it. The explicit "+N more" is what
+ *  keeps the truncation visible rather than silent. */
+const TIP_MAX_ROWS = 6;
+
 /** Build the tooltip HTML. Only enum/number fields are interpolated — no
- *  free-text — so there is no injection surface on the trusted API payload. */
+ *  free-text — so there is no injection surface on the trusted API payload.
+ *
+ *  Rows are ordered by true fire instant, not by index order: the crosshair
+ *  index preserves the order the pane assembled its alerts in, which appends the
+ *  live SSE alerts (themselves newest-first) after the fetched ones — so a
+ *  5-minute bar could otherwise list a 5-minute span out of sequence, and the
+ *  per-alert `alert_ts` is the only place the sub-bar timing survives at all. */
 function tooltipHtml(hits: MarkupReviewAlert[]): string {
-  const rows = hits
+  const ordered = [...hits].sort(
+    (a, b) => Date.parse(a.alert_ts) - Date.parse(b.alert_ts),
+  );
+  const rows = ordered
+    .slice(0, TIP_MAX_ROWS)
     .map((a) => {
       const dirCls = a.direction === "up" ? "up" : "down";
       const arrow = a.direction === "up" ? "▲" : "▼";
@@ -127,30 +161,29 @@ function tooltipHtml(hits: MarkupReviewAlert[]): string {
       </div>`;
     })
     .join("");
-  // Causal conviction tier per direction-cluster — explains the marker styling
-  // (color/shape) the viewer is hovering. Computed from at-fire features only.
-  const chips = (["up", "down"] as const)
-    .map((d) => hits.filter((h) => h.direction === d))
-    .filter((g) => g.length > 0)
-    .map((g) => {
-      const c = conviction({
-        clusterSize: g.length,
-        maxAskJump: g.reduce((m, h) => Math.max(m, h.ask_jump ?? 0), 0),
-        minSinceOpen: minSinceOpenET(g[0].bar_time),
-        atmOnly: g.every((h) => h.dist_from_atm === 0),
-      });
-      const arrow = g[0].direction === "up" ? "▲" : "▼";
-      const muted = c.muted ? " · muted" : "";
-      return `<span class="mr-tip__conv mr-tip__conv--${c.tier}">${arrow} ${c.tier.toUpperCase()}${muted}</span>`;
+  const hidden = ordered.length - Math.min(ordered.length, TIP_MAX_ROWS);
+  const more =
+    hidden > 0 ? `<div class="mr-tip__more">+${hidden} more in this bar</div>` : "";
+  // Causal conviction tier per 1-MINUTE event — the grain the spec scores at and
+  // the marker is styled by, so a 5m candle holding several events shows one chip
+  // each rather than one merged (and systematically flattering) verdict.
+  // Computed from at-fire features only.
+  const chips = clusterAlerts(hits)
+    .map((c) => {
+      const arrow = c.direction === "up" ? "▲" : "▼";
+      const muted = c.conviction.muted ? " · muted" : "";
+      const tier = c.conviction.tier;
+      return `<span class="mr-tip__conv mr-tip__conv--${tier}">${arrow} ${tier.toUpperCase()}${muted}</span>`;
     })
     .join("");
-  return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""} ${chips}</div>${rows}`;
+  return `<div class="mr-tip__hd">${hits.length} alert${hits.length > 1 ? "s" : ""} ${chips}</div>${rows}${more}`;
 }
 
 export function MarkupReviewChart({
   bars,
   alerts,
   liveBars,
+  tf,
   fitKey,
   refitToken = 0,
 }: Props) {
@@ -163,19 +196,18 @@ export function MarkupReviewChart({
   // Newest bar time on the series (fetched or live) — series.update() cannot
   // reach behind it, so a live candle below this needs a rebuild.
   const lastBarTimeRef = useRef<number>(-Infinity);
-  // The last setData payload from `bars` and its newest time. An IBKR bar always
-  // outranks the live candle for the same minute: the live one is bucketed from
-  // client-visible spot samples only, so its open is the first sample AFTER the
-  // minute started and its high/low miss every excursion between samples — on a
-  // pane whose job is reading MFE/MAE against bar range, that is the wrong high.
+  // The last setData payload from `bars` (already folded onto the display grid),
+  // and the newest fetched candle plus how far the 1-minute payload behind it
+  // reaches. Those two are what `liveBucketDraw` places every live bucket
+  // against — an IBKR bar outranks the live candle for everything it covers.
   const fetchedRef = useRef<CandlestickData[]>([]);
-  const fetchedTailRef = useRef<number>(-Infinity);
-  // Live candles drawn past the fetched tail, keyed by minute. Retained because
-  // today's session is re-fetched every 60s and setData() would otherwise wipe
-  // every minute the IBKR bars have not reached yet — and a wiped minute that has
-  // since aged into the spot window's (suppressed) partial-oldest bucket can
-  // never be re-offered, so the wipe would blink a candle out until IBKR catches
-  // up.
+  const fetchedTailRef = useRef<FetchedTail | null>(null);
+  // Live candles at or past the fetched tail, keyed by bucket start. Retained
+  // because today's session is re-fetched every 60s and setData() would otherwise
+  // wipe every bucket the IBKR bars have not reached yet — and a wiped bucket
+  // that has since aged into the spot window's (suppressed) partial-oldest slot
+  // can never be re-offered, so the wipe would blink a candle out until IBKR
+  // catches up.
   const liveDrawnRef = useRef<Map<number, CandlestickData>>(new Map());
   // The session the retained live candles belong to.
   const sessionKeyRef = useRef<string | null>(null);
@@ -209,23 +241,55 @@ export function MarkupReviewChart({
       : "";
   }, []);
 
-  /** The full series content: the fetched bars plus the live minutes past their
-   *  tail, ascending. Rebuilding with this is the ONLY way to place a candle
-   *  BEHIND the newest one already drawn — series.update() cannot reach back,
-   *  and that one-way door is what made the missing 10:47 candle permanent. It
-   *  is affordable now that fitContent() is gated on the session: a rebuild no
-   *  longer costs the operator's pan/zoom, which was the reason update() was the
-   *  only writer. */
+  /** The full series content: the fetched bars keyed-merged with the retained
+   *  live candles, ascending and unique by time. Rebuilding with this is the ONLY
+   *  way to place a candle BEHIND the newest one already drawn — series.update()
+   *  cannot reach back, and that one-way door is what made the missing 10:47
+   *  candle permanent. It is affordable now that fitContent() is gated on the
+   *  session: a rebuild no longer costs the operator's pan/zoom, which was the
+   *  reason update() was the only writer.
+   *
+   *  A keyed merge, not a concat: a concat is ascending only while every live
+   *  candle sits STRICTLY past the fetched tail, and the boundary merge below
+   *  deliberately puts one AT the tail. The Map key dedupes and the sort orders,
+   *  so the merge ITSELF is what makes the result safe for setData —
+   *  lightweight-charts' own ascending assert is stripped from the production
+   *  bundle and would not catch a violation anyway.
+   *
+   *  What that construction cannot establish is FINITENESS: a bar whose
+   *  timestamp will not parse keys the Map under NaN and sorts by a NaN
+   *  comparator, and every ordering comparison against it is false. Both writers
+   *  drop non-finite times upstream (see the bars effect and
+   *  `buildWindowCandles`), so the dev-only scan below is a tripwire for a
+   *  future writer that skips them, not the guarantee. */
   const composeSeries = useCallback((): CandlestickData[] => {
-    const live = [...liveDrawnRef.current.values()].sort(
+    const byTime = new Map<number, CandlestickData>();
+    for (const c of fetchedRef.current) byTime.set(c.time as number, c);
+    // The live entry at the tail is already merged with the fetched bar it
+    // shares (see the live effect), so last-writer-wins is the whole rule.
+    for (const c of liveDrawnRef.current.values()) byTime.set(c.time as number, c);
+    const out = [...byTime.values()].sort(
       (a, b) => (a.time as number) - (b.time as number),
     );
-    return [...fetchedRef.current, ...live];
+    if (import.meta.env.DEV) {
+      for (let i = 0; i < out.length; i++) {
+        const t = out[i].time as number;
+        if (!Number.isFinite(t) || (i > 0 && t <= (out[i - 1].time as number))) {
+          console.error(
+            "MarkupReviewChart: series not finite + strictly ascending",
+            i > 0 ? out[i - 1].time : null,
+            out[i].time,
+          );
+          break;
+        }
+      }
+    }
+    return out;
   }, []);
 
   /** Stamp the newest bar on the series — the monotonic-guard reference and the
-   *  legend source. Every retained live candle sits past the fetched tail by
-   *  construction, so the newest of those IS the series tail whenever any
+   *  legend source. Every retained live candle sits at or past the fetched tail
+   *  by construction, so the newest of those IS the series tail whenever any
    *  survive. */
   const syncTail = useCallback(() => {
     let tail: CandlestickData | null = null;
@@ -351,27 +415,44 @@ export function MarkupReviewChart({
       sessionKeyRef.current = fitKey;
       liveDrawnRef.current.clear();
     }
-    const data: CandlestickData[] = bars.map((b) => ({
-      time: isoToUtc(b.time),
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-    }));
+    const data: CandlestickData[] = foldToGrid(bars, tf)
+      .map((b) => ({
+        time: isoToUtc(b.time),
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+      }))
+      // A bar whose timestamp won't parse reaches setData as a NaN-timed candle
+      // and corrupts the whole series. `foldToGrid` already drops it, but only
+      // on the 5m path — at 1m it returns the payload by identity, so the guard
+      // has to live here to cover both.
+      .filter((c) => Number.isFinite(c.time as number));
     fetchedRef.current = data;
-    fetchedTailRef.current =
-      data.length > 0 ? (data[data.length - 1].time as number) : -Infinity;
-    // Retire the live approximation up to the fetched TAIL. The boundary is the
-    // tail, not per-minute membership: composeSeries concatenates `[...fetched,
-    // ...live]`, which is only ascending while every retained live minute sits
-    // past the tail. So a hole INSIDE the fetched range — a gappy IBKR payload,
-    // as opposed to the SSE gap this file exists to heal — retires the live
-    // candle that could have filled it and waits for a later payload to carry
-    // the bar. Filling it here would mean a real merge-sort with dedup, and
-    // setData's ascending assert is stripped from the production bundle, so a
-    // mistake there corrupts the series silently.
+    const tail = data[data.length - 1];
+    fetchedTailRef.current = tail
+      ? {
+          time: tail.time as number,
+          ohlc: tail,
+          coverageEndSec: barsCoverageEndSec(bars),
+        }
+      : null;
+    // Retire every live approximation up to AND INCLUDING the fetched tail.
+    //
+    // Below the tail the IBKR bar is simply better. A hole INSIDE the fetched
+    // range — a gappy payload, as opposed to the SSE gap this file exists to
+    // heal — therefore retires the live candle that could have filled it and
+    // waits for a later payload to carry the bar.
+    //
+    // The tail itself is retired for a different reason: its live contribution
+    // is a MERGE against this very payload, so it must be re-derived from the
+    // next spot tick rather than carried across a fetch. A retained boundary
+    // candle merged against the PREVIOUS payload would keep re-asserting an open
+    // and extremes this one has superseded. The spot stream ticks sub-second, so
+    // the merge is back within a frame.
+    const tailTime = fetchedTailRef.current?.time ?? -Infinity;
     for (const t of liveDrawnRef.current.keys()) {
-      if (t <= fetchedTailRef.current) liveDrawnRef.current.delete(t);
+      if (t <= tailTime) liveDrawnRef.current.delete(t);
     }
     series.setData(composeSeries());
     syncTail();
@@ -384,7 +465,7 @@ export function MarkupReviewChart({
       fittedKeyRef.current = fitTarget;
       chart.timeScale().fitContent();
     }
-  }, [bars, fitKey, refitToken, composeSeries, syncTail]);
+  }, [bars, tf, fitKey, refitToken, composeSeries, syncTail]);
 
   // Live window candles → incremental series.update(), or a rebuild when one
   // reaches BACK behind the newest drawn bar. Walking the window ASCENDING heals
@@ -400,21 +481,13 @@ export function MarkupReviewChart({
     let changed = false;
     let rebuild = false;
     for (const lb of liveBars) {
-      // An IBKR bar already covers this minute — never overwrite truth with the
-      // spot approximation (see fetchedTailRef). This is NOT the clamp
-      // liveSessionCandles rejects: that one referenced the last DRAWN bar,
-      // which only advances when a bar is drawn and so could freeze the overlay
-      // permanently. This reference advances from the API alone, and a hole is
-      // by definition PAST it, so healing is unaffected.
-      if (lb.time <= fetchedTailRef.current) continue;
-      const candle: CandlestickData = {
-        time: lb.time as UTCTimestamp,
-        open: lb.open,
-        high: lb.high,
-        low: lb.low,
-        close: lb.close,
-      };
+      // What a live bucket is allowed to contribute against the fetched payload
+      // is a pure decision — see liveBucketDraw, which carries the reasoning for
+      // each branch and is where the branch table is pinned by test.
       const drawn = liveDrawnRef.current.get(lb.time);
+      const ohlc = liveBucketDraw(lb, fetchedTailRef.current, drawn);
+      if (!ohlc) continue;
+      const candle: CandlestickData = { time: lb.time as UTCTimestamp, ...ohlc };
       if (
         drawn &&
         drawn.open === candle.open &&
@@ -438,8 +511,8 @@ export function MarkupReviewChart({
   useEffect(() => {
     const markers = markersRef.current;
     if (!markers) return;
-    indexRef.current = indexByBarTime(alerts);
-    const built = buildMarkers(alerts).map(
+    indexRef.current = indexByBarTime(alerts, tf);
+    const built = buildMarkers(alerts, tf).map(
       (m): SeriesMarker<Time> => ({
         time: m.time,
         position: m.position,
@@ -450,7 +523,7 @@ export function MarkupReviewChart({
       }),
     );
     markers.setMarkers(built);
-  }, [alerts]);
+  }, [alerts, tf]);
 
   return (
     <div className="markup-review-chart">

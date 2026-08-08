@@ -31,6 +31,13 @@ import type { VwapAnchorKey } from "./chartTypes";
  * inside the 12:00-15:59 UTC bar. Acceptable for "structure read"
  * use of 4h; if RTH-open precision matters we'd need ET-anchored
  * bucketing for 4h only.
+ *
+ * This is the TERMINAL chart's binning and serves its arbitrary
+ * TIMEFRAME_MINUTES set. The Markup Review pane folds onto its own
+ * display grid via `lib/tfBuckets.foldToGrid` — deliberately a
+ * different name, because that grid also places markers and live spot
+ * buckets and must not drift toward this one's ISO spelling or its
+ * minutes-based signature.
  */
 export function aggregateBars(
   bars: TerminalIntradayBar[],

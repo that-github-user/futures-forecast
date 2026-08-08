@@ -9,6 +9,19 @@ import type {
   MarkupReviewAlert,
   MarkupState,
 } from "../api/terminalTypes";
+import {
+  TF_SECONDS,
+  floorEpochSec,
+  type LiveCandle,
+  type Timeframe,
+} from "../lib/tfBuckets";
+
+/** The span of spot samples the live hook keeps, matching the backend's
+ *  `SPOT_WINDOW_S` overlay window. It lives beside the bucketer rather than in
+ *  the hook because the bucketer's forming-candle allowance is only sound while
+ *  a bucket fits inside it — two files agreeing on the number by coincidence is
+ *  how that allowance would quietly start fabricating opens. */
+export const SPOT_WINDOW_MS = 120_000;
 
 /** Drop spot points older than `windowMs` before the newest sample
  *  (timestamps are ~monotonic ET ISO strings). Falls back to a 300-point
@@ -103,48 +116,59 @@ export function deriveLiveMarkup(
   };
 }
 
-/** A 1-minute OHLC candle, time in epoch SECONDS (lightweight-charts
- *  UTCTimestamp). Built client-side from the SPX spot stream. */
-export interface LiveCandle {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
-
-/** Build a 1-minute OHLC candle for EVERY safe minute in the live spot window,
- *  ascending by time — open = first sample of the minute, high/low = extremes,
- *  close = last.
+/** Build an OHLC candle for every drawable bucket of the display grid in the
+ *  live spot window, ascending by time — open = first sample of the bucket,
+ *  high/low = extremes, close = last, `lastSec` = the newest sample folded in.
  *
- *  Emitting only the newest sample's minute (the old single-candle builder) made
- *  candle loss permanent: a minute that was never "newest" at any recompute —
+ *  Emitting only the newest sample's bucket (the old single-candle builder) made
+ *  candle loss permanent: a bucket that was never "newest" at any recompute —
  *  because the spot stream gapped across it and only healed after the clock had
  *  rolled — could never be drawn, and the chart's monotonic guard seals it out
- *  the instant a later minute is drawn. Emitting the whole window lets the
- *  chart apply the older minute FIRST and heal the hole in the same pass.
+ *  the instant a later bucket is drawn. Emitting the whole window lets the
+ *  chart apply the older bucket FIRST and heal the hole in the same pass.
  *
- *  SAFE means the minute's OPEN is trustworthy. `boundSpotWindow` truncates the
- *  series at an arbitrary instant, so the OLDEST bucket is normally PARTIAL and
- *  its first surviving sample is not that minute's open — emitting it would draw
- *  a candle with a fabricated open and body. A bucket therefore qualifies only
- *  if either:
- *    - it is the NEWEST bucket — the forming candle, partial by nature; or
+ *  `openTrusted` marks a bucket whose OPEN is a real open. `boundSpotWindow`
+ *  truncates the series at an arbitrary instant, so the OLDEST bucket is
+ *  normally PARTIAL and its first surviving sample is not that bucket's open —
+ *  drawing it standalone would put a fabricated open and body on screen. A
+ *  bucket earns the flag only if either:
  *    - a sample survives AT OR BEFORE the bucket's start (a sample landing
- *      exactly ON the boundary IS that minute's open), which bounds the
- *      window's coverage back past the bucket, so its first sample is its open.
- *  What the test proves is the window's EXTENT, not the absence of an INTERIOR
- *  gap: if the stream itself gapped inside the minute the open is approximate
- *  rather than an artifact of truncation, and the next merged state — or the
- *  authoritative re-poll — corrects it. An interior gap isn't observable from
- *  the samples, so no test on them can exclude it.
- *  The test needs no window length, so it stays correct however the caller
- *  bounds the series, and degrades to just the forming candle when the window
- *  holds a single minute.
+ *      exactly ON the boundary IS that bucket's open), which bounds the
+ *      window's coverage back past the bucket, so its first sample is its open;
+ *      or
+ *    - it is the NEWEST bucket — the forming candle, partial by nature — AND the
+ *      grid step fits inside the spot window at all.
  *
- *  (A live approximation of SPX OHLC — true IBKR 1m bars replace it on the next
+ *  That second condition is the whole reason this is parameterized rather than
+ *  hard-coded: the forming-candle allowance is a claim that a partial bucket's
+ *  first surviving sample is close enough to its start to BE its open, and a
+ *  window shorter than the bucket makes that claim false by construction — a
+ *  120s window covers the start of a 300s bucket for two minutes out of every
+ *  five and fabricates it for the other three.
+ *
+ *  An untrusted bucket is still EMITTED when it is the newest one, and dropped
+ *  otherwise. Withholding it entirely suppresses the chart's boundary merge with
+ *  it — that merge takes the open from the fetched partial bar and only the
+ *  close from here — which leaves three minutes out of every five at 5m with no
+ *  live close at all, the exact stretch the merge exists for. Widening the trust
+ *  rule instead would put a made-up open on screen; accumulating spot across
+ *  renders would cover the bucket but could freeze a bad open for five minutes
+ *  with no repair path, forfeiting the healing property above. An older
+ *  untrusted bucket has nothing to add either way: it is past, so nothing will
+ *  ever supply its open.
+ *
+ *  What the coverage test proves is the window's EXTENT, not the absence of an
+ *  INTERIOR gap: if the stream itself gapped inside the bucket the open is
+ *  approximate rather than an artifact of truncation, and the next merged state
+ *  — or the authoritative re-poll — corrects it. An interior gap isn't
+ *  observable from the samples, so no test on them can exclude it.
+ *
+ *  (A live approximation of SPX OHLC — true IBKR bars replace it on the next
  *  review fetch.) */
-export function buildWindowCandles(spots: [string, number][]): LiveCandle[] {
+export function buildWindowCandles(
+  spots: [string, number][],
+  tf: Timeframe = "1m",
+): LiveCandle[] {
   // Sorted defensively: both the per-minute open/close and the ascending output
   // depend on order, and the merge interleaves the server's 5s series with the
   // locally-accumulated sub-second samples.
@@ -158,28 +182,42 @@ export function buildWindowCandles(spots: [string, number][]): LiveCandle[] {
 
   const buckets = new Map<number, LiveCandle>();
   for (const { ms, price } of samples) {
-    const startMs = Math.floor(ms / 60_000) * 60_000;
-    const c = buckets.get(startMs);
+    // Bucketed through the shared grid, never a local modulo — the live overlay
+    // has to land on the same instants the fetched candles and the markers do.
+    const startSec = floorEpochSec(Math.floor(ms / 1000), tf);
+    const c = buckets.get(startSec);
     if (!c) {
-      buckets.set(startMs, {
-        time: startMs / 1000,
+      buckets.set(startSec, {
+        time: startSec,
         open: price,
         high: price,
         low: price,
         close: price,
+        lastSec: Math.floor(ms / 1000),
+        // Decided in the emit pass below, which needs the whole window; the
+        // placeholder is never read.
+        openTrusted: false,
       });
       continue;
     }
     if (price > c.high) c.high = price;
     if (price < c.low) c.low = price;
     c.close = price;
+    c.lastSec = Math.floor(ms / 1000);
   }
 
   // Insertion order is ascending because the samples are.
   const ordered = [...buckets.values()];
   const firstMs = samples[0].ms;
   const newestTime = ordered[ordered.length - 1].time;
-  return ordered.filter((c) => c.time === newestTime || firstMs <= c.time * 1000);
+  const formingAllowed = TF_SECONDS[tf] * 1000 <= SPOT_WINDOW_MS;
+  const out: LiveCandle[] = [];
+  for (const c of ordered) {
+    const newest = c.time === newestTime;
+    c.openTrusted = firstMs <= c.time * 1000 || (formingAllowed && newest);
+    if (c.openTrusted || newest) out.push(c);
+  }
+  return out;
 }
 
 const ET_HM_FMT = new Intl.DateTimeFormat("en-US", {
@@ -220,13 +258,16 @@ export function isCashRthMinute(sec: number): boolean {
 }
 
 /** The live window's candles to overlay on the session chart — but ONLY the
- *  minutes inside the SPX cash session (09:30–16:00 ET). After 16:00 the IBKR
- *  1-min bars freeze while the spot keeps ticking (ES-derived), so a live candle
- *  would float past the real session; before 09:30 there's no session yet.
+ *  buckets inside the SPX cash session (09:30–16:00 ET). After 16:00 the IBKR
+ *  bars freeze while the spot keeps ticking (ES-derived), so a live candle
+ *  would float past the real session; before 09:30 there's no session yet. The
+ *  gate is also what keeps the ES-derived spot out of the chart's boundary
+ *  merge, where it would widen an SPX bar's range with another instrument's
+ *  prints.
  *
  *  The filter is PER CANDLE, not all-or-nothing on the newest: a window
  *  straddling the open or the close must still contribute its in-session
- *  minutes, and dropping one candle must leave the rest ascending (the chart
+ *  buckets, and dropping one candle must leave the rest ascending (the chart
  *  applies them in order, so a break in that order would cost a bar).
  *
  *  Gating on each MINUTE's own ET wall-clock — NOT on a gap from the last
@@ -249,14 +290,23 @@ export function isCashRthMinute(sec: number): boolean {
  *  live bar after a truncated seed and, since the reference only advances when a
  *  bar is drawn, never recover: a freeze in the degraded case. Showing live
  *  price beats hiding it. */
-export function liveSessionCandles(spots: [string, number][]): LiveCandle[] {
-  return buildWindowCandles(spots).filter((c) => isCashRthMinute(c.time));
+export function liveSessionCandles(
+  spots: [string, number][],
+  tf: Timeframe = "1m",
+): LiveCandle[] {
+  return buildWindowCandles(spots, tf).filter((c) => isCashRthMinute(c.time));
 }
 
 /** Map a live MarkupAlert (the SSE/recent-alerts shape) to the review-alert
  *  shape the chart's marker builder consumes, as a PENDING alert (no forward
- *  outcome yet). `bar_time` is the alert floored to the minute (UTC ISO) for
- *  marker placement; dist-from-ATM is derived from the live center when known. */
+ *  outcome yet). dist-from-ATM is derived from the live center when known.
+ *
+ *  `bar_time` is floored to ONE MINUTE whatever the display timeframe, because
+ *  the display grid is not this field's job: marker grouping and placement both
+ *  derive from `alert_ts`, so a live strike and the fetched copy of the same
+ *  event cluster together by construction. A tf-dependent floor here would only
+ *  reintroduce the two-keys-for-one-event split that draws a phantom marker and
+ *  halves the breadth badge. */
 export function liveAlertToReview(
   a: MarkupAlert,
   centerAtm: number | null,

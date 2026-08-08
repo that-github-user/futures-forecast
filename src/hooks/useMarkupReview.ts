@@ -1,12 +1,24 @@
 /**
  * Data hook for the Markup Review pane (`/terminal/v1/markup/review`).
  *
- * A finalized session never changes, so a past date is fetched ONCE per
- * (date, tf). TODAY is different: the live overlay is built from the SSE spot
- * window alone, so a candle the spot stream missed for longer than that window
- * is only repairable from the authoritative IBKR bars — hence the `live`
- * re-poll, the backstop behind the live overlay's own healing. `refresh()`
- * still re-fetches on demand.
+ * A finalized session never changes, so a past date is fetched ONCE. TODAY is
+ * different: the live overlay is built from the SSE spot window alone, so a
+ * candle the spot stream missed for longer than that window is only repairable
+ * from the authoritative IBKR bars — hence the `live` re-poll, the backstop
+ * behind the live overlay's own healing. `refresh()` still re-fetches on demand.
+ *
+ * The DISPLAY timeframe is deliberately not a parameter here. The endpoint
+ * serves `barSizeSetting="1 min"` bars whatever `tf` is asked for and uses `tf`
+ * only to floor each alert's `bar_time` — a field the client does not read at
+ * all, because marker grouping and placement both derive from `alert_ts` (see
+ * markupReviewHelpers / lib/tfBuckets). So the request is pinned to `1m` and the
+ * timeframe toggle costs no round-trip: keying the view on it would flip
+ * `loading`, and the pane swaps the chart for the loading message — unmounting
+ * it, running `chart.remove()`, and discarding the drawn live tail, the fitted
+ * time scale and the operator's pan/zoom for a payload that came back
+ * byte-identical. With the terminal API down mid-session it is worse: the
+ * settle rule below only retains a rendered session under an unchanged key, so
+ * a toggle would evict a session the client already holds every input for.
  *
  * A null response means offline/unauthorized — distinct from a successful EMPTY
  * session (data present, `alerts: []`), the legitimate "nothing captured for
@@ -14,11 +26,11 @@
  *
  * `loading` is DERIVED (the last settled result's key vs the current key) rather
  * than set synchronously in the effect, so a date change shows the loading state
- * without a cascading-render setState-in-effect. It keys on the VIEW (date|tf)
- * ALONE, never on the refresh nonce: a re-fetch of the SAME view must leave the
- * rendered session on screen, or a background poll would blank the pane once a
- * minute. The nonce only re-runs the fetch effect. `settleReview` holds the
- * matching rule for the FAILURE case — see there.
+ * without a cascading-render setState-in-effect. It keys on the VIEW (the
+ * session date) ALONE, never on the refresh nonce: a re-fetch of the SAME view
+ * must leave the rendered session on screen, or a background poll would blank
+ * the pane once a minute. The nonce only re-runs the fetch effect.
+ * `settleReview` holds the matching rule for the FAILURE case — see there.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -54,7 +66,8 @@ export interface MarkupReviewState {
 }
 
 export interface Settled {
-  /** The VIEW (`date|tf`) this result belongs to — what `loading` compares. */
+  /** The VIEW (the session date) this result belongs to — what `loading`
+   *  compares. */
   viewKey: string;
   data: MarkupReviewResponse | null;
   offline: boolean;
@@ -90,13 +103,12 @@ export function settleReview(
 
 export function useMarkupReview(
   date: string,
-  tf: "1m" | "5m" = "1m",
   live = false,
 ): MarkupReviewState {
   const [result, setResult] = useState<Settled | null>(null);
   const [nonce, setNonce] = useState(0);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  const viewKey = `${date}|${tf}`;
+  const viewKey = date;
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +117,7 @@ export function useMarkupReview(
       // the synchronous demo branch, so state is never set synchronously in the
       // effect body.
       const r = await Promise.resolve(
-        IS_DEMO ? mockMarkupReview(date) : terminal.markupReview(date, tf),
+        IS_DEMO ? mockMarkupReview(date) : terminal.markupReview(date, "1m"),
       );
       if (cancelled) return;
       setResult((prev) => settleReview(prev, viewKey, r, IS_DEMO));
@@ -117,7 +129,7 @@ export function useMarkupReview(
     // `nonce` is a dep but not a body reference on purpose: it is the ONLY
     // thing that re-runs a fetch for an unchanged view, and it must stay out of
     // the stamped key so a re-fetch can't read as unsettled (see the header).
-  }, [viewKey, nonce, date, tf]);
+  }, [viewKey, nonce, date]);
 
   // Background re-poll while viewing today. Demo mode is a static fixture and a
   // past session is final, so both stay single-fetch. Non-flashing by

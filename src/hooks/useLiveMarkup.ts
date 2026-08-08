@@ -20,10 +20,13 @@ import { useEffect, useRef, useState } from "react";
 import { mockMarkupState } from "../api/mock";
 import { subscribeMarkup } from "../api/terminalClient";
 import type { MarkupAlert, MarkupState } from "../api/terminalTypes";
-import { deriveLiveMarkup, mergeSpotSeries } from "./liveMarkupHelpers";
+import {
+  SPOT_WINDOW_MS,
+  deriveLiveMarkup,
+  mergeSpotSeries,
+} from "./liveMarkupHelpers";
 
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === "true";
-const SPOT_WINDOW_MS = 120_000; // matches the backend SPOT_WINDOW_S overlay window
 const DEMO_REFRESH_MS = 30_000;
 
 export interface LiveMarkupState {

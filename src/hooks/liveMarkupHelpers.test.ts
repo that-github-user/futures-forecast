@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { MarkupAlert, MarkupState } from "../api/terminalTypes";
+import { TF_SECONDS } from "../lib/tfBuckets";
 import {
+  SPOT_WINDOW_MS,
   boundSpotWindow,
   buildWindowCandles,
   deriveLiveMarkup,
@@ -145,13 +147,23 @@ describe("buildWindowCandles", () => {
         high: 7515,
         low: 7508,
         close: 7512,
+        lastSec: utc("14:31:55"),
+        openTrusted: true,
       },
     ]);
   });
 
   it("a single sample yields a flat forming candle", () => {
     expect(buildWindowCandles([["2026-06-18T10:31:10-04:00", 7510]])).toEqual([
-      { time: utc("14:31:00"), open: 7510, high: 7510, low: 7510, close: 7510 },
+      {
+        time: utc("14:31:00"),
+        open: 7510,
+        high: 7510,
+        low: 7510,
+        close: 7510,
+        lastSec: utc("14:31:10"),
+        openTrusted: true, // the forming candle, and a 1m bucket fits the window
+      },
     ]);
   });
 
@@ -176,6 +188,8 @@ describe("buildWindowCandles", () => {
         high: 7509,
         low: 7503,
         close: 7503,
+        lastSec: utc("14:47:50"),
+        openTrusted: true,
       },
       {
         time: utc("14:48:00"),
@@ -183,6 +197,8 @@ describe("buildWindowCandles", () => {
         high: 7506,
         low: 7506,
         close: 7506,
+        lastSec: utc("14:48:05"),
+        openTrusted: true,
       },
     ]);
   });
@@ -218,7 +234,15 @@ describe("buildWindowCandles", () => {
       ["2026-06-18T10:47:50-04:00", 7509],
     ];
     expect(buildWindowCandles(spots)).toEqual([
-      { time: utc("14:47:00"), open: 7505, high: 7509, low: 7505, close: 7509 },
+      {
+        time: utc("14:47:00"),
+        open: 7505,
+        high: 7509,
+        low: 7505,
+        close: 7509,
+        lastSec: utc("14:47:50"),
+        openTrusted: true,
+      },
     ]);
   });
 
@@ -232,6 +256,113 @@ describe("buildWindowCandles", () => {
       utc("14:47:00"),
     ]);
     expect(buildWindowCandles([["not-a-date", 1]])).toEqual([]);
+  });
+});
+
+describe("buildWindowCandles at 5m (the window cannot cover the bucket)", () => {
+  const utc = (hms: string) => Date.parse(`2026-06-18T${hms}Z`) / 1000;
+
+  it("marks the forming bucket MERGE-ONLY when the window starts inside it", () => {
+    // 120s of spot cannot reach the start of a 300s bucket for three minutes out
+    // of every five. The forming-candle allowance is a claim that the first
+    // surviving sample IS the bucket's open; here it plainly is not, so the
+    // bucket may never be drawn standalone — the chart's boundary merge supplies
+    // the real open from the fetched partial bar. Withholding it entirely would
+    // suppress that merge too and leave those three minutes with no live close.
+    expect(
+      buildWindowCandles(
+        [
+          ["2026-06-18T10:37:00-04:00", 7500],
+          ["2026-06-18T10:38:00-04:00", 7510],
+          ["2026-06-18T10:39:00-04:00", 7505],
+        ],
+        "5m",
+      ),
+    ).toEqual([
+      {
+        time: utc("14:35:00"),
+        open: 7500, // NOT the bucket's open — hence openTrusted: false
+        high: 7510,
+        low: 7500,
+        close: 7505,
+        lastSec: utc("14:39:00"),
+        openTrusted: false,
+      },
+    ]);
+  });
+
+  it("emits the bucket when the window genuinely covers its start", () => {
+    expect(
+      buildWindowCandles(
+        [
+          ["2026-06-18T10:35:00-04:00", 7500], // exactly on the boundary → a real open
+          ["2026-06-18T10:35:30-04:00", 7512],
+          ["2026-06-18T10:36:20-04:00", 7498],
+          ["2026-06-18T10:36:50-04:00", 7506],
+        ],
+        "5m",
+      ),
+    ).toEqual([
+      {
+        time: utc("14:35:00"),
+        open: 7500,
+        high: 7512,
+        low: 7498,
+        close: 7506,
+        lastSec: utc("14:36:50"),
+        openTrusted: true,
+      },
+    ]);
+  });
+
+  it("drops an untrusted PAST bucket outright and keeps the covered newer one", () => {
+    // The merge-only allowance is for the FORMING bucket alone: a fetched
+    // partial bar still covers that one, so its open is recoverable. Nothing
+    // will ever supply a past bucket's open, so there is no merge left for it to
+    // feed and it must not reach the chart at all.
+    expect(
+      buildWindowCandles(
+        [
+          ["2026-06-18T10:34:50-04:00", 7490], // sole survivor of 10:30 → not its open
+          ["2026-06-18T10:35:10-04:00", 7500],
+          ["2026-06-18T10:36:00-04:00", 7504],
+        ],
+        "5m",
+      ).map((c) => [c.time, c.openTrusted]),
+    ).toEqual([[utc("14:35:00"), true]]);
+  });
+
+  it("buckets five minutes of samples into ONE candle", () => {
+    expect(
+      buildWindowCandles(
+        [
+          ["2026-06-18T10:34:00-04:00", 7490],
+          ["2026-06-18T10:35:00-04:00", 7500],
+          ["2026-06-18T10:36:00-04:00", 7520],
+          ["2026-06-18T10:37:00-04:00", 7480],
+          ["2026-06-18T10:38:00-04:00", 7495],
+        ],
+        "5m",
+      ),
+    ).toEqual([
+      {
+        time: utc("14:35:00"),
+        open: 7500,
+        high: 7520,
+        low: 7480,
+        close: 7495,
+        lastSec: utc("14:38:00"),
+        openTrusted: true,
+      },
+    ]);
+  });
+
+  it("the 1m forming allowance holds only because a 1m bucket fits the window", () => {
+    // The rule is bucket-length vs window-length, not a hard-coded timeframe —
+    // so widening SPOT_WINDOW_S past 300s would restore the 5m forming candle
+    // without touching the safe-open rule.
+    expect(TF_SECONDS["1m"] * 1000).toBeLessThanOrEqual(SPOT_WINDOW_MS);
+    expect(TF_SECONDS["5m"] * 1000).toBeGreaterThan(SPOT_WINDOW_MS);
   });
 });
 
@@ -370,8 +501,8 @@ describe("isCashRthMinute (SPX cash 09:30–16:00 ET)", () => {
 });
 
 describe("liveSessionCandles (cash-RTH gate)", () => {
-  const times = (spots: [string, number][]) =>
-    liveSessionCandles(spots).map((c) => c.time);
+  const times = (spots: [string, number][], tf: "1m" | "5m" = "1m") =>
+    liveSessionCandles(spots, tf).map((c) => c.time);
   const utc = (hms: string) => Date.parse(`2026-06-18T${hms}Z`) / 1000;
 
   it("shows the forming candle during the cash session", () => {
@@ -411,6 +542,58 @@ describe("liveSessionCandles (cash-RTH gate)", () => {
         ["2026-06-18T16:00:50-04:00", 7505],
       ]),
     ).toEqual([utc("19:59:00")]);
+  });
+
+  it("at 5m: the bucket goes merge-only once the window has left its start", () => {
+    expect(
+      liveSessionCandles(
+        [
+          ["2026-06-18T10:38:00-04:00", 7500],
+          ["2026-06-18T10:39:00-04:00", 7505],
+        ],
+        "5m",
+      ).map((c) => [c.time, c.openTrusted]),
+    ).toEqual([[utc("14:35:00"), false]]);
+  });
+
+  it("at 5m: still emits a trusted open while the window covers the bucket start", () => {
+    expect(
+      liveSessionCandles(
+        [
+          ["2026-06-18T10:35:00-04:00", 7500],
+          ["2026-06-18T10:36:30-04:00", 7505],
+        ],
+        "5m",
+      ).map((c) => [c.time, c.openTrusted]),
+    ).toEqual([[utc("14:35:00"), true]]);
+  });
+
+  it("at 5m: the RTH bounds are grid points, so the gate never splits a bucket", () => {
+    // 09:30 and 16:00 ET are both 5-minute grid points (the same whole-hour-
+    // offset coincidence lib/tfBuckets documents), so a bucket is wholly inside
+    // the session or wholly outside it and the gate can never truncate one. The
+    // 15:55 bucket therefore survives in full while 16:00 is dropped whole.
+    expect(
+      times(
+        [
+          ["2026-06-18T15:55:00-04:00", 7490],
+          ["2026-06-18T15:59:30-04:00", 7500],
+          ["2026-06-18T16:00:30-04:00", 7505],
+          ["2026-06-18T16:01:00-04:00", 7510],
+        ],
+        "5m",
+      ),
+    ).toEqual([utc("19:55:00")]);
+    // At 1m the same window yields three in-session minutes — the fixture
+    // discriminates the grids rather than agreeing on both.
+    expect(
+      times([
+        ["2026-06-18T15:55:00-04:00", 7490],
+        ["2026-06-18T15:59:30-04:00", 7500],
+        ["2026-06-18T16:00:30-04:00", 7505],
+        ["2026-06-18T16:01:00-04:00", 7510],
+      ]),
+    ).toEqual([utc("19:55:00"), utc("19:59:00")]);
   });
 
   it("drops a LEADING out-of-session minute without breaking the rest", () => {
